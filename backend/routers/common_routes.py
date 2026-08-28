@@ -1,0 +1,59 @@
+"""Endpoints shared by both the driver and admin surfaces."""
+from asyncmy.cursors import DictCursor
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
+
+from auth import get_current_user_any
+from db import get_pool
+from photos import fetch_photo
+
+router = APIRouter()
+
+
+@router.get("/me")
+async def me(request: Request):
+    # Public: this is exactly how the admin frontend discovers whether it's
+    # allowed to render anything. Absent header (SSO off / local dev) -> anonymous.
+    pool = get_pool(request)
+    email = request.headers.get("x-forwarded-email")
+    is_admin = False
+    if pool is not None and email:
+        async with pool.acquire() as conn, conn.cursor() as cur:
+            await cur.execute(
+                "SELECT 1 FROM users WHERE email = %s AND role = 'admin' AND status = 'active'", (email,)
+            )
+            is_admin = await cur.fetchone() is not None
+    return {"email": email, "is_admin": is_admin}
+
+
+@router.get("/statuses")
+async def list_statuses(request: Request, user=Depends(get_current_user_any)):
+    pool = get_pool(request)
+    async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
+        await cur.execute(
+            "SELECT code, label, requires_photo, is_terminal_success "
+            "FROM statuses WHERE is_active = 1 ORDER BY sort_order"
+        )
+        rows = await cur.fetchall()
+    return {
+        "statuses": [
+            {
+                "code": r["code"],
+                "label": r["label"],
+                "requires_photo": bool(r["requires_photo"]),
+                "is_terminal_success": bool(r["is_terminal_success"]),
+            }
+            for r in rows
+        ]
+    }
+
+
+@router.get("/photos/{photo_id}")
+async def get_photo(photo_id: int, request: Request, user=Depends(get_current_user_any)):
+    pool = get_pool(request)
+    result = await fetch_photo(pool, photo_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="photo not found")
+    data, content_type, uploaded_by = result
+    if user["role"] != "admin" and uploaded_by != user["id"]:
+        raise HTTPException(status_code=403, detail="not your photo")
+    return Response(content=data, media_type=content_type, headers={"Cache-Control": "private, max-age=86400"})
