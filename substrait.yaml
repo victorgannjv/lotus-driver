@@ -1,0 +1,11 @@
+description: >
+  Lotus Driver Tracking System tracks NinjaVan drivers delivering Lotus warehouse
+  parcels across Kuala Lumpur. Drivers sign up and log in with email/password, upload
+  a photo of each day's delivery manifest (parsed into a structured job list via
+  Claude vision OCR), then check in GPS-stamped status updates per delivery job,
+  photographing the delivery order slip on completion so the backend can OCR-match it
+  back to the correct manifest job. Supervisors use a Google-SSO-gated admin dashboard
+  to review drivers, browse delivery jobs and their full chronological event
+  timelines (timestamp, status, GPS, photo), and manually resolve check-ins the OCR
+  matcher couldn't confidently link.
+database: oceanbase
