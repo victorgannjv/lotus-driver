@@ -24,6 +24,7 @@ def _serialize_manifest(row: dict) -> dict:
         "ocr_status": row["ocr_status"],
         "ocr_error": row["ocr_error"],
         "created_at": str(row["created_at"]),
+        "cancelled_at": str(row["cancelled_at"]) if row["cancelled_at"] else None,
     }
 
 
@@ -109,7 +110,7 @@ async def upload_manifest(
 
     async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
         await cur.execute(
-            "SELECT id, work_date, photo_id, ocr_status, ocr_error, created_at FROM manifests WHERE id = %s",
+            "SELECT id, work_date, photo_id, ocr_status, ocr_error, cancelled_at, created_at FROM manifests WHERE id = %s",
             (manifest_id,),
         )
         manifest = await cur.fetchone()
@@ -122,12 +123,14 @@ async def reprocess_manifest(manifest_id: int, request: Request, driver=Depends(
     pool = get_pool(request)
     async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
         await cur.execute(
-            "SELECT id, photo_id, ocr_status FROM manifests WHERE id = %s AND driver_id = %s",
+            "SELECT id, photo_id, ocr_status, cancelled_at FROM manifests WHERE id = %s AND driver_id = %s",
             (manifest_id, driver["id"]),
         )
         manifest = await cur.fetchone()
     if manifest is None:
         raise HTTPException(status_code=404, detail="manifest not found")
+    if manifest["cancelled_at"] is not None:
+        raise HTTPException(status_code=409, detail="this manifest was cancelled — upload a new one instead")
     if manifest["ocr_status"] != "failed":
         raise HTTPException(
             status_code=409, detail="reprocess is only allowed after a failed OCR pass (jobs already exist otherwise)"
@@ -141,12 +144,56 @@ async def reprocess_manifest(manifest_id: int, request: Request, driver=Depends(
     return {"manifest_id": manifest_id, "jobs": jobs}
 
 
+@router.post("/manifests/{manifest_id}/cancel")
+async def cancel_manifest(manifest_id: int, request: Request, driver=Depends(get_current_driver)):
+    """Voids a wrongly-photographed/misread manifest so the driver can upload a fresh
+    one. Never deletes the row (dispute audit trail) and refuses once any job on it
+    has real check-in activity, to protect that same trail."""
+    pool = get_pool(request)
+    async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
+        await cur.execute(
+            "SELECT id, cancelled_at FROM manifests WHERE id = %s AND driver_id = %s",
+            (manifest_id, driver["id"]),
+        )
+        manifest = await cur.fetchone()
+        if manifest is None:
+            raise HTTPException(status_code=404, detail="manifest not found")
+        if manifest["cancelled_at"] is not None:
+            raise HTTPException(status_code=409, detail="this manifest is already cancelled")
+
+        await cur.execute(
+            "SELECT 1 FROM delivery_events de JOIN delivery_jobs dj ON dj.id = de.driver_selected_job_id "
+            "WHERE dj.manifest_id = %s LIMIT 1",
+            (manifest_id,),
+        )
+        if await cur.fetchone() is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="this manifest already has check-in activity and can't be cancelled — contact your admin",
+            )
+
+    async with pool.acquire() as conn, conn.cursor() as cur:
+        await cur.execute("UPDATE manifests SET cancelled_at = NOW() WHERE id = %s", (manifest_id,))
+        await cur.execute(
+            "UPDATE delivery_jobs SET status_code = 'cancelled' WHERE manifest_id = %s AND status_code = 'pending'",
+            (manifest_id,),
+        )
+
+    async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
+        await cur.execute(
+            "SELECT id, work_date, photo_id, ocr_status, ocr_error, cancelled_at, created_at FROM manifests WHERE id = %s",
+            (manifest_id,),
+        )
+        updated = await cur.fetchone()
+    return {"manifest": _serialize_manifest(updated)}
+
+
 @router.get("/manifests")
 async def list_manifests(request: Request, driver=Depends(get_current_driver)):
     pool = get_pool(request)
     async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
         await cur.execute(
-            "SELECT id, work_date, photo_id, ocr_status, ocr_error, created_at FROM manifests "
+            "SELECT id, work_date, photo_id, ocr_status, ocr_error, cancelled_at, created_at FROM manifests "
             "WHERE driver_id = %s ORDER BY work_date DESC, id DESC",
             (driver["id"],),
         )
@@ -159,7 +206,7 @@ async def get_manifest(manifest_id: int, request: Request, driver=Depends(get_cu
     pool = get_pool(request)
     async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
         await cur.execute(
-            "SELECT id, work_date, photo_id, ocr_status, ocr_error, created_at FROM manifests "
+            "SELECT id, work_date, photo_id, ocr_status, ocr_error, cancelled_at, created_at FROM manifests "
             "WHERE id = %s AND driver_id = %s",
             (manifest_id, driver["id"]),
         )
@@ -190,13 +237,15 @@ async def checkin(
 
     async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
         await cur.execute(
-            "SELECT dj.id, dj.manifest_id FROM delivery_jobs dj JOIN manifests m ON m.id = dj.manifest_id "
-            "WHERE dj.id = %s AND m.driver_id = %s",
+            "SELECT dj.id, dj.manifest_id, dj.status_code FROM delivery_jobs dj "
+            "JOIN manifests m ON m.id = dj.manifest_id WHERE dj.id = %s AND m.driver_id = %s",
             (job_id, driver["id"]),
         )
         job = await cur.fetchone()
         if job is None:
             raise HTTPException(status_code=404, detail="job not found")
+        if job["status_code"] == "cancelled":
+            raise HTTPException(status_code=409, detail="this job's manifest was cancelled")
 
         await cur.execute(
             "SELECT code, requires_photo, is_terminal_success, is_active FROM statuses WHERE code = %s",

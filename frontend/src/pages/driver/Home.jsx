@@ -19,7 +19,7 @@ export default function Home() {
       .catch((err) => setError(err.detail || "could not load manifests"));
   }, []);
 
-  const todayManifest = manifests?.find((m) => m.work_date === todayIso());
+  const todayManifest = manifests?.find((m) => m.work_date === todayIso() && !m.cancelled_at);
 
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-6">
@@ -66,14 +66,14 @@ export default function Home() {
             <p className="text-sm font-medium text-slate-700">Past manifests</p>
             <ul className="mt-2 space-y-2">
               {manifests
-                .filter((m) => m.work_date !== todayIso())
+                .filter((m) => m.work_date !== todayIso() || m.cancelled_at)
                 .map((m) => (
                   <li key={m.id}>
                     <Link
                       to={`/driver/manifests/${m.id}`}
                       className="block rounded-lg bg-white px-4 py-3 text-sm ring-1 ring-slate-200"
                     >
-                      {m.work_date} — {m.ocr_status}
+                      {m.work_date} — {m.cancelled_at ? "cancelled" : m.ocr_status}
                     </Link>
                   </li>
                 ))}

@@ -59,6 +59,45 @@
         }
       }
     },
+    "/api/auth/forgot-password": {
+      "post": {
+        "summary": "Request a password-reset link by email; always returns a generic response so the endpoint can't be used to enumerate accounts.",
+        "operationId": "forgotPassword",
+        "tags": ["auth"],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ForgotPasswordRequest" } } }
+        },
+        "responses": {
+          "200": {
+            "description": "Always returned, whether or not the email has an account.",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object", "properties": { "message": { "type": "string" } } }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/reset-password": {
+      "post": {
+        "summary": "Complete a password reset using the token from the emailed link, and log the driver in.",
+        "operationId": "resetPassword",
+        "tags": ["auth"],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ResetPasswordRequest" } } }
+        },
+        "responses": {
+          "200": {
+            "description": "Password updated; a fresh login JWT is issued.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AuthResponse" } } }
+          },
+          "400": { "description": "The reset link is invalid, already used, or expired." }
+        }
+      }
+    },
     "/api/manifests": {
       "post": {
         "summary": "Upload a photo of the day's delivery manifest; OCR-extracts it into a list of delivery jobs.",
@@ -166,7 +205,28 @@
             }
           },
           "404": { "description": "Manifest not found or photo missing." },
-          "409": { "description": "Reprocess is only allowed after a failed OCR pass." }
+          "409": { "description": "Reprocess is only allowed after a failed OCR pass, or the manifest was cancelled." }
+        }
+      }
+    },
+    "/api/manifests/{manifest_id}/cancel": {
+      "post": {
+        "summary": "Cancel a wrongly-photographed/misread manifest so the driver can upload a fresh one; refused once any of its jobs has check-in activity.",
+        "operationId": "cancelManifest",
+        "tags": ["driver"],
+        "security": [{ "driverBearer": [] }],
+        "parameters": [{ "name": "manifest_id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": {
+          "200": {
+            "description": "Manifest cancelled; its still-pending jobs are marked cancelled too.",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object", "properties": { "manifest": { "$ref": "#/components/schemas/Manifest" } } }
+              }
+            }
+          },
+          "404": { "description": "Manifest not found." },
+          "409": { "description": "Already cancelled, or has check-in activity and can't be cancelled." }
         }
       }
     },
@@ -201,6 +261,7 @@
             "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CheckinResult" } } }
           },
           "404": { "description": "Job not found." },
+          "409": { "description": "This job's manifest was cancelled." },
           "422": { "description": "Unknown/inactive status, or a required photo is missing." }
         }
       }
@@ -486,6 +547,16 @@
         "required": ["email", "password"],
         "properties": { "email": { "type": "string" }, "password": { "type": "string" } }
       },
+      "ForgotPasswordRequest": {
+        "type": "object",
+        "required": ["email"],
+        "properties": { "email": { "type": "string" } }
+      },
+      "ResetPasswordRequest": {
+        "type": "object",
+        "required": ["token", "new_password"],
+        "properties": { "token": { "type": "string" }, "new_password": { "type": "string" } }
+      },
       "ResolveEventRequest": {
         "type": "object",
         "required": ["job_id"],
@@ -518,7 +589,8 @@
           "photo_id": { "type": "integer" },
           "ocr_status": { "type": "string", "enum": ["pending", "done", "failed"] },
           "ocr_error": { "type": "string", "nullable": true },
-          "created_at": { "type": "string" }
+          "created_at": { "type": "string" },
+          "cancelled_at": { "type": "string", "nullable": true }
         }
       },
       "Job": {

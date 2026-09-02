@@ -2,11 +2,13 @@ import { lazy, Suspense } from "react";
 import { Navigate, Route, BrowserRouter as Router, Routes } from "react-router-dom";
 import { DriverAuthProvider } from "./auth/DriverAuthContext";
 import RequireDriver from "./auth/RequireDriver";
+import ForgotPassword from "./pages/driver/ForgotPassword";
 import Home from "./pages/driver/Home";
 import JobCheckin from "./pages/driver/JobCheckin";
 import Login from "./pages/driver/Login";
 import ManifestDetail from "./pages/driver/ManifestDetail";
 import ManifestUpload from "./pages/driver/ManifestUpload";
+import ResetPassword from "./pages/driver/ResetPassword";
 import Signup from "./pages/driver/Signup";
 
 // Admin subtree is lazy-loaded so the field-facing driver bundle stays small.
@@ -25,6 +27,8 @@ export default function App() {
 
           <Route path="/driver/login" element={<Login />} />
           <Route path="/driver/signup" element={<Signup />} />
+          <Route path="/driver/forgot-password" element={<ForgotPassword />} />
+          <Route path="/driver/reset-password" element={<ResetPassword />} />
           <Route
             path="/driver"
             element={

@@ -61,6 +61,9 @@ export default function Login() {
           {busy ? "Signing in…" : "Sign in"}
         </button>
 
+        <p className="mt-3 text-center text-sm">
+          <Link to="/driver/forgot-password" className="font-medium text-slate-600 underline">Forgot password?</Link>
+        </p>
         <p className="mt-4 text-center text-sm text-slate-500">
           No account? <Link to="/driver/signup" className="font-medium text-slate-900 underline">Sign up</Link>
         </p>

@@ -1,5 +1,7 @@
 """Driver auth (password + JWT) and admin auth (Google SSO header, allowlisted in `users`)."""
+import hashlib
 import os
+import secrets
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
@@ -9,6 +11,7 @@ from fastapi import HTTPException, Request
 from db import get_pool
 
 JWT_ALGORITHM = "HS256"
+RESET_TOKEN_TTL = timedelta(hours=1)
 
 
 def hash_password(password: str) -> str:
@@ -17,6 +20,19 @@ def hash_password(password: str) -> str:
 
 def verify_password(password: str, hashed: str) -> bool:
     return bcrypt.checkpw(password.encode("utf-8"), hashed.encode("utf-8"))
+
+
+def generate_reset_token() -> tuple[str, str, datetime]:
+    """Returns (raw_token_for_the_email_link, sha256_hex_for_the_db, expires_at).
+    Only the hash is ever stored -- a DB leak alone can't be used to reset a password."""
+    raw = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    expires_at = datetime.now(timezone.utc).replace(tzinfo=None) + RESET_TOKEN_TTL
+    return raw, token_hash, expires_at
+
+
+def hash_reset_token(raw: str) -> str:
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
 def create_token(user_id: int) -> str:

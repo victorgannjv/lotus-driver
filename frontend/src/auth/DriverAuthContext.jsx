@@ -29,6 +29,15 @@ export function DriverAuthProvider({ children }) {
     persist(token, user);
   }
 
+  async function forgotPassword(email) {
+    await api.post("/auth/forgot-password", { email });
+  }
+
+  async function resetPassword(resetToken, newPassword) {
+    const { token, user } = await api.post("/auth/reset-password", { token: resetToken, new_password: newPassword });
+    persist(token, user);
+  }
+
   function logout() {
     setToken(null);
     localStorage.removeItem("lotus_driver_user");
@@ -36,7 +45,7 @@ export function DriverAuthProvider({ children }) {
   }
 
   return (
-    <DriverAuthContext.Provider value={{ driver, ready, login, signup, logout }}>
+    <DriverAuthContext.Provider value={{ driver, ready, login, signup, forgotPassword, resetPassword, logout }}>
       {children}
     </DriverAuthContext.Provider>
   );
