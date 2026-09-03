@@ -1,7 +1,8 @@
 """Driver-facing endpoints: barcode-scan registration and completion. A barcode is
 an exact, unambiguous identifier, so scanning replaces manifest-photo OCR entirely --
-scan an order's barcode to register it at pickup, scan the same barcode again to mark
-it delivered. No more fuzzy matching, orphan review, or photo evidence."""
+scan an order's barcode to register it at pickup, scan the same barcode again at the
+delivery outcome (delivered, or failed with a reason). No more fuzzy matching, orphan
+review, or photo evidence."""
 from datetime import date, datetime, timezone
 
 from asyncmy.cursors import DictCursor
@@ -9,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from auth import get_current_driver
 from db import get_pool
-from schemas import ArrivalRequest, ScanRequest
+from schemas import ArrivalRequest, ScanFailRequest, ScanRequest
 
 router = APIRouter()
 
@@ -46,6 +47,7 @@ def _serialize_event(row: dict) -> dict:
         "occurred_at": str(row["occurred_at"]),
         "lat": float(row["lat"]) if row["lat"] is not None else None,
         "lng": float(row["lng"]) if row["lng"] is not None else None,
+        "failure_reason": row["failure_reason"],
     }
 
 
@@ -73,6 +75,31 @@ async def _get_or_create_todays_manifest(pool, driver_id: int) -> int:
             return row[0]
         await cur.execute("INSERT INTO manifests (driver_id, work_date) VALUES (%s, %s)", (driver_id, today))
         return cur.lastrowid
+
+
+async def _find_open_job(pool, driver_id: int, code: str) -> dict:
+    """Looks up the job a delivery-outcome scan refers to. 'registered' and
+    'failed' are both open to a new outcome (a driver can retry after a failed
+    attempt); 'delivered'/'cancelled' are terminal."""
+    async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
+        # A code may exist in more than one of the driver's past sessions in theory;
+        # the most recently registered one is the one they mean.
+        await cur.execute(
+            "SELECT dj.id, dj.status_code FROM delivery_jobs dj "
+            "JOIN manifests m ON m.id = dj.manifest_id "
+            "WHERE m.driver_id = %s AND dj.tracking_no = %s "
+            "ORDER BY dj.created_at DESC LIMIT 1",
+            (driver_id, code),
+        )
+        job = await cur.fetchone()
+
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"{code} hasn't been registered yet -- scan it in first")
+    if job["status_code"] == "delivered":
+        raise HTTPException(status_code=409, detail=f"{code} was already delivered")
+    if job["status_code"] == "cancelled":
+        raise HTTPException(status_code=409, detail=f"{code} was cancelled")
+    return job
 
 
 @router.post("/scans/register", status_code=201)
@@ -122,25 +149,7 @@ async def complete_scan(body: ScanRequest, request: Request, driver=Depends(get_
     if not code:
         raise HTTPException(status_code=422, detail="scanned code is empty")
     occurred_dt = _parse_occurred_at(body.occurred_at)
-
-    async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
-        # A code may exist in more than one of the driver's past sessions in theory;
-        # the most recently registered one is the one they mean.
-        await cur.execute(
-            "SELECT dj.id, dj.status_code FROM delivery_jobs dj "
-            "JOIN manifests m ON m.id = dj.manifest_id "
-            "WHERE m.driver_id = %s AND dj.tracking_no = %s "
-            "ORDER BY dj.created_at DESC LIMIT 1",
-            (driver["id"], code),
-        )
-        job = await cur.fetchone()
-
-    if job is None:
-        raise HTTPException(status_code=404, detail=f"{code} hasn't been registered yet -- scan it in first")
-    if job["status_code"] == "delivered":
-        raise HTTPException(status_code=409, detail=f"{code} was already delivered")
-    if job["status_code"] == "cancelled":
-        raise HTTPException(status_code=409, detail=f"{code} was cancelled")
+    job = await _find_open_job(pool, driver["id"], code)
 
     async with pool.acquire() as conn, conn.cursor() as cur:
         await cur.execute("UPDATE delivery_jobs SET status_code = 'delivered' WHERE id = %s", (job["id"],))
@@ -148,6 +157,29 @@ async def complete_scan(body: ScanRequest, request: Request, driver=Depends(get_
             "INSERT INTO delivery_events (job_id, driver_id, status_code, occurred_at, lat, lng) "
             "VALUES (%s, %s, 'delivered', %s, %s, %s)",
             (job["id"], driver["id"], occurred_dt, body.lat, body.lng),
+        )
+
+    return {"job_id": job["id"], "tracking_no": code}
+
+
+@router.post("/scans/fail", status_code=201)
+async def fail_scan(body: ScanFailRequest, request: Request, driver=Depends(get_current_driver)):
+    pool = get_pool(request)
+    code = body.code.strip()
+    if not code:
+        raise HTTPException(status_code=422, detail="scanned code is empty")
+    reason = body.reason.strip()
+    if not reason:
+        raise HTTPException(status_code=422, detail="a failure reason is required")
+    occurred_dt = _parse_occurred_at(body.occurred_at)
+    job = await _find_open_job(pool, driver["id"], code)
+
+    async with pool.acquire() as conn, conn.cursor() as cur:
+        await cur.execute("UPDATE delivery_jobs SET status_code = 'failed' WHERE id = %s", (job["id"],))
+        await cur.execute(
+            "INSERT INTO delivery_events (job_id, driver_id, status_code, occurred_at, lat, lng, failure_reason) "
+            "VALUES (%s, %s, 'failed', %s, %s, %s, %s)",
+            (job["id"], driver["id"], occurred_dt, body.lat, body.lng, reason),
         )
 
     return {"job_id": job["id"], "tracking_no": code}
@@ -203,13 +235,13 @@ async def cancel_manifest(manifest_id: int, request: Request, driver=Depends(get
             raise HTTPException(status_code=409, detail="this session is already cancelled")
 
         await cur.execute(
-            "SELECT 1 FROM delivery_jobs WHERE manifest_id = %s AND status_code = 'delivered' LIMIT 1",
+            "SELECT 1 FROM delivery_jobs WHERE manifest_id = %s AND status_code IN ('delivered', 'failed') LIMIT 1",
             (manifest_id,),
         )
         if await cur.fetchone() is not None:
             raise HTTPException(
                 status_code=409,
-                detail="this session already has completed deliveries and can't be cancelled — contact your admin",
+                detail="this session already has delivery attempts and can't be cancelled — contact your admin",
             )
 
     async with pool.acquire() as conn, conn.cursor() as cur:
@@ -259,7 +291,8 @@ async def list_job_events(job_id: int, request: Request, driver=Depends(get_curr
         if await cur.fetchone() is None:
             raise HTTPException(status_code=404, detail="job not found")
         await cur.execute(
-            "SELECT id, status_code, occurred_at, lat, lng FROM delivery_events WHERE job_id = %s ORDER BY occurred_at",
+            "SELECT id, status_code, occurred_at, lat, lng, failure_reason FROM delivery_events "
+            "WHERE job_id = %s ORDER BY occurred_at",
             (job_id,),
         )
         events = await cur.fetchall()

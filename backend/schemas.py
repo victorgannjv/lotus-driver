@@ -40,3 +40,11 @@ class ArrivalRequest(BaseModel):
     lat: float | None = None
     lng: float | None = None
     occurred_at: str | None = None
+
+
+class ScanFailRequest(BaseModel):
+    code: str
+    reason: str
+    lat: float | None = None
+    lng: float | None = None
+    occurred_at: str | None = None

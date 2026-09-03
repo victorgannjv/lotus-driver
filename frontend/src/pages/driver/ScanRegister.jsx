@@ -30,11 +30,11 @@ export default function ScanRegister() {
       setManifestId(res.manifest_id);
       const message = res.already_registered ? "Already registered" : "Registered";
       setLog((l) => [{ code, ok: true, message }, ...l]);
-      setResult({ code, ok: true, message });
+      setResult({ code, tone: "success", message });
     } catch (err) {
       const message = err.detail || "Failed";
       setLog((l) => [{ code, ok: false, message }, ...l]);
-      setResult({ code, ok: false, message });
+      setResult({ code, tone: "error", message });
     } finally {
       setBusy(false);
     }

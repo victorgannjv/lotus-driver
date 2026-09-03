@@ -60,6 +60,7 @@ export default function JobDetail() {
             <p className="mt-1 text-xs text-slate-500">
               {ev.lat != null ? `GPS: ${ev.lat.toFixed(5)}, ${ev.lng.toFixed(5)}` : "No GPS recorded"}
             </p>
+            {ev.failure_reason && <p className="mt-1 text-xs text-amber-700">Reason: {ev.failure_reason}</p>}
           </li>
         ))}
         {events.length === 0 && <p className="text-sm text-slate-500">No events logged for this job yet.</p>}

@@ -7,6 +7,7 @@ import { getPosition } from "../../lib/geolocation";
 const STATUS_STYLES = {
   registered: "bg-slate-100 text-slate-700",
   delivered: "bg-emerald-100 text-emerald-800",
+  failed: "bg-amber-100 text-amber-800",
   cancelled: "bg-slate-100 text-slate-500",
 };
 

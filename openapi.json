@@ -139,6 +139,27 @@
         }
       }
     },
+    "/api/scans/fail": {
+      "post": {
+        "summary": "Mark a delivery attempt failed by scanning the barcode, with a required reason; logs a failed event with timestamp + GPS + reason.",
+        "operationId": "failScan",
+        "tags": ["driver"],
+        "security": [{ "driverBearer": [] }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ScanFailRequest" } } }
+        },
+        "responses": {
+          "201": {
+            "description": "Marked failed.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ScanCompleteResult" } } }
+          },
+          "404": { "description": "That code hasn't been registered yet." },
+          "409": { "description": "That code was already delivered or was cancelled." },
+          "422": { "description": "Scanned code is empty, or reason is empty." }
+        }
+      }
+    },
     "/api/warehouse-arrival": {
       "post": {
         "summary": "Record the driver's warehouse-arrival time for today (first call of the day wins; later calls are a no-op).",
@@ -504,6 +525,17 @@
           "occurred_at": { "type": "string", "format": "date-time", "nullable": true, "description": "ISO 8601; defaults to server time if omitted." }
         }
       },
+      "ScanFailRequest": {
+        "type": "object",
+        "required": ["code", "reason"],
+        "properties": {
+          "code": { "type": "string", "description": "The decoded barcode value." },
+          "reason": { "type": "string", "description": "Why the delivery attempt failed." },
+          "lat": { "type": "number", "nullable": true },
+          "lng": { "type": "number", "nullable": true },
+          "occurred_at": { "type": "string", "format": "date-time", "nullable": true, "description": "ISO 8601; defaults to server time if omitted." }
+        }
+      },
       "AuthResponse": {
         "type": "object",
         "properties": {
@@ -551,7 +583,7 @@
         "properties": {
           "id": { "type": "integer" },
           "tracking_no": { "type": "string" },
-          "status_code": { "type": "string", "enum": ["registered", "delivered", "cancelled"] },
+          "status_code": { "type": "string", "enum": ["registered", "delivered", "failed", "cancelled"] },
           "created_at": { "type": "string" }
         }
       },
@@ -573,7 +605,7 @@
         "properties": {
           "id": { "type": "integer" },
           "tracking_no": { "type": "string" },
-          "status_code": { "type": "string", "enum": ["registered", "delivered", "cancelled"] },
+          "status_code": { "type": "string", "enum": ["registered", "delivered", "failed", "cancelled"] },
           "created_at": { "type": "string" },
           "manifest_id": { "type": "integer" },
           "work_date": { "type": "string", "format": "date" },
@@ -587,10 +619,11 @@
         "type": "object",
         "properties": {
           "id": { "type": "integer" },
-          "status_code": { "type": "string", "enum": ["registered", "delivered"] },
+          "status_code": { "type": "string", "enum": ["registered", "delivered", "failed"] },
           "occurred_at": { "type": "string" },
           "lat": { "type": "number", "nullable": true },
-          "lng": { "type": "number", "nullable": true }
+          "lng": { "type": "number", "nullable": true },
+          "failure_reason": { "type": "string", "nullable": true }
         }
       },
       "AdminEvent": {
@@ -599,10 +632,11 @@
           "id": { "type": "integer" },
           "job_id": { "type": "integer" },
           "driver_id": { "type": "integer" },
-          "status_code": { "type": "string", "enum": ["registered", "delivered"] },
+          "status_code": { "type": "string", "enum": ["registered", "delivered", "failed"] },
           "occurred_at": { "type": "string" },
           "lat": { "type": "number", "nullable": true },
-          "lng": { "type": "number", "nullable": true }
+          "lng": { "type": "number", "nullable": true },
+          "failure_reason": { "type": "string", "nullable": true }
         }
       },
       "Status": {
