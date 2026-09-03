@@ -1,8 +1,5 @@
 fastapi>=0.115
 uvicorn[standard]>=0.32
 asyncmy>=0.2.9          # OceanBase / MySQL-wire driver (NOT asyncpg/Postgres)
-python-multipart>=0.0.12  # required by FastAPI to parse multipart/form-data (photo uploads)
 pyjwt>=2.9              # driver auth: sign/verify JWTs with JWT_SECRET
 bcrypt>=4.2              # driver auth: password hashing
-anthropic>=0.39          # Claude vision OCR for manifest photos and delivery order slips
-Pillow>=10.4             # server-side photo re-encode / EXIF-orientation safety net

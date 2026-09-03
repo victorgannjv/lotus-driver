@@ -106,7 +106,7 @@ async def get_current_admin(request: Request) -> dict:
 
 async def get_current_user_any(request: Request) -> dict:
     """Accepts either a driver JWT or an admin SSO header — for endpoints both
-    surfaces call (GET /api/statuses, GET /api/photos/{id})."""
+    surfaces call (GET /api/statuses)."""
     if request.headers.get("authorization", "").startswith("Bearer "):
         return await get_current_driver(request)
     return await get_current_admin(request)

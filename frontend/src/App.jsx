@@ -4,19 +4,20 @@ import { DriverAuthProvider } from "./auth/DriverAuthContext";
 import RequireDriver from "./auth/RequireDriver";
 import ForgotPassword from "./pages/driver/ForgotPassword";
 import Home from "./pages/driver/Home";
-import JobCheckin from "./pages/driver/JobCheckin";
 import Login from "./pages/driver/Login";
 import ManifestDetail from "./pages/driver/ManifestDetail";
-import ManifestUpload from "./pages/driver/ManifestUpload";
 import ResetPassword from "./pages/driver/ResetPassword";
 import Signup from "./pages/driver/Signup";
 
-// Admin subtree is lazy-loaded so the field-facing driver bundle stays small.
+// Admin subtree is lazy-loaded so the field-facing driver bundle stays small. The
+// scan pages pull in the (~450KB) barcode-scanning library, so they're lazy too --
+// no reason to make every driver download that just to sign in or check history.
 const AdminGate = lazy(() => import("./pages/admin/Gate"));
 const AdminDrivers = lazy(() => import("./pages/admin/Drivers"));
 const AdminJobs = lazy(() => import("./pages/admin/Jobs"));
 const AdminJobDetail = lazy(() => import("./pages/admin/JobDetail"));
-const AdminReviewQueue = lazy(() => import("./pages/admin/ReviewQueue"));
+const ScanRegister = lazy(() => import("./pages/driver/ScanRegister"));
+const ScanComplete = lazy(() => import("./pages/driver/ScanComplete"));
 
 export default function App() {
   return (
@@ -38,10 +39,22 @@ export default function App() {
             }
           />
           <Route
-            path="/driver/manifests/new"
+            path="/driver/scans/register"
             element={
               <RequireDriver>
-                <ManifestUpload />
+                <Suspense fallback={null}>
+                  <ScanRegister />
+                </Suspense>
+              </RequireDriver>
+            }
+          />
+          <Route
+            path="/driver/scans/complete"
+            element={
+              <RequireDriver>
+                <Suspense fallback={null}>
+                  <ScanComplete />
+                </Suspense>
               </RequireDriver>
             }
           />
@@ -50,14 +63,6 @@ export default function App() {
             element={
               <RequireDriver>
                 <ManifestDetail />
-              </RequireDriver>
-            }
-          />
-          <Route
-            path="/driver/jobs/:jobId/checkin"
-            element={
-              <RequireDriver>
-                <JobCheckin />
               </RequireDriver>
             }
           />
@@ -74,7 +79,6 @@ export default function App() {
             <Route path="jobs" element={<AdminJobs />} />
             <Route path="jobs/:jobId" element={<AdminJobDetail />} />
             <Route path="drivers" element={<AdminDrivers />} />
-            <Route path="review" element={<AdminReviewQueue />} />
           </Route>
         </Routes>
       </DriverAuthProvider>

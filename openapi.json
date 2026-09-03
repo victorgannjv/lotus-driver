@@ -2,8 +2,8 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Lotus Driver Tracking System",
-    "description": "Backend for driver signup/login, manifest photo OCR, GPS-logged delivery check-ins with OCR-matched delivery-order slips, and an SSO-gated admin dashboard for reviewing driver activity.",
-    "version": "1.0.0"
+    "description": "Backend for driver signup/login, barcode-scan order registration and delivery completion (GPS + timestamp logged per scan), and an SSO-gated admin dashboard for reviewing driver activity.",
+    "version": "2.0.0"
   },
   "paths": {
     "/health": {
@@ -98,52 +98,56 @@
         }
       }
     },
-    "/api/manifests": {
+    "/api/scans/register": {
       "post": {
-        "summary": "Upload a photo of the day's delivery manifest; OCR-extracts it into a list of delivery jobs.",
-        "operationId": "uploadManifest",
+        "summary": "Register an order by its scanned barcode at pickup; creates today's scan session on first use and creates the job on first scan of that code (a repeat scan is a no-op, not an error).",
+        "operationId": "registerScan",
         "tags": ["driver"],
         "security": [{ "driverBearer": [] }],
         "requestBody": {
           "required": true,
-          "content": {
-            "multipart/form-data": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "file": { "type": "string", "format": "binary", "description": "Photo of the manifest." },
-                  "work_date": { "type": "string", "format": "date", "description": "Defaults to today if omitted." }
-                },
-                "required": ["file"]
-              }
-            }
-          }
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ScanRequest" } } }
         },
         "responses": {
           "201": {
-            "description": "Manifest stored and OCR run (jobs list may be empty if OCR failed; see manifest.ocr_status).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "manifest": { "$ref": "#/components/schemas/Manifest" },
-                    "jobs": { "type": "array", "items": { "$ref": "#/components/schemas/Job" } }
-                  }
-                }
-              }
-            }
-          }
+            "description": "Registered (or already was).",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ScanRegisterResult" } } }
+          },
+          "409": { "description": "That code was already delivered or was cancelled." },
+          "422": { "description": "Scanned code is empty." }
         }
-      },
+      }
+    },
+    "/api/scans/complete": {
+      "post": {
+        "summary": "Mark an order delivered by scanning the same barcode again; logs a delivered event with timestamp + GPS.",
+        "operationId": "completeScan",
+        "tags": ["driver"],
+        "security": [{ "driverBearer": [] }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ScanRequest" } } }
+        },
+        "responses": {
+          "201": {
+            "description": "Marked delivered.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ScanCompleteResult" } } }
+          },
+          "404": { "description": "That code hasn't been registered yet." },
+          "409": { "description": "That code was already delivered or was cancelled." },
+          "422": { "description": "Scanned code is empty." }
+        }
+      }
+    },
+    "/api/manifests": {
       "get": {
-        "summary": "List the current driver's manifests, most recent work date first.",
+        "summary": "List the current driver's scan sessions, most recent work date first.",
         "operationId": "listManifests",
         "tags": ["driver"],
         "security": [{ "driverBearer": [] }],
         "responses": {
           "200": {
-            "description": "Manifest list.",
+            "description": "Session list.",
             "content": {
               "application/json": {
                 "schema": {
@@ -158,14 +162,14 @@
     },
     "/api/manifests/{manifest_id}": {
       "get": {
-        "summary": "Get one manifest belonging to the current driver, with its parsed delivery jobs.",
+        "summary": "Get one scan session belonging to the current driver, with its registered/delivered jobs.",
         "operationId": "getManifest",
         "tags": ["driver"],
         "security": [{ "driverBearer": [] }],
         "parameters": [{ "name": "manifest_id", "in": "path", "required": true, "schema": { "type": "integer" } }],
         "responses": {
           "200": {
-            "description": "Manifest and its jobs.",
+            "description": "Session and its jobs.",
             "content": {
               "application/json": {
                 "schema": {
@@ -178,97 +182,34 @@
               }
             }
           },
-          "404": { "description": "Manifest not found." }
-        }
-      }
-    },
-    "/api/manifests/{manifest_id}/reprocess": {
-      "post": {
-        "summary": "Re-run OCR on a manifest photo after a previously failed OCR pass.",
-        "operationId": "reprocessManifest",
-        "tags": ["driver"],
-        "security": [{ "driverBearer": [] }],
-        "parameters": [{ "name": "manifest_id", "in": "path", "required": true, "schema": { "type": "integer" } }],
-        "responses": {
-          "200": {
-            "description": "OCR re-run and jobs (re)created.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "manifest_id": { "type": "integer" },
-                    "jobs": { "type": "array", "items": { "$ref": "#/components/schemas/Job" } }
-                  }
-                }
-              }
-            }
-          },
-          "404": { "description": "Manifest not found or photo missing." },
-          "409": { "description": "Reprocess is only allowed after a failed OCR pass, or the manifest was cancelled." }
+          "404": { "description": "Session not found." }
         }
       }
     },
     "/api/manifests/{manifest_id}/cancel": {
       "post": {
-        "summary": "Cancel a wrongly-photographed/misread manifest so the driver can upload a fresh one; refused once any of its jobs has check-in activity.",
+        "summary": "Cancel a scan session (e.g. the wrong load got scanned in) so the driver can start clean; refused once any of its jobs has been delivered.",
         "operationId": "cancelManifest",
         "tags": ["driver"],
         "security": [{ "driverBearer": [] }],
         "parameters": [{ "name": "manifest_id", "in": "path", "required": true, "schema": { "type": "integer" } }],
         "responses": {
           "200": {
-            "description": "Manifest cancelled; its still-pending jobs are marked cancelled too.",
+            "description": "Session cancelled; its still-registered jobs are marked cancelled too.",
             "content": {
               "application/json": {
                 "schema": { "type": "object", "properties": { "manifest": { "$ref": "#/components/schemas/Manifest" } } }
               }
             }
           },
-          "404": { "description": "Manifest not found." },
-          "409": { "description": "Already cancelled, or has check-in activity and can't be cancelled." }
-        }
-      }
-    },
-    "/api/jobs/{job_id}/checkins": {
-      "post": {
-        "summary": "Log a status check-in for a delivery job (timestamp + GPS captured server-side); Delivered check-ins require a photo of the delivery-order slip, which is OCR-matched back to the manifest.",
-        "operationId": "checkin",
-        "tags": ["driver"],
-        "security": [{ "driverBearer": [] }],
-        "parameters": [{ "name": "job_id", "in": "path", "required": true, "schema": { "type": "integer" } }],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "multipart/form-data": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "status_code": { "type": "string", "description": "One of the codes from GET /api/statuses (e.g. arrived, delivered, failed)." },
-                  "lat": { "type": "number", "format": "float" },
-                  "lng": { "type": "number", "format": "float" },
-                  "occurred_at": { "type": "string", "format": "date-time", "description": "ISO 8601; defaults to server time if omitted." },
-                  "photo": { "type": "string", "format": "binary", "description": "Required for statuses that require_photo (e.g. Delivered)." }
-                },
-                "required": ["status_code"]
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Check-in recorded.",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CheckinResult" } } }
-          },
-          "404": { "description": "Job not found." },
-          "409": { "description": "This job's manifest was cancelled." },
-          "422": { "description": "Unknown/inactive status, or a required photo is missing." }
+          "404": { "description": "Session not found." },
+          "409": { "description": "Already cancelled, or has completed deliveries and can't be cancelled." }
         }
       }
     },
     "/api/jobs/{job_id}/events": {
       "get": {
-        "summary": "List the chronological check-in events for one of the current driver's jobs.",
+        "summary": "List the chronological scan events (registered, delivered) for one of the current driver's jobs.",
         "operationId": "listJobEvents",
         "tags": ["driver"],
         "security": [{ "driverBearer": [] }],
@@ -314,7 +255,7 @@
     },
     "/api/statuses": {
       "get": {
-        "summary": "List the active check-in status codes (e.g. arrived, delivered, failed) drivers can choose from.",
+        "summary": "List the active job status codes (registered, delivered, cancelled).",
         "operationId": "listStatuses",
         "tags": ["common"],
         "security": [{ "driverBearer": [] }, { "adminSSO": [] }],
@@ -330,20 +271,6 @@
               }
             }
           }
-        }
-      }
-    },
-    "/api/photos/{photo_id}": {
-      "get": {
-        "summary": "Fetch a stored photo's raw bytes (manifest photo or delivery-order slip); drivers may only fetch their own uploads, admins may fetch any.",
-        "operationId": "getPhoto",
-        "tags": ["common"],
-        "security": [{ "driverBearer": [] }, { "adminSSO": [] }],
-        "parameters": [{ "name": "photo_id", "in": "path", "required": true, "schema": { "type": "integer" } }],
-        "responses": {
-          "200": { "description": "Raw image bytes.", "content": { "image/jpeg": { "schema": { "type": "string", "format": "binary" } } } },
-          "403": { "description": "Not your photo." },
-          "404": { "description": "Photo not found." }
         }
       }
     },
@@ -370,13 +297,12 @@
     },
     "/api/admin/jobs": {
       "get": {
-        "summary": "List delivery jobs across all drivers, filterable by status, review flag, driver, manifest and date range.",
+        "summary": "List delivery jobs across all drivers, filterable by status, driver, session and date range.",
         "operationId": "adminListJobs",
         "tags": ["admin"],
         "security": [{ "adminSSO": [] }],
         "parameters": [
           { "name": "status", "in": "query", "schema": { "type": "string" } },
-          { "name": "needs_review", "in": "query", "schema": { "type": "boolean" } },
           { "name": "driver_id", "in": "query", "schema": { "type": "integer" } },
           { "name": "manifest_id", "in": "query", "schema": { "type": "integer" } },
           { "name": "date_from", "in": "query", "schema": { "type": "string", "format": "date" } },
@@ -405,7 +331,7 @@
     },
     "/api/admin/jobs/{job_id}": {
       "get": {
-        "summary": "Get full detail for one delivery job, including its manifest, driver and raw OCR data.",
+        "summary": "Get full detail for one delivery job, including its session and driver.",
         "operationId": "adminGetJob",
         "tags": ["admin"],
         "security": [{ "adminSSO": [] }],
@@ -425,7 +351,7 @@
     },
     "/api/admin/jobs/{job_id}/events": {
       "get": {
-        "summary": "Get the full chronological check-in event log for a job (timestamp, status, GPS, photo, OCR match info).",
+        "summary": "Get the full chronological scan-event log for a job (timestamp, status, GPS).",
         "operationId": "adminGetJobEvents",
         "tags": ["admin"],
         "security": [{ "adminSSO": [] }],
@@ -443,49 +369,6 @@
             }
           },
           "404": { "description": "Job not found." }
-        }
-      }
-    },
-    "/api/admin/events/orphans": {
-      "get": {
-        "summary": "List Delivered check-in events the OCR matcher could not confidently link to a manifest job, awaiting manual resolution.",
-        "operationId": "adminListOrphanEvents",
-        "tags": ["admin"],
-        "security": [{ "adminSSO": [] }],
-        "responses": {
-          "200": {
-            "description": "Orphan event list, most recent first.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": { "events": { "type": "array", "items": { "$ref": "#/components/schemas/OrphanEvent" } } }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/admin/events/{event_id}/resolve": {
-      "post": {
-        "summary": "Manually link an orphaned Delivered check-in event to the correct manifest job.",
-        "operationId": "adminResolveEvent",
-        "tags": ["admin"],
-        "security": [{ "adminSSO": [] }],
-        "parameters": [{ "name": "event_id", "in": "path", "required": true, "schema": { "type": "integer" } }],
-        "requestBody": {
-          "required": true,
-          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ResolveEventRequest" } } }
-        },
-        "responses": {
-          "200": {
-            "description": "Event resolved.",
-            "content": { "application/json": { "schema": { "type": "object", "properties": { "ok": { "type": "boolean" } } } } }
-          },
-          "400": { "description": "Target job must be on the same manifest as the check-in." },
-          "404": { "description": "Event or target job not found." },
-          "409": { "description": "Event is not pending review." }
         }
       }
     },
@@ -557,15 +440,20 @@
         "required": ["token", "new_password"],
         "properties": { "token": { "type": "string" }, "new_password": { "type": "string" } }
       },
-      "ResolveEventRequest": {
-        "type": "object",
-        "required": ["job_id"],
-        "properties": { "job_id": { "type": "integer" } }
-      },
       "AddAdminRequest": {
         "type": "object",
         "required": ["email", "name"],
         "properties": { "email": { "type": "string" }, "name": { "type": "string" } }
+      },
+      "ScanRequest": {
+        "type": "object",
+        "required": ["code"],
+        "properties": {
+          "code": { "type": "string", "description": "The decoded barcode value." },
+          "lat": { "type": "number", "nullable": true },
+          "lng": { "type": "number", "nullable": true },
+          "occurred_at": { "type": "string", "format": "date-time", "nullable": true, "description": "ISO 8601; defaults to server time if omitted." }
+        }
       },
       "AuthResponse": {
         "type": "object",
@@ -581,27 +469,37 @@
           }
         }
       },
+      "ScanRegisterResult": {
+        "type": "object",
+        "properties": {
+          "job_id": { "type": "integer" },
+          "manifest_id": { "type": "integer" },
+          "tracking_no": { "type": "string" },
+          "already_registered": { "type": "boolean" }
+        }
+      },
+      "ScanCompleteResult": {
+        "type": "object",
+        "properties": {
+          "job_id": { "type": "integer" },
+          "tracking_no": { "type": "string" }
+        }
+      },
       "Manifest": {
         "type": "object",
         "properties": {
           "id": { "type": "integer" },
           "work_date": { "type": "string", "format": "date" },
-          "photo_id": { "type": "integer" },
-          "ocr_status": { "type": "string", "enum": ["pending", "done", "failed"] },
-          "ocr_error": { "type": "string", "nullable": true },
-          "created_at": { "type": "string" },
-          "cancelled_at": { "type": "string", "nullable": true }
+          "cancelled_at": { "type": "string", "nullable": true },
+          "created_at": { "type": "string" }
         }
       },
       "Job": {
         "type": "object",
         "properties": {
           "id": { "type": "integer" },
-          "tracking_no": { "type": "string", "nullable": true },
-          "recipient_name": { "type": "string", "nullable": true },
-          "address": { "type": "string", "nullable": true },
-          "status_code": { "type": "string" },
-          "needs_review": { "type": "boolean" },
+          "tracking_no": { "type": "string" },
+          "status_code": { "type": "string", "enum": ["registered", "delivered", "cancelled"] },
           "created_at": { "type": "string" }
         }
       },
@@ -622,16 +520,11 @@
         "type": "object",
         "properties": {
           "id": { "type": "integer" },
-          "tracking_no": { "type": "string", "nullable": true },
-          "recipient_name": { "type": "string", "nullable": true },
-          "address": { "type": "string", "nullable": true },
-          "status_code": { "type": "string" },
-          "needs_review": { "type": "boolean" },
+          "tracking_no": { "type": "string" },
+          "status_code": { "type": "string", "enum": ["registered", "delivered", "cancelled"] },
           "created_at": { "type": "string" },
-          "raw_ocr_json": { "type": "string", "nullable": true, "description": "Raw JSON of the OCR-extracted job fields." },
           "manifest_id": { "type": "integer" },
           "work_date": { "type": "string", "format": "date" },
-          "manifest_photo_id": { "type": "integer" },
           "driver_id": { "type": "integer" },
           "driver_name": { "type": "string" },
           "driver_email": { "type": "string" }
@@ -641,57 +534,22 @@
         "type": "object",
         "properties": {
           "id": { "type": "integer" },
-          "status_code": { "type": "string" },
+          "status_code": { "type": "string", "enum": ["registered", "delivered"] },
           "occurred_at": { "type": "string" },
           "lat": { "type": "number", "nullable": true },
-          "lng": { "type": "number", "nullable": true },
-          "photo_id": { "type": "integer", "nullable": true },
-          "match_type": { "type": "string", "enum": ["exact", "fuzzy", "n_a", "none"] },
-          "needs_review": { "type": "boolean" }
+          "lng": { "type": "number", "nullable": true }
         }
       },
       "AdminEvent": {
         "type": "object",
         "properties": {
           "id": { "type": "integer" },
-          "driver_selected_job_id": { "type": "integer", "description": "The job the driver was checking in against." },
-          "job_id": { "type": "integer", "nullable": true, "description": "The job actually resolved/matched by OCR (or admin resolution); null while needs_review." },
+          "job_id": { "type": "integer" },
           "driver_id": { "type": "integer" },
-          "status_code": { "type": "string" },
+          "status_code": { "type": "string", "enum": ["registered", "delivered"] },
           "occurred_at": { "type": "string" },
           "lat": { "type": "number", "nullable": true },
-          "lng": { "type": "number", "nullable": true },
-          "photo_id": { "type": "integer", "nullable": true },
-          "ocr_candidate_text": { "type": "string", "nullable": true },
-          "match_type": { "type": "string", "enum": ["exact", "fuzzy", "n_a", "none"] },
-          "needs_review": { "type": "boolean" },
-          "resolved_by": { "type": "integer", "nullable": true },
-          "resolved_at": { "type": "string", "nullable": true }
-        }
-      },
-      "OrphanEvent": {
-        "type": "object",
-        "properties": {
-          "id": { "type": "integer" },
-          "driver_selected_job_id": { "type": "integer" },
-          "manifest_id": { "type": "integer" },
-          "driver_id": { "type": "integer" },
-          "driver_name": { "type": "string" },
-          "status_code": { "type": "string" },
-          "occurred_at": { "type": "string" },
-          "photo_id": { "type": "integer", "nullable": true },
-          "ocr_candidate_text": { "type": "string", "nullable": true },
-          "tapped_tracking_no": { "type": "string", "nullable": true },
-          "work_date": { "type": "string", "format": "date" }
-        }
-      },
-      "CheckinResult": {
-        "type": "object",
-        "properties": {
-          "event_id": { "type": "integer" },
-          "matched_job_id": { "type": "integer", "nullable": true },
-          "match_type": { "type": "string", "enum": ["exact", "fuzzy", "n_a", "none"] },
-          "needs_review": { "type": "boolean" }
+          "lng": { "type": "number", "nullable": true }
         }
       },
       "Status": {
@@ -699,7 +557,6 @@
         "properties": {
           "code": { "type": "string" },
           "label": { "type": "string" },
-          "requires_photo": { "type": "boolean" },
           "is_terminal_success": { "type": "boolean" }
         }
       },

@@ -1,5 +1,5 @@
-"""Pydantic request models for the JSON endpoints. Multipart endpoints (photo
-uploads, check-ins) take their fields via FastAPI Form/UploadFile params instead."""
+"""Pydantic request models for the JSON endpoints. Every endpoint here is JSON --
+scanning replaced the old photo-upload flow, so there's no more multipart/form-data."""
 from pydantic import BaseModel
 
 
@@ -24,10 +24,13 @@ class ResetPasswordRequest(BaseModel):
     new_password: str
 
 
-class ResolveEventRequest(BaseModel):
-    job_id: int
-
-
 class AddAdminRequest(BaseModel):
     email: str
     name: str
+
+
+class ScanRequest(BaseModel):
+    code: str
+    lat: float | None = None
+    lng: float | None = None
+    occurred_at: str | None = None

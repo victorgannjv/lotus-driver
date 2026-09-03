@@ -1,17 +1,15 @@
-"""Driver-facing endpoints: manifest upload+OCR, and the check-in flow that logs
-every status change with timestamp/GPS/photo and auto-matches Delivered check-ins
-back to a manifest job via OCR of the delivery-order slip."""
-import json
+"""Driver-facing endpoints: barcode-scan registration and completion. A barcode is
+an exact, unambiguous identifier, so scanning replaces manifest-photo OCR entirely --
+scan an order's barcode to register it at pickup, scan the same barcode again to mark
+it delivered. No more fuzzy matching, orphan review, or photo evidence."""
 from datetime import date, datetime, timezone
 
 from asyncmy.cursors import DictCursor
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from auth import get_current_driver
 from db import get_pool
-from matching import match_job
-from ocr import extract_do_identifier, extract_manifest
-from photos import fetch_photo, store_photo
+from schemas import ScanRequest
 
 router = APIRouter()
 
@@ -20,11 +18,8 @@ def _serialize_manifest(row: dict) -> dict:
     return {
         "id": row["id"],
         "work_date": str(row["work_date"]),
-        "photo_id": row["photo_id"],
-        "ocr_status": row["ocr_status"],
-        "ocr_error": row["ocr_error"],
-        "created_at": str(row["created_at"]),
         "cancelled_at": str(row["cancelled_at"]) if row["cancelled_at"] else None,
+        "created_at": str(row["created_at"]),
     }
 
 
@@ -32,10 +27,7 @@ def _serialize_job(row: dict) -> dict:
     return {
         "id": row["id"],
         "tracking_no": row["tracking_no"],
-        "recipient_name": row["recipient_name"],
-        "address": row["address"],
         "status_code": row["status_code"],
-        "needs_review": bool(row["needs_review"]),
         "created_at": str(row["created_at"]),
     }
 
@@ -47,9 +39,6 @@ def _serialize_event(row: dict) -> dict:
         "occurred_at": str(row["occurred_at"]),
         "lat": float(row["lat"]) if row["lat"] is not None else None,
         "lng": float(row["lng"]) if row["lng"] is not None else None,
-        "photo_id": row["photo_id"],
-        "match_type": row["match_type"],
-        "needs_review": bool(row["needs_review"]),
     }
 
 
@@ -65,127 +54,96 @@ def _parse_occurred_at(value: str | None) -> datetime:
     return dt
 
 
-async def _persist_ocr_jobs(pool, manifest_id: int, ocr_result: dict) -> list[dict]:
-    jobs_data = ocr_result.get("jobs", [])
-    error = ocr_result.get("error")
-    ocr_status = "failed" if error or not jobs_data else "done"
+async def _get_or_create_todays_manifest(pool, driver_id: int) -> int:
+    today = date.today().isoformat()
     async with pool.acquire() as conn, conn.cursor() as cur:
         await cur.execute(
-            "UPDATE manifests SET ocr_status = %s, ocr_error = %s, ocr_raw_response = %s WHERE id = %s",
-            (ocr_status, error, ocr_result.get("raw"), manifest_id),
+            "SELECT id FROM manifests WHERE driver_id = %s AND work_date = %s AND cancelled_at IS NULL",
+            (driver_id, today),
         )
-        created = []
-        for job in jobs_data:
-            await cur.execute(
-                "INSERT INTO delivery_jobs (manifest_id, tracking_no, recipient_name, address, raw_ocr_json, status_code) "
-                "VALUES (%s, %s, %s, %s, %s, 'pending')",
-                (manifest_id, job.get("tracking_no"), job.get("recipient_name"), job.get("address"), json.dumps(job)),
-            )
-            created.append({"id": cur.lastrowid, **job, "status_code": "pending"})
-    return created
+        row = await cur.fetchone()
+        if row:
+            return row[0]
+        await cur.execute("INSERT INTO manifests (driver_id, work_date) VALUES (%s, %s)", (driver_id, today))
+        return cur.lastrowid
 
 
-@router.post("/manifests", status_code=201)
-async def upload_manifest(
-    request: Request,
-    file: UploadFile = File(...),
-    work_date: str | None = Form(None),
-    driver=Depends(get_current_driver),
-):
+@router.post("/scans/register", status_code=201)
+async def register_scan(body: ScanRequest, request: Request, driver=Depends(get_current_driver)):
     pool = get_pool(request)
-    raw = await file.read()
-    content_type = file.content_type or "image/jpeg"
-    photo_id = await store_photo(pool, raw, content_type, driver["id"])
-    parsed_date = work_date or date.today().isoformat()
+    code = body.code.strip()
+    if not code:
+        raise HTTPException(status_code=422, detail="scanned code is empty")
+
+    manifest_id = await _get_or_create_todays_manifest(pool, driver["id"])
+    occurred_dt = _parse_occurred_at(body.occurred_at)
+
+    async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
+        await cur.execute(
+            "SELECT id, status_code FROM delivery_jobs WHERE manifest_id = %s AND tracking_no = %s",
+            (manifest_id, code),
+        )
+        existing = await cur.fetchone()
+
+    if existing is not None:
+        if existing["status_code"] == "delivered":
+            raise HTTPException(status_code=409, detail=f"{code} was already delivered")
+        if existing["status_code"] == "cancelled":
+            raise HTTPException(status_code=409, detail=f"{code} was cancelled")
+        # Already registered in this session -- a repeat scan is a no-op, not an error.
+        return {"job_id": existing["id"], "manifest_id": manifest_id, "tracking_no": code, "already_registered": True}
 
     async with pool.acquire() as conn, conn.cursor() as cur:
         await cur.execute(
-            "INSERT INTO manifests (driver_id, work_date, photo_id, ocr_status) VALUES (%s, %s, %s, 'pending')",
-            (driver["id"], parsed_date, photo_id),
+            "INSERT INTO delivery_jobs (manifest_id, tracking_no, status_code) VALUES (%s, %s, 'registered')",
+            (manifest_id, code),
         )
-        manifest_id = cur.lastrowid
-
-    ocr_result = await extract_manifest(raw, content_type)
-    jobs = await _persist_ocr_jobs(pool, manifest_id, ocr_result)
-
-    async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
+        job_id = cur.lastrowid
         await cur.execute(
-            "SELECT id, work_date, photo_id, ocr_status, ocr_error, cancelled_at, created_at FROM manifests WHERE id = %s",
-            (manifest_id,),
+            "INSERT INTO delivery_events (job_id, driver_id, status_code, occurred_at, lat, lng) "
+            "VALUES (%s, %s, 'registered', %s, %s, %s)",
+            (job_id, driver["id"], occurred_dt, body.lat, body.lng),
         )
-        manifest = await cur.fetchone()
 
-    return {"manifest": _serialize_manifest(manifest), "jobs": jobs}
+    return {"job_id": job_id, "manifest_id": manifest_id, "tracking_no": code, "already_registered": False}
 
 
-@router.post("/manifests/{manifest_id}/reprocess")
-async def reprocess_manifest(manifest_id: int, request: Request, driver=Depends(get_current_driver)):
+@router.post("/scans/complete", status_code=201)
+async def complete_scan(body: ScanRequest, request: Request, driver=Depends(get_current_driver)):
     pool = get_pool(request)
+    code = body.code.strip()
+    if not code:
+        raise HTTPException(status_code=422, detail="scanned code is empty")
+    occurred_dt = _parse_occurred_at(body.occurred_at)
+
     async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
+        # A code may exist in more than one of the driver's past sessions in theory;
+        # the most recently registered one is the one they mean.
         await cur.execute(
-            "SELECT id, photo_id, ocr_status, cancelled_at FROM manifests WHERE id = %s AND driver_id = %s",
-            (manifest_id, driver["id"]),
+            "SELECT dj.id, dj.status_code FROM delivery_jobs dj "
+            "JOIN manifests m ON m.id = dj.manifest_id "
+            "WHERE m.driver_id = %s AND dj.tracking_no = %s "
+            "ORDER BY dj.created_at DESC LIMIT 1",
+            (driver["id"], code),
         )
-        manifest = await cur.fetchone()
-    if manifest is None:
-        raise HTTPException(status_code=404, detail="manifest not found")
-    if manifest["cancelled_at"] is not None:
-        raise HTTPException(status_code=409, detail="this manifest was cancelled — upload a new one instead")
-    if manifest["ocr_status"] != "failed":
-        raise HTTPException(
-            status_code=409, detail="reprocess is only allowed after a failed OCR pass (jobs already exist otherwise)"
-        )
-    photo = await fetch_photo(pool, manifest["photo_id"])
-    if photo is None:
-        raise HTTPException(status_code=404, detail="manifest photo missing")
-    raw, content_type, _ = photo
-    ocr_result = await extract_manifest(raw, content_type)
-    jobs = await _persist_ocr_jobs(pool, manifest_id, ocr_result)
-    return {"manifest_id": manifest_id, "jobs": jobs}
+        job = await cur.fetchone()
 
-
-@router.post("/manifests/{manifest_id}/cancel")
-async def cancel_manifest(manifest_id: int, request: Request, driver=Depends(get_current_driver)):
-    """Voids a wrongly-photographed/misread manifest so the driver can upload a fresh
-    one. Never deletes the row (dispute audit trail) and refuses once any job on it
-    has real check-in activity, to protect that same trail."""
-    pool = get_pool(request)
-    async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
-        await cur.execute(
-            "SELECT id, cancelled_at FROM manifests WHERE id = %s AND driver_id = %s",
-            (manifest_id, driver["id"]),
-        )
-        manifest = await cur.fetchone()
-        if manifest is None:
-            raise HTTPException(status_code=404, detail="manifest not found")
-        if manifest["cancelled_at"] is not None:
-            raise HTTPException(status_code=409, detail="this manifest is already cancelled")
-
-        await cur.execute(
-            "SELECT 1 FROM delivery_events de JOIN delivery_jobs dj ON dj.id = de.driver_selected_job_id "
-            "WHERE dj.manifest_id = %s LIMIT 1",
-            (manifest_id,),
-        )
-        if await cur.fetchone() is not None:
-            raise HTTPException(
-                status_code=409,
-                detail="this manifest already has check-in activity and can't be cancelled — contact your admin",
-            )
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"{code} hasn't been registered yet -- scan it in first")
+    if job["status_code"] == "delivered":
+        raise HTTPException(status_code=409, detail=f"{code} was already delivered")
+    if job["status_code"] == "cancelled":
+        raise HTTPException(status_code=409, detail=f"{code} was cancelled")
 
     async with pool.acquire() as conn, conn.cursor() as cur:
-        await cur.execute("UPDATE manifests SET cancelled_at = NOW() WHERE id = %s", (manifest_id,))
+        await cur.execute("UPDATE delivery_jobs SET status_code = 'delivered' WHERE id = %s", (job["id"],))
         await cur.execute(
-            "UPDATE delivery_jobs SET status_code = 'cancelled' WHERE manifest_id = %s AND status_code = 'pending'",
-            (manifest_id,),
+            "INSERT INTO delivery_events (job_id, driver_id, status_code, occurred_at, lat, lng) "
+            "VALUES (%s, %s, 'delivered', %s, %s, %s)",
+            (job["id"], driver["id"], occurred_dt, body.lat, body.lng),
         )
 
-    async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
-        await cur.execute(
-            "SELECT id, work_date, photo_id, ocr_status, ocr_error, cancelled_at, created_at FROM manifests WHERE id = %s",
-            (manifest_id,),
-        )
-        updated = await cur.fetchone()
-    return {"manifest": _serialize_manifest(updated)}
+    return {"job_id": job["id"], "tracking_no": code}
 
 
 @router.get("/manifests")
@@ -193,7 +151,7 @@ async def list_manifests(request: Request, driver=Depends(get_current_driver)):
     pool = get_pool(request)
     async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
         await cur.execute(
-            "SELECT id, work_date, photo_id, ocr_status, ocr_error, cancelled_at, created_at FROM manifests "
+            "SELECT id, work_date, cancelled_at, created_at FROM manifests "
             "WHERE driver_id = %s ORDER BY work_date DESC, id DESC",
             (driver["id"],),
         )
@@ -206,120 +164,58 @@ async def get_manifest(manifest_id: int, request: Request, driver=Depends(get_cu
     pool = get_pool(request)
     async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
         await cur.execute(
-            "SELECT id, work_date, photo_id, ocr_status, ocr_error, cancelled_at, created_at FROM manifests "
-            "WHERE id = %s AND driver_id = %s",
+            "SELECT id, work_date, cancelled_at, created_at FROM manifests WHERE id = %s AND driver_id = %s",
             (manifest_id, driver["id"]),
         )
         manifest = await cur.fetchone()
         if manifest is None:
             raise HTTPException(status_code=404, detail="manifest not found")
         await cur.execute(
-            "SELECT id, tracking_no, recipient_name, address, status_code, needs_review, created_at "
-            "FROM delivery_jobs WHERE manifest_id = %s ORDER BY id",
+            "SELECT id, tracking_no, status_code, created_at FROM delivery_jobs WHERE manifest_id = %s ORDER BY id",
             (manifest_id,),
         )
         jobs = await cur.fetchall()
     return {"manifest": _serialize_manifest(manifest), "jobs": [_serialize_job(j) for j in jobs]}
 
 
-@router.post("/jobs/{job_id}/checkins", status_code=201)
-async def checkin(
-    job_id: int,
-    request: Request,
-    status_code: str = Form(...),
-    lat: float | None = Form(None),
-    lng: float | None = Form(None),
-    occurred_at: str | None = Form(None),
-    photo: UploadFile | None = File(None),
-    driver=Depends(get_current_driver),
-):
+@router.post("/manifests/{manifest_id}/cancel")
+async def cancel_manifest(manifest_id: int, request: Request, driver=Depends(get_current_driver)):
+    """Voids a scan session (e.g. the wrong load got scanned in) so the driver can
+    start clean. Never deletes rows (dispute audit trail) and refuses once any job in
+    the session has actually been delivered."""
     pool = get_pool(request)
-
     async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
         await cur.execute(
-            "SELECT dj.id, dj.manifest_id, dj.status_code FROM delivery_jobs dj "
-            "JOIN manifests m ON m.id = dj.manifest_id WHERE dj.id = %s AND m.driver_id = %s",
-            (job_id, driver["id"]),
+            "SELECT id, cancelled_at FROM manifests WHERE id = %s AND driver_id = %s",
+            (manifest_id, driver["id"]),
         )
-        job = await cur.fetchone()
-        if job is None:
-            raise HTTPException(status_code=404, detail="job not found")
-        if job["status_code"] == "cancelled":
-            raise HTTPException(status_code=409, detail="this job's manifest was cancelled")
+        manifest = await cur.fetchone()
+        if manifest is None:
+            raise HTTPException(status_code=404, detail="manifest not found")
+        if manifest["cancelled_at"] is not None:
+            raise HTTPException(status_code=409, detail="this session is already cancelled")
 
         await cur.execute(
-            "SELECT code, requires_photo, is_terminal_success, is_active FROM statuses WHERE code = %s",
-            (status_code,),
+            "SELECT 1 FROM delivery_jobs WHERE manifest_id = %s AND status_code = 'delivered' LIMIT 1",
+            (manifest_id,),
         )
-        status_row = await cur.fetchone()
-    if status_row is None or not status_row["is_active"]:
-        raise HTTPException(status_code=422, detail="unknown or inactive status")
-
-    photo_bytes = None
-    photo_id = None
-    photo_content_type = None
-    if photo is not None:
-        photo_bytes = await photo.read()
-        photo_content_type = photo.content_type or "image/jpeg"
-        photo_id = await store_photo(pool, photo_bytes, photo_content_type, driver["id"])
-    elif status_row["requires_photo"]:
-        raise HTTPException(status_code=422, detail=f"status '{status_code}' requires a photo")
-
-    occurred_dt = _parse_occurred_at(occurred_at)
-
-    if status_row["is_terminal_success"]:
-        if photo_bytes is None:
-            raise HTTPException(status_code=422, detail="a photo is required to auto-match a delivered job")
-
-        ocr_result = await extract_do_identifier(photo_bytes, photo_content_type)
-        candidate = ocr_result.get("tracking_no")
-
-        async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
-            await cur.execute(
-                "SELECT id, tracking_no FROM delivery_jobs WHERE manifest_id = %s AND status_code != 'delivered'",
-                (job["manifest_id"],),
+        if await cur.fetchone() is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="this session already has completed deliveries and can't be cancelled — contact your admin",
             )
-            open_jobs = await cur.fetchall()
-
-        matched_job, match_type = match_job(candidate, open_jobs)
-        resolved_job_id = matched_job["id"] if matched_job else None
-        needs_review = 0 if matched_job else 1
-
-        async with pool.acquire() as conn, conn.cursor() as cur:
-            await cur.execute(
-                "INSERT INTO delivery_events "
-                "(driver_selected_job_id, job_id, driver_id, status_code, occurred_at, lat, lng, "
-                " photo_id, ocr_candidate_text, match_type, needs_review) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
-                (
-                    job_id, resolved_job_id, driver["id"], status_code, occurred_dt, lat, lng,
-                    photo_id, candidate, match_type, needs_review,
-                ),
-            )
-            event_id = cur.lastrowid
-            if matched_job is not None:
-                await cur.execute(
-                    "UPDATE delivery_jobs SET status_code = %s WHERE id = %s", (status_code, matched_job["id"])
-                )
-
-        return {
-            "event_id": event_id,
-            "matched_job_id": resolved_job_id,
-            "match_type": match_type,
-            "needs_review": bool(needs_review),
-        }
 
     async with pool.acquire() as conn, conn.cursor() as cur:
+        await cur.execute("UPDATE manifests SET cancelled_at = NOW() WHERE id = %s", (manifest_id,))
         await cur.execute(
-            "INSERT INTO delivery_events "
-            "(driver_selected_job_id, job_id, driver_id, status_code, occurred_at, lat, lng, photo_id, match_type) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'n_a')",
-            (job_id, job_id, driver["id"], status_code, occurred_dt, lat, lng, photo_id),
+            "UPDATE delivery_jobs SET status_code = 'cancelled' WHERE manifest_id = %s AND status_code = 'registered'",
+            (manifest_id,),
         )
-        event_id = cur.lastrowid
-        await cur.execute("UPDATE delivery_jobs SET status_code = %s WHERE id = %s", (status_code, job_id))
 
-    return {"event_id": event_id, "matched_job_id": job_id, "match_type": "n_a", "needs_review": False}
+    async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
+        await cur.execute("SELECT id, work_date, cancelled_at, created_at FROM manifests WHERE id = %s", (manifest_id,))
+        updated = await cur.fetchone()
+    return {"manifest": _serialize_manifest(updated)}
 
 
 @router.get("/jobs/{job_id}/events")
@@ -334,9 +230,8 @@ async def list_job_events(job_id: int, request: Request, driver=Depends(get_curr
         if await cur.fetchone() is None:
             raise HTTPException(status_code=404, detail="job not found")
         await cur.execute(
-            "SELECT id, status_code, occurred_at, lat, lng, photo_id, match_type, needs_review "
-            "FROM delivery_events WHERE driver_selected_job_id = %s OR job_id = %s ORDER BY occurred_at",
-            (job_id, job_id),
+            "SELECT id, status_code, occurred_at, lat, lng FROM delivery_events WHERE job_id = %s ORDER BY occurred_at",
+            (job_id,),
         )
         events = await cur.fetchall()
     return {"events": [_serialize_event(e) for e in events]}

@@ -2,9 +2,8 @@
 
 Listens on port 8000, serves GET /health, and its API under /api. Reads
 DATABASE_URL / REDIS_URL / JWT_SECRET from the environment (platform-injected);
-custom config (ANTHROPIC_API_KEY, OCR_MODEL, JWT_EXPIRY_DAYS, OCR_MOCK) is
-declared in backend/.env.example. All DDL lives in Flyway migrations under
-resources/db/migration/ -- never in code.
+custom config (JWT_EXPIRY_DAYS, SMTP_*) is declared in backend/.env.example. All DDL
+lives in Flyway migrations under resources/db/migration/ -- never in code.
 """
 from fastapi import FastAPI
 
