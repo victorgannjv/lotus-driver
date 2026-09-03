@@ -28,7 +28,7 @@ export default function JobDetail() {
 
       <div className="mt-3 rounded-xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
         <div className="flex items-start justify-between">
-          <h2 className="text-lg font-semibold text-slate-900">{job.tracking_no}</h2>
+          <h2 className="text-lg font-semibold text-brand-black">{job.tracking_no}</h2>
           <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">{job.status_code}</span>
         </div>
         <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">

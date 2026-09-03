@@ -62,7 +62,7 @@ export default function Jobs() {
               {jobs.map((job) => (
                 <tr key={job.id}>
                   <td className="px-4 py-3">
-                    <Link to={`/admin/jobs/${job.id}`} className="font-medium text-slate-900 underline">
+                    <Link to={`/admin/jobs/${job.id}`} className="font-medium text-brand-red underline">
                       {job.tracking_no}
                     </Link>
                   </td>

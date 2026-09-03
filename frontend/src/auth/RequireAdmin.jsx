@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import AppHeader from "../components/AppHeader";
 
 // No client-side token for the admin surface: identity comes from the Substrait
 // platform's Google SSO proxy (server-side X-Forwarded-Email), so we just ask the
@@ -19,18 +20,21 @@ export default function RequireAdmin({ children }) {
 
   if (!state.isAdmin) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
-        <div className="max-w-md rounded-2xl bg-white p-8 shadow-sm ring-1 ring-slate-200">
-          <h1 className="text-xl font-semibold text-slate-900">Admin access required</h1>
-          <p className="mt-3 text-sm text-slate-600">
-            {state.email
-              ? `Signed in as ${state.email}, but this account is not on the admin allowlist.`
-              : "No signed-in identity was found."}
-          </p>
-          <p className="mt-3 text-sm text-slate-600">
-            Ask the app owner to enable Google SSO for this app in the Substrait portal's
-            Access tab, and to add your email to the admin list (POST /api/admin/users).
-          </p>
+      <main className="min-h-screen bg-slate-50">
+        <AppHeader />
+        <div className="flex items-center justify-center px-4 py-16">
+          <div className="max-w-md rounded-2xl bg-white p-8 shadow-sm ring-1 ring-slate-200">
+            <h1 className="text-xl font-semibold text-brand-black">Admin access required</h1>
+            <p className="mt-3 text-sm text-slate-600">
+              {state.email
+                ? `Signed in as ${state.email}, but this account is not on the admin allowlist.`
+                : "No signed-in identity was found."}
+            </p>
+            <p className="mt-3 text-sm text-slate-600">
+              Ask an existing admin to add your email from the Admins page, or, if Google SSO isn't enabled for this
+              app yet, ask the app owner to turn it on in the Substrait portal's Access tab.
+            </p>
+          </div>
         </div>
       </main>
     );

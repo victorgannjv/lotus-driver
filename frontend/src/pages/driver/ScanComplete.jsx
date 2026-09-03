@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
 import { api } from "../../api";
+import AppHeader from "../../components/AppHeader";
 import BarcodeScanner from "../../components/BarcodeScanner";
 import ScanResultModal from "../../components/ScanResultModal";
 import { getPosition } from "../../lib/geolocation";
@@ -44,13 +44,10 @@ export default function ScanComplete() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 px-4 py-6">
-      <div className="mx-auto max-w-md">
-        <Link to="/driver" className="text-sm text-slate-500 underline">
-          ← Back
-        </Link>
-        <h1 className="mt-2 text-lg font-semibold text-slate-900">Scan to complete a delivery</h1>
-        <p className="mt-1 text-sm text-slate-500">
+    <main className="min-h-screen bg-slate-50">
+      <AppHeader backTo="/driver" title="Scan to complete a delivery" />
+      <div className="mx-auto max-w-md px-4 py-6">
+        <p className="text-sm text-slate-500">
           Scan the order's barcode when it's delivered. We'll log the time and location automatically.
         </p>
 

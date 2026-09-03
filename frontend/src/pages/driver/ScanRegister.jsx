@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { api } from "../../api";
+import AppHeader from "../../components/AppHeader";
 import BarcodeScanner from "../../components/BarcodeScanner";
 import ScanResultModal from "../../components/ScanResultModal";
 import { getPosition } from "../../lib/geolocation";
@@ -50,13 +51,10 @@ export default function ScanRegister() {
   const registeredCount = log.filter((e) => e.ok).length;
 
   return (
-    <main className="min-h-screen bg-slate-50 px-4 py-6">
-      <div className="mx-auto max-w-md">
-        <Link to="/driver" className="text-sm text-slate-500 underline">
-          ← Back
-        </Link>
-        <h1 className="mt-2 text-lg font-semibold text-slate-900">Scan orders to start</h1>
-        <p className="mt-1 text-sm text-slate-500">
+    <main className="min-h-screen bg-slate-50">
+      <AppHeader backTo="/driver" title="Scan orders to start" />
+      <div className="mx-auto max-w-md px-4 py-6">
+        <p className="text-sm text-slate-500">
           Point the camera at each order's barcode. We'll register every new one automatically.
         </p>
 
@@ -90,7 +88,7 @@ export default function ScanRegister() {
         {manifestId && (
           <button
             onClick={() => navigate(`/driver/manifests/${manifestId}`)}
-            className="mt-6 w-full rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white"
+            className="mt-6 w-full rounded-lg bg-brand-red px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-red-dark"
           >
             Done — view today's jobs ({registeredCount})
           </button>

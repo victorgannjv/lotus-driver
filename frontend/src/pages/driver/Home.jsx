@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../../api";
 import { useDriverAuth } from "../../auth/DriverAuthContext";
+import AppHeader from "../../components/AppHeader";
 import { getPosition } from "../../lib/geolocation";
 
 function todayIso() {
@@ -43,17 +44,18 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 px-4 py-6">
-      <div className="mx-auto max-w-md">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-lg font-semibold text-slate-900">Hi, {driver?.name}</h1>
-            <p className="text-sm text-slate-500">{todayIso()}</p>
-          </div>
-          <button onClick={logout} className="text-sm text-slate-500 underline">
+    <main className="min-h-screen bg-slate-50">
+      <AppHeader
+        title="Lotus Driver Tracking"
+        right={
+          <button onClick={logout} className="text-sm text-white/70 hover:text-white">
             Log out
           </button>
-        </div>
+        }
+      />
+      <div className="mx-auto max-w-md px-4 py-6">
+        <h2 className="text-lg font-semibold text-brand-black">Hi, {driver?.name}</h2>
+        <p className="text-sm text-slate-500">{todayIso()}</p>
 
         {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
 
@@ -61,13 +63,13 @@ export default function Home() {
           <button
             onClick={handleStartScanning}
             disabled={starting}
-            className="block rounded-2xl bg-slate-900 px-6 py-5 text-center text-sm font-medium text-white shadow-sm disabled:opacity-50"
+            className="block rounded-2xl bg-brand-red px-6 py-5 text-center text-sm font-medium text-white shadow-sm hover:bg-brand-red-dark disabled:opacity-50"
           >
             {starting ? "One sec…" : todayManifest ? "Scan more orders" : "Scan orders to start today's job"}
           </button>
           <Link
             to="/driver/scans/complete"
-            className="block rounded-2xl bg-white px-6 py-5 text-center text-sm font-medium text-slate-900 shadow-sm ring-1 ring-slate-200"
+            className="block rounded-2xl bg-white px-6 py-5 text-center text-sm font-medium text-brand-black shadow-sm ring-1 ring-slate-200"
           >
             Scan to complete a delivery
           </Link>

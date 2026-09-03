@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../../api";
+import AppHeader from "../../components/AppHeader";
 import { getPosition } from "../../lib/geolocation";
 
 const STATUS_STYLES = {
@@ -65,12 +66,10 @@ export default function ManifestDetail() {
   const canCancel = !manifest.cancelled_at && jobs.every((j) => j.status_code === "registered");
 
   return (
-    <main className="min-h-screen bg-slate-50 px-4 py-6">
-      <div className="mx-auto max-w-md">
-        <Link to="/driver" className="text-sm text-slate-500 underline">
-          ← Back
-        </Link>
-        <h1 className="mt-2 text-lg font-semibold text-slate-900">{manifest.work_date}</h1>
+    <main className="min-h-screen bg-slate-50">
+      <AppHeader backTo="/driver" />
+      <div className="mx-auto max-w-md px-4 py-6">
+        <h1 className="text-lg font-semibold text-brand-black">{manifest.work_date}</h1>
         {manifest.warehouse_arrived_at && (
           <p className="mt-1 text-xs text-slate-400">Arrived at warehouse: {manifest.warehouse_arrived_at}</p>
         )}
@@ -92,7 +91,7 @@ export default function ManifestDetail() {
               key={job.id}
               className="flex items-center justify-between rounded-lg bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200"
             >
-              <p className="text-sm font-medium text-slate-900">{job.tracking_no}</p>
+              <p className="text-sm font-medium text-brand-black">{job.tracking_no}</p>
               <span className={`rounded-full px-2 py-1 text-xs font-medium ${STATUS_STYLES[job.status_code] || "bg-slate-100 text-slate-700"}`}>
                 {job.status_code}
               </span>
@@ -105,7 +104,7 @@ export default function ManifestDetail() {
           <button
             onClick={handleScanMore}
             disabled={starting}
-            className="block rounded-lg bg-white px-4 py-2.5 text-center text-sm font-medium text-slate-900 ring-1 ring-slate-200 disabled:opacity-50"
+            className="block rounded-lg bg-white px-4 py-2.5 text-center text-sm font-medium text-brand-black ring-1 ring-slate-200 disabled:opacity-50"
           >
             {starting ? "One sec…" : "Scan more orders"}
           </button>
@@ -113,7 +112,7 @@ export default function ManifestDetail() {
             <button
               onClick={handleCancel}
               disabled={cancelling}
-              className="w-full rounded-lg bg-white px-4 py-2.5 text-sm font-medium text-red-600 ring-1 ring-red-200 disabled:opacity-50"
+              className="w-full rounded-lg bg-white px-4 py-2.5 text-sm font-medium text-brand-red ring-1 ring-brand-red/30 disabled:opacity-50"
             >
               {cancelling ? "Cancelling…" : "Cancel this session"}
             </button>

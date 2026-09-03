@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
+import AppHeader from "../../components/AppHeader";
 import { useDriverAuth } from "../../auth/DriverAuthContext";
 
 export default function ForgotPassword() {
@@ -24,9 +25,11 @@ export default function ForgotPassword() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
+    <main className="min-h-screen bg-slate-50">
+      <AppHeader />
+      <div className="flex items-center justify-center px-4 py-10">
       <div className="w-full max-w-sm rounded-2xl bg-white p-8 shadow-sm ring-1 ring-slate-200">
-        <h1 className="text-xl font-semibold text-slate-900">Forgot password</h1>
+        <h1 className="text-xl font-semibold text-brand-black">Forgot password</h1>
         <p className="mt-1 text-sm text-slate-500">Lotus Driver Tracking System</p>
 
         {sent ? (
@@ -52,7 +55,7 @@ export default function ForgotPassword() {
             <button
               type="submit"
               disabled={busy}
-              className="mt-6 w-full rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white disabled:opacity-50"
+              className="mt-6 w-full rounded-lg bg-brand-red px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-red-dark disabled:opacity-50"
             >
               {busy ? "Sending…" : "Send reset link"}
             </button>
@@ -60,8 +63,9 @@ export default function ForgotPassword() {
         )}
 
         <p className="mt-4 text-center text-sm text-slate-500">
-          <Link to="/driver/login" className="font-medium text-slate-900 underline">Back to sign in</Link>
+          <Link to="/driver/login" className="font-medium text-brand-red underline">Back to sign in</Link>
         </p>
+      </div>
       </div>
     </main>
   );
