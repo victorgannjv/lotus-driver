@@ -156,6 +156,22 @@ async def get_job_events(job_id: int, request: Request, admin=Depends(get_curren
     return {"events": [_serialize_admin_event(r) for r in rows]}
 
 
+@router.get("/users")
+async def list_admins(request: Request, admin=Depends(get_current_admin)):
+    pool = get_pool(request)
+    async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
+        await cur.execute(
+            "SELECT id, name, email, status, created_at FROM users WHERE role = 'admin' ORDER BY created_at"
+        )
+        rows = await cur.fetchall()
+    return {
+        "admins": [
+            {"id": r["id"], "name": r["name"], "email": r["email"], "status": r["status"], "created_at": str(r["created_at"])}
+            for r in rows
+        ]
+    }
+
+
 @router.post("/users", status_code=201)
 async def add_admin(body: AddAdminRequest, request: Request, admin=Depends(get_current_admin)):
     pool = get_pool(request)

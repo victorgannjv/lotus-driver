@@ -395,6 +395,25 @@
       }
     },
     "/api/admin/users": {
+      "get": {
+        "summary": "List admin users on the SSO allowlist, oldest first.",
+        "operationId": "adminListAdmins",
+        "tags": ["admin"],
+        "security": [{ "adminSSO": [] }],
+        "responses": {
+          "200": {
+            "description": "Admin list.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "admins": { "type": "array", "items": { "$ref": "#/components/schemas/AdminUser" } } }
+                }
+              }
+            }
+          }
+        }
+      },
       "post": {
         "summary": "Add a new admin user to the SSO allowlist.",
         "operationId": "adminAddAdmin",
@@ -601,6 +620,16 @@
           "name": { "type": "string" },
           "email": { "type": "string" },
           "phone": { "type": "string", "nullable": true },
+          "status": { "type": "string", "enum": ["active", "disabled"] },
+          "created_at": { "type": "string" }
+        }
+      },
+      "AdminUser": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "name": { "type": "string" },
+          "email": { "type": "string" },
           "status": { "type": "string", "enum": ["active", "disabled"] },
           "created_at": { "type": "string" }
         }

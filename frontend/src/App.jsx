@@ -14,6 +14,7 @@ import Signup from "./pages/driver/Signup";
 // no reason to make every driver download that just to sign in or check history.
 const AdminGate = lazy(() => import("./pages/admin/Gate"));
 const AdminDrivers = lazy(() => import("./pages/admin/Drivers"));
+const AdminAdmins = lazy(() => import("./pages/admin/Admins"));
 const AdminJobs = lazy(() => import("./pages/admin/Jobs"));
 const AdminJobDetail = lazy(() => import("./pages/admin/JobDetail"));
 const ScanRegister = lazy(() => import("./pages/driver/ScanRegister"));
@@ -79,6 +80,7 @@ export default function App() {
             <Route path="jobs" element={<AdminJobs />} />
             <Route path="jobs/:jobId" element={<AdminJobDetail />} />
             <Route path="drivers" element={<AdminDrivers />} />
+            <Route path="admins" element={<AdminAdmins />} />
           </Route>
         </Routes>
       </DriverAuthProvider>

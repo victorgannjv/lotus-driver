@@ -17,6 +17,9 @@ export default function Gate() {
             <NavLink to="/admin/drivers" className={linkClass}>
               Drivers
             </NavLink>
+            <NavLink to="/admin/admins" className={linkClass}>
+              Admins
+            </NavLink>
           </nav>
         </header>
         <div className="px-6 py-6">
