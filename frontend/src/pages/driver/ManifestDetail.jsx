@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../../api";
+import { getPosition } from "../../lib/geolocation";
 
 const STATUS_STYLES = {
   registered: "bg-slate-100 text-slate-700",
@@ -10,9 +11,11 @@ const STATUS_STYLES = {
 
 export default function ManifestDetail() {
   const { manifestId } = useParams();
+  const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [cancelling, setCancelling] = useState(false);
+  const [starting, setStarting] = useState(false);
 
   function load() {
     api
@@ -39,6 +42,22 @@ export default function ManifestDetail() {
     }
   }
 
+  async function handleScanMore() {
+    setStarting(true);
+    try {
+      const position = await getPosition();
+      await api.post("/warehouse-arrival", {
+        lat: position.lat,
+        lng: position.lng,
+        occurred_at: new Date().toISOString(),
+      });
+    } catch {
+      // Best-effort logging -- don't block the driver from starting work over it.
+    } finally {
+      navigate("/driver/scans/register");
+    }
+  }
+
   if (error && !data) return <p className="p-6 text-sm text-red-600">{error}</p>;
   if (!data) return <p className="p-6 text-sm text-slate-500">Loading…</p>;
 
@@ -52,6 +71,9 @@ export default function ManifestDetail() {
           ← Back
         </Link>
         <h1 className="mt-2 text-lg font-semibold text-slate-900">{manifest.work_date}</h1>
+        {manifest.warehouse_arrived_at && (
+          <p className="mt-1 text-xs text-slate-400">Arrived at warehouse: {manifest.warehouse_arrived_at}</p>
+        )}
 
         {manifest.cancelled_at && (
           <div className="mt-2 rounded-lg bg-slate-100 px-4 py-3 text-sm text-slate-600">
@@ -80,12 +102,13 @@ export default function ManifestDetail() {
         </ul>
 
         <div className="mt-6 grid grid-cols-1 gap-2">
-          <Link
-            to="/driver/scans/register"
-            className="block rounded-lg bg-white px-4 py-2.5 text-center text-sm font-medium text-slate-900 ring-1 ring-slate-200"
+          <button
+            onClick={handleScanMore}
+            disabled={starting}
+            className="block rounded-lg bg-white px-4 py-2.5 text-center text-sm font-medium text-slate-900 ring-1 ring-slate-200 disabled:opacity-50"
           >
-            Scan more orders
-          </Link>
+            {starting ? "One sec…" : "Scan more orders"}
+          </button>
           {canCancel && (
             <button
               onClick={handleCancel}

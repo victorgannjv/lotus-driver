@@ -139,6 +139,28 @@
         }
       }
     },
+    "/api/warehouse-arrival": {
+      "post": {
+        "summary": "Record the driver's warehouse-arrival time for today (first call of the day wins; later calls are a no-op).",
+        "operationId": "logWarehouseArrival",
+        "tags": ["driver"],
+        "security": [{ "driverBearer": [] }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ArrivalRequest" } } }
+        },
+        "responses": {
+          "200": {
+            "description": "Today's session, with warehouse_arrived_at set if this was the first call of the day.",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object", "properties": { "manifest": { "$ref": "#/components/schemas/Manifest" } } }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/manifests": {
       "get": {
         "summary": "List the current driver's scan sessions, most recent work date first.",
@@ -455,6 +477,14 @@
           "occurred_at": { "type": "string", "format": "date-time", "nullable": true, "description": "ISO 8601; defaults to server time if omitted." }
         }
       },
+      "ArrivalRequest": {
+        "type": "object",
+        "properties": {
+          "lat": { "type": "number", "nullable": true },
+          "lng": { "type": "number", "nullable": true },
+          "occurred_at": { "type": "string", "format": "date-time", "nullable": true, "description": "ISO 8601; defaults to server time if omitted." }
+        }
+      },
       "AuthResponse": {
         "type": "object",
         "properties": {
@@ -491,6 +521,9 @@
           "id": { "type": "integer" },
           "work_date": { "type": "string", "format": "date" },
           "cancelled_at": { "type": "string", "nullable": true },
+          "warehouse_arrived_at": { "type": "string", "nullable": true },
+          "warehouse_arrived_lat": { "type": "number", "nullable": true },
+          "warehouse_arrived_lng": { "type": "number", "nullable": true },
           "created_at": { "type": "string" }
         }
       },
@@ -525,6 +558,7 @@
           "created_at": { "type": "string" },
           "manifest_id": { "type": "integer" },
           "work_date": { "type": "string", "format": "date" },
+          "warehouse_arrived_at": { "type": "string", "nullable": true },
           "driver_id": { "type": "integer" },
           "driver_name": { "type": "string" },
           "driver_email": { "type": "string" }

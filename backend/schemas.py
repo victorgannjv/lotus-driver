@@ -34,3 +34,9 @@ class ScanRequest(BaseModel):
     lat: float | None = None
     lng: float | None = None
     occurred_at: str | None = None
+
+
+class ArrivalRequest(BaseModel):
+    lat: float | None = None
+    lng: float | None = None
+    occurred_at: str | None = None

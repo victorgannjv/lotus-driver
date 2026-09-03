@@ -9,9 +9,13 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from auth import get_current_driver
 from db import get_pool
-from schemas import ScanRequest
+from schemas import ArrivalRequest, ScanRequest
 
 router = APIRouter()
+
+_MANIFEST_COLUMNS = (
+    "id, work_date, cancelled_at, warehouse_arrived_at, warehouse_arrived_lat, warehouse_arrived_lng, created_at"
+)
 
 
 def _serialize_manifest(row: dict) -> dict:
@@ -19,6 +23,9 @@ def _serialize_manifest(row: dict) -> dict:
         "id": row["id"],
         "work_date": str(row["work_date"]),
         "cancelled_at": str(row["cancelled_at"]) if row["cancelled_at"] else None,
+        "warehouse_arrived_at": str(row["warehouse_arrived_at"]) if row["warehouse_arrived_at"] else None,
+        "warehouse_arrived_lat": float(row["warehouse_arrived_lat"]) if row["warehouse_arrived_lat"] is not None else None,
+        "warehouse_arrived_lng": float(row["warehouse_arrived_lng"]) if row["warehouse_arrived_lng"] is not None else None,
         "created_at": str(row["created_at"]),
     }
 
@@ -151,7 +158,7 @@ async def list_manifests(request: Request, driver=Depends(get_current_driver)):
     pool = get_pool(request)
     async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
         await cur.execute(
-            "SELECT id, work_date, cancelled_at, created_at FROM manifests "
+            f"SELECT {_MANIFEST_COLUMNS} FROM manifests "
             "WHERE driver_id = %s ORDER BY work_date DESC, id DESC",
             (driver["id"],),
         )
@@ -164,7 +171,7 @@ async def get_manifest(manifest_id: int, request: Request, driver=Depends(get_cu
     pool = get_pool(request)
     async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
         await cur.execute(
-            "SELECT id, work_date, cancelled_at, created_at FROM manifests WHERE id = %s AND driver_id = %s",
+            f"SELECT {_MANIFEST_COLUMNS} FROM manifests WHERE id = %s AND driver_id = %s",
             (manifest_id, driver["id"]),
         )
         manifest = await cur.fetchone()
@@ -213,9 +220,31 @@ async def cancel_manifest(manifest_id: int, request: Request, driver=Depends(get
         )
 
     async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
-        await cur.execute("SELECT id, work_date, cancelled_at, created_at FROM manifests WHERE id = %s", (manifest_id,))
+        await cur.execute(f"SELECT {_MANIFEST_COLUMNS} FROM manifests WHERE id = %s", (manifest_id,))
         updated = await cur.fetchone()
     return {"manifest": _serialize_manifest(updated)}
+
+
+@router.post("/warehouse-arrival")
+async def log_warehouse_arrival(body: ArrivalRequest, request: Request, driver=Depends(get_current_driver)):
+    """Records the moment a driver starts their day (first tap of "Scan orders"),
+    on today's session. Only the first call of the day sets it -- a driver returning
+    to scan more later in the shift shouldn't overwrite the original arrival time."""
+    pool = get_pool(request)
+    manifest_id = await _get_or_create_todays_manifest(pool, driver["id"])
+    occurred_dt = _parse_occurred_at(body.occurred_at)
+
+    async with pool.acquire() as conn, conn.cursor() as cur:
+        await cur.execute(
+            "UPDATE manifests SET warehouse_arrived_at = %s, warehouse_arrived_lat = %s, warehouse_arrived_lng = %s "
+            "WHERE id = %s AND warehouse_arrived_at IS NULL",
+            (occurred_dt, body.lat, body.lng, manifest_id),
+        )
+
+    async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
+        await cur.execute(f"SELECT {_MANIFEST_COLUMNS} FROM manifests WHERE id = %s", (manifest_id,))
+        manifest = await cur.fetchone()
+    return {"manifest": _serialize_manifest(manifest)}
 
 
 @router.get("/jobs/{job_id}/events")

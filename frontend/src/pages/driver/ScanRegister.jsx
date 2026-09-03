@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../../api";
 import BarcodeScanner from "../../components/BarcodeScanner";
+import ScanResultModal from "../../components/ScanResultModal";
 import { getPosition } from "../../lib/geolocation";
 
 export default function ScanRegister() {
@@ -10,9 +11,12 @@ export default function ScanRegister() {
   const [manifestId, setManifestId] = useState(null);
   const [manualCode, setManualCode] = useState("");
   const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null);
 
   async function handleDetect(code) {
-    if (busy) return;
+    // Ignore new scans while a result is still on screen or a request is in
+    // flight -- one scan is confirmed at a time.
+    if (busy || result) return;
     setBusy(true);
     try {
       const position = await getPosition();
@@ -23,9 +27,13 @@ export default function ScanRegister() {
         occurred_at: new Date().toISOString(),
       });
       setManifestId(res.manifest_id);
-      setLog((l) => [{ code, ok: true, message: res.already_registered ? "already registered" : "registered" }, ...l]);
+      const message = res.already_registered ? "Already registered" : "Registered";
+      setLog((l) => [{ code, ok: true, message }, ...l]);
+      setResult({ code, ok: true, message });
     } catch (err) {
-      setLog((l) => [{ code, ok: false, message: err.detail || "failed" }, ...l]);
+      const message = err.detail || "Failed";
+      setLog((l) => [{ code, ok: false, message }, ...l]);
+      setResult({ code, ok: false, message });
     } finally {
       setBusy(false);
     }
@@ -88,6 +96,8 @@ export default function ScanRegister() {
           </button>
         )}
       </div>
+
+      <ScanResultModal result={result} onClose={() => setResult(null)} />
     </main>
   );
 }

@@ -1,16 +1,19 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { api } from "../../api";
 import { useDriverAuth } from "../../auth/DriverAuthContext";
+import { getPosition } from "../../lib/geolocation";
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
 
 export default function Home() {
+  const navigate = useNavigate();
   const { driver, logout } = useDriverAuth();
   const [manifests, setManifests] = useState(null);
   const [error, setError] = useState(null);
+  const [starting, setStarting] = useState(false);
 
   useEffect(() => {
     api
@@ -20,6 +23,24 @@ export default function Home() {
   }, []);
 
   const todayManifest = manifests?.find((m) => m.work_date === todayIso() && !m.cancelled_at);
+
+  async function handleStartScanning() {
+    // Only the first press of the day actually records an arrival time (the
+    // backend is idempotent on this) -- later presses just navigate through.
+    setStarting(true);
+    try {
+      const position = await getPosition();
+      await api.post("/warehouse-arrival", {
+        lat: position.lat,
+        lng: position.lng,
+        occurred_at: new Date().toISOString(),
+      });
+    } catch {
+      // Best-effort logging -- don't block the driver from starting work over it.
+    } finally {
+      navigate("/driver/scans/register");
+    }
+  }
 
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-6">
@@ -37,12 +58,13 @@ export default function Home() {
         {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
 
         <div className="mt-6 grid grid-cols-1 gap-3">
-          <Link
-            to="/driver/scans/register"
-            className="block rounded-2xl bg-slate-900 px-6 py-5 text-center text-sm font-medium text-white shadow-sm"
+          <button
+            onClick={handleStartScanning}
+            disabled={starting}
+            className="block rounded-2xl bg-slate-900 px-6 py-5 text-center text-sm font-medium text-white shadow-sm disabled:opacity-50"
           >
-            {todayManifest ? "Scan more orders" : "Scan orders to start today's job"}
-          </Link>
+            {starting ? "One sec…" : todayManifest ? "Scan more orders" : "Scan orders to start today's job"}
+          </button>
           <Link
             to="/driver/scans/complete"
             className="block rounded-2xl bg-white px-6 py-5 text-center text-sm font-medium text-slate-900 shadow-sm ring-1 ring-slate-200"
