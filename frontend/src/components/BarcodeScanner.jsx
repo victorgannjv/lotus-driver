@@ -19,29 +19,32 @@ HINTS.set(DecodeHintType.POSSIBLE_FORMATS, [
 ]);
 HINTS.set(DecodeHintType.TRY_HARDER, true);
 
-// Phones default getUserMedia to a moderate-res feed tuned for face-distance video
-// calls, whose autofocus often won't rack in close enough to resolve a barcode a
-// few cm from the lens. 1280x720 is high enough to resolve fine bars without
-// pushing some devices into an unusual fixed-focus capture mode the way a very
-// high resolution ask (e.g. 1920x1080) has been seen to.
+// Deliberately NOT requesting an explicit focusMode constraint here: on some
+// Android/Chrome + camera-HAL combinations, asking for "continuous" via
+// MediaTrackConstraints has been seen to select a still-photo-oriented AF mode
+// instead of the smoother CONTINUOUS_VIDEO mode Chrome already defaults video
+// capture to when nothing is specified -- i.e. asking explicitly can make focus
+// *worse*. Only a resolution hint (moderate, not the phone's max) is requested.
 const VIDEO_CONSTRAINTS = {
   facingMode: "environment",
   width: { ideal: 1280 },
   height: { ideal: 720 },
-  advanced: [{ focusMode: "continuous" }],
 };
 
 // Continuous camera barcode scanner. Calls onDetect(code) once per newly-seen
 // barcode; holding the same label in frame won't keep re-firing (de-duped, cleared
 // every couple seconds so scanning the same code again later still works). Tap the
-// video to refocus -- only Chrome/Android currently honors this (Image Capture API
-// focus control isn't supported on iOS Safari); it's a silent no-op elsewhere.
+// video to force a one-shot refocus at that point, and toggle the flashlight when
+// the device supports it -- both are Chrome/Android-only (Image Capture API isn't
+// supported on iOS Safari); both are silent no-ops elsewhere.
 export default function BarcodeScanner({ onDetect }) {
   const videoRef = useRef(null);
   const onDetectRef = useRef(onDetect);
   const lastCodeRef = useRef(null);
   const controlsRef = useRef(null);
   const [error, setError] = useState(null);
+  const [torchSupported, setTorchSupported] = useState(false);
+  const [torchOn, setTorchOn] = useState(false);
 
   useEffect(() => {
     onDetectRef.current = onDetect;
@@ -68,10 +71,7 @@ export default function BarcodeScanner({ onDetect }) {
           return;
         }
         controlsRef.current = controls;
-        // Redundant with the initial constraint above, but some devices only pick
-        // up an "advanced" focus mode when it's applied to the live track, not the
-        // constraints passed to getUserMedia.
-        controls.streamVideoConstraintsApply({ advanced: [{ focusMode: "continuous" }] }).catch(() => {});
+        setTorchSupported(typeof controls.switchTorch === "function");
       })
       .catch((err) => setError(err.message || "could not access camera"));
 
@@ -99,15 +99,32 @@ export default function BarcodeScanner({ onDetect }) {
       .catch(() => {});
   }
 
+  async function handleToggleTorch() {
+    const next = !torchOn;
+    try {
+      await controlsRef.current?.switchTorch(next);
+      setTorchOn(next);
+    } catch {
+      // Device claimed torch support but the call failed -- leave state as-is.
+    }
+  }
+
   return (
     <div>
-      <video
-        ref={videoRef}
-        onClick={handleTapToFocus}
-        className="w-full rounded-xl bg-black"
-        muted
-        playsInline
-      />
+      <div className="relative">
+        <video ref={videoRef} onClick={handleTapToFocus} className="w-full rounded-xl bg-black" muted playsInline />
+        {torchSupported && (
+          <button
+            type="button"
+            onClick={handleToggleTorch}
+            className={`absolute right-3 top-3 rounded-full px-3 py-1.5 text-xs font-medium ${
+              torchOn ? "bg-amber-400 text-slate-900" : "bg-black/60 text-white"
+            }`}
+          >
+            {torchOn ? "Flash on" : "Flash off"}
+          </button>
+        )}
+      </div>
       <p className="mt-1 text-center text-xs text-slate-400">Tap the video if it won't focus</p>
       {error && <p className="mt-2 text-sm text-red-600">Camera error: {error}. Use manual entry below instead.</p>}
     </div>
