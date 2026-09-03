@@ -1,9 +1,10 @@
 """Endpoints shared by both the driver and admin surfaces."""
 from asyncmy.cursors import DictCursor
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from auth import get_current_user_any
 from db import get_pool
+from photos import fetch_photo
 
 router = APIRouter()
 
@@ -36,3 +37,15 @@ async def list_statuses(request: Request, user=Depends(get_current_user_any)):
             for r in rows
         ]
     }
+
+
+@router.get("/photos/{photo_id}")
+async def get_photo(photo_id: int, request: Request, user=Depends(get_current_user_any)):
+    pool = get_pool(request)
+    result = await fetch_photo(pool, photo_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="photo not found")
+    data, content_type, uploaded_by = result
+    if user["role"] != "admin" and uploaded_by != user["id"]:
+        raise HTTPException(status_code=403, detail="not your photo")
+    return Response(content=data, media_type=content_type, headers={"Cache-Control": "private, max-age=86400"})

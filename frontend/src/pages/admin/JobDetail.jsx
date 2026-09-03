@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../../api";
+import PhotoThumb from "../../components/PhotoThumb";
 
 export default function JobDetail() {
   const { jobId } = useParams();
@@ -61,6 +62,7 @@ export default function JobDetail() {
               {ev.lat != null ? `GPS: ${ev.lat.toFixed(5)}, ${ev.lng.toFixed(5)}` : "No GPS recorded"}
             </p>
             {ev.failure_reason && <p className="mt-1 text-xs text-amber-700">Reason: {ev.failure_reason}</p>}
+            <PhotoThumb photoId={ev.photo_id} size="mt-2 h-20 w-20" />
           </li>
         ))}
         {events.length === 0 && <p className="text-sm text-slate-500">No events logged for this job yet.</p>}

@@ -13,9 +13,9 @@ export default function ScanComplete() {
   const [pendingCode, setPendingCode] = useState(null);
   const [result, setResult] = useState(null);
 
-  // A code is scanned -> ask Delivered/Failed before recording anything. Ignore
-  // new scans while that choice, a reason submission, or a result confirmation is
-  // still on screen -- one scan is handled at a time.
+  // A code is scanned -> ask Delivered/Failed (+ reason, + proof photo) before
+  // recording anything. Ignore new scans while that flow or a result confirmation
+  // is still on screen -- one scan is handled at a time.
   function handleDetect(code) {
     if (busy || pendingCode || result) return;
     setPendingCode(code);
@@ -29,41 +29,24 @@ export default function ScanComplete() {
     handleDetect(code);
   }
 
-  async function handleDelivered(code) {
+  async function handleSubmitOutcome(code, outcome, reason, photo) {
     setBusy(true);
     try {
       const position = await getPosition();
-      await api.post("/scans/complete", {
-        code,
-        lat: position.lat,
-        lng: position.lng,
-        occurred_at: new Date().toISOString(),
-      });
-      setLog((l) => [{ code, ok: true, message: "Delivered" }, ...l]);
-      setResult({ code, tone: "success", message: "Delivered" });
-    } catch (err) {
-      const message = err.detail || "Failed";
-      setLog((l) => [{ code, ok: false, message }, ...l]);
-      setResult({ code, tone: "error", message });
-    } finally {
-      setBusy(false);
-      setPendingCode(null);
-    }
-  }
+      const formData = new FormData();
+      formData.append("code", code);
+      formData.append("occurred_at", new Date().toISOString());
+      if (position.lat != null) formData.append("lat", position.lat);
+      if (position.lng != null) formData.append("lng", position.lng);
+      if (outcome === "failed") formData.append("reason", reason);
+      formData.append("photo", photo);
 
-  async function handleFail(code, reason) {
-    setBusy(true);
-    try {
-      const position = await getPosition();
-      await api.post("/scans/fail", {
-        code,
-        reason,
-        lat: position.lat,
-        lng: position.lng,
-        occurred_at: new Date().toISOString(),
-      });
-      setLog((l) => [{ code, ok: true, message: `Failed — ${reason}` }, ...l]);
-      setResult({ code, tone: "warning", message: "Marked as failed" });
+      await api.postForm(outcome === "delivered" ? "/scans/complete" : "/scans/fail", formData);
+
+      const message = outcome === "delivered" ? "Delivered" : "Marked as failed";
+      const logMessage = outcome === "failed" ? `Failed — ${reason}` : message;
+      setLog((l) => [{ code, ok: true, message: logMessage }, ...l]);
+      setResult({ code, tone: outcome === "delivered" ? "success" : "warning", message });
     } catch (err) {
       const message = err.detail || "Failed";
       setLog((l) => [{ code, ok: false, message }, ...l]);
@@ -79,8 +62,8 @@ export default function ScanComplete() {
       <AppHeader backTo="/driver" title="Scan to complete a delivery" />
       <div className="mx-auto max-w-md px-4 py-6">
         <p className="text-sm text-slate-500">
-          Scan the order's barcode, then say whether it was delivered or the attempt failed. We'll log the time and
-          location automatically.
+          Scan the order's barcode, then say whether it was delivered or the attempt failed, and take a photo as
+          proof. We'll log the time and location automatically.
         </p>
 
         <div className="mt-4">
@@ -111,7 +94,7 @@ export default function ScanComplete() {
         </ul>
       </div>
 
-      <DeliveryOutcomeModal code={pendingCode} busy={busy} onDelivered={handleDelivered} onFail={handleFail} />
+      <DeliveryOutcomeModal code={pendingCode} busy={busy} onSubmit={handleSubmitOutcome} />
       <ScanResultModal result={result} onClose={() => setResult(null)} />
     </main>
   );

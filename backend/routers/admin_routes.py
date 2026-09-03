@@ -44,6 +44,7 @@ def _serialize_admin_event(row: dict) -> dict:
         "lat": float(row["lat"]) if row["lat"] is not None else None,
         "lng": float(row["lng"]) if row["lng"] is not None else None,
         "failure_reason": row["failure_reason"],
+        "photo_id": row["photo_id"],
     }
 
 
@@ -149,7 +150,7 @@ async def get_job_events(job_id: int, request: Request, admin=Depends(get_curren
         if await cur.fetchone() is None:
             raise HTTPException(status_code=404, detail="job not found")
         await cur.execute(
-            "SELECT id, job_id, driver_id, status_code, occurred_at, lat, lng, failure_reason "
+            "SELECT id, job_id, driver_id, status_code, occurred_at, lat, lng, failure_reason, photo_id "
             "FROM delivery_events WHERE job_id = %s ORDER BY occurred_at",
             (job_id,),
         )

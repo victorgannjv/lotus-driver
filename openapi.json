@@ -120,13 +120,27 @@
     },
     "/api/scans/complete": {
       "post": {
-        "summary": "Mark an order delivered by scanning the same barcode again; logs a delivered event with timestamp + GPS.",
+        "summary": "Mark an order delivered by scanning the same barcode again, with a required proof photo; logs a delivered event with timestamp + GPS + photo.",
         "operationId": "completeScan",
         "tags": ["driver"],
         "security": [{ "driverBearer": [] }],
         "requestBody": {
           "required": true,
-          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ScanRequest" } } }
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "code": { "type": "string", "description": "The decoded barcode value." },
+                  "lat": { "type": "number" },
+                  "lng": { "type": "number" },
+                  "occurred_at": { "type": "string", "format": "date-time", "description": "ISO 8601; defaults to server time if omitted." },
+                  "photo": { "type": "string", "format": "binary", "description": "Required proof-of-delivery photo." }
+                },
+                "required": ["code", "photo"]
+              }
+            }
+          }
         },
         "responses": {
           "201": {
@@ -141,13 +155,28 @@
     },
     "/api/scans/fail": {
       "post": {
-        "summary": "Mark a delivery attempt failed by scanning the barcode, with a required reason; logs a failed event with timestamp + GPS + reason.",
+        "summary": "Mark a delivery attempt failed by scanning the barcode, with a required reason and proof photo; logs a failed event with timestamp + GPS + reason + photo.",
         "operationId": "failScan",
         "tags": ["driver"],
         "security": [{ "driverBearer": [] }],
         "requestBody": {
           "required": true,
-          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ScanFailRequest" } } }
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "code": { "type": "string", "description": "The decoded barcode value." },
+                  "reason": { "type": "string", "description": "Why the delivery attempt failed." },
+                  "lat": { "type": "number" },
+                  "lng": { "type": "number" },
+                  "occurred_at": { "type": "string", "format": "date-time", "description": "ISO 8601; defaults to server time if omitted." },
+                  "photo": { "type": "string", "format": "binary", "description": "Required proof photo of the failed attempt." }
+                },
+                "required": ["code", "reason", "photo"]
+              }
+            }
+          }
         },
         "responses": {
           "201": {
@@ -314,6 +343,20 @@
               }
             }
           }
+        }
+      }
+    },
+    "/api/photos/{photo_id}": {
+      "get": {
+        "summary": "Fetch a stored proof photo's raw bytes; drivers may only fetch their own uploads, admins may fetch any.",
+        "operationId": "getPhoto",
+        "tags": ["common"],
+        "security": [{ "driverBearer": [] }, { "adminSSO": [] }],
+        "parameters": [{ "name": "photo_id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": {
+          "200": { "description": "Raw image bytes.", "content": { "image/jpeg": { "schema": { "type": "string", "format": "binary" } } } },
+          "403": { "description": "Not your photo." },
+          "404": { "description": "Photo not found." }
         }
       }
     },
@@ -525,17 +568,6 @@
           "occurred_at": { "type": "string", "format": "date-time", "nullable": true, "description": "ISO 8601; defaults to server time if omitted." }
         }
       },
-      "ScanFailRequest": {
-        "type": "object",
-        "required": ["code", "reason"],
-        "properties": {
-          "code": { "type": "string", "description": "The decoded barcode value." },
-          "reason": { "type": "string", "description": "Why the delivery attempt failed." },
-          "lat": { "type": "number", "nullable": true },
-          "lng": { "type": "number", "nullable": true },
-          "occurred_at": { "type": "string", "format": "date-time", "nullable": true, "description": "ISO 8601; defaults to server time if omitted." }
-        }
-      },
       "AuthResponse": {
         "type": "object",
         "properties": {
@@ -623,7 +655,8 @@
           "occurred_at": { "type": "string" },
           "lat": { "type": "number", "nullable": true },
           "lng": { "type": "number", "nullable": true },
-          "failure_reason": { "type": "string", "nullable": true }
+          "failure_reason": { "type": "string", "nullable": true },
+          "photo_id": { "type": "integer", "nullable": true }
         }
       },
       "AdminEvent": {
@@ -636,7 +669,8 @@
           "occurred_at": { "type": "string" },
           "lat": { "type": "number", "nullable": true },
           "lng": { "type": "number", "nullable": true },
-          "failure_reason": { "type": "string", "nullable": true }
+          "failure_reason": { "type": "string", "nullable": true },
+          "photo_id": { "type": "integer", "nullable": true }
         }
       },
       "Status": {

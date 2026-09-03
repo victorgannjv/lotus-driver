@@ -1,5 +1,6 @@
-"""Pydantic request models for the JSON endpoints. Every endpoint here is JSON --
-scanning replaced the old photo-upload flow, so there's no more multipart/form-data."""
+"""Pydantic request models for the JSON endpoints. The delivery-outcome endpoints
+(/scans/complete, /scans/fail) take a proof photo, so those use multipart/form-data
+with FastAPI Form/UploadFile params directly instead of a model here."""
 from pydantic import BaseModel
 
 
@@ -37,14 +38,6 @@ class ScanRequest(BaseModel):
 
 
 class ArrivalRequest(BaseModel):
-    lat: float | None = None
-    lng: float | None = None
-    occurred_at: str | None = None
-
-
-class ScanFailRequest(BaseModel):
-    code: str
-    reason: str
     lat: float | None = None
     lng: float | None = None
     occurred_at: str | None = None

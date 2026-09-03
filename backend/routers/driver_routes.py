@@ -1,16 +1,17 @@
 """Driver-facing endpoints: barcode-scan registration and completion. A barcode is
 an exact, unambiguous identifier, so scanning replaces manifest-photo OCR entirely --
 scan an order's barcode to register it at pickup, scan the same barcode again at the
-delivery outcome (delivered, or failed with a reason). No more fuzzy matching, orphan
-review, or photo evidence."""
+delivery outcome (delivered, or failed with a reason), with a required proof photo
+either way. No more fuzzy matching or orphan review -- just the photo evidence."""
 from datetime import date, datetime, timezone
 
 from asyncmy.cursors import DictCursor
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 
 from auth import get_current_driver
 from db import get_pool
-from schemas import ArrivalRequest, ScanFailRequest, ScanRequest
+from photos import store_photo
+from schemas import ArrivalRequest, ScanRequest
 
 router = APIRouter()
 
@@ -48,6 +49,7 @@ def _serialize_event(row: dict) -> dict:
         "lat": float(row["lat"]) if row["lat"] is not None else None,
         "lng": float(row["lng"]) if row["lng"] is not None else None,
         "failure_reason": row["failure_reason"],
+        "photo_id": row["photo_id"],
     }
 
 
@@ -143,43 +145,66 @@ async def register_scan(body: ScanRequest, request: Request, driver=Depends(get_
 
 
 @router.post("/scans/complete", status_code=201)
-async def complete_scan(body: ScanRequest, request: Request, driver=Depends(get_current_driver)):
+async def complete_scan(
+    request: Request,
+    code: str = Form(...),
+    lat: float | None = Form(None),
+    lng: float | None = Form(None),
+    occurred_at: str | None = Form(None),
+    photo: UploadFile = File(...),
+    driver=Depends(get_current_driver),
+):
     pool = get_pool(request)
-    code = body.code.strip()
+    code = code.strip()
     if not code:
         raise HTTPException(status_code=422, detail="scanned code is empty")
-    occurred_dt = _parse_occurred_at(body.occurred_at)
+    occurred_dt = _parse_occurred_at(occurred_at)
     job = await _find_open_job(pool, driver["id"], code)
+
+    photo_bytes = await photo.read()
+    photo_id = await store_photo(pool, photo_bytes, photo.content_type or "image/jpeg", driver["id"])
 
     async with pool.acquire() as conn, conn.cursor() as cur:
         await cur.execute("UPDATE delivery_jobs SET status_code = 'delivered' WHERE id = %s", (job["id"],))
         await cur.execute(
-            "INSERT INTO delivery_events (job_id, driver_id, status_code, occurred_at, lat, lng) "
-            "VALUES (%s, %s, 'delivered', %s, %s, %s)",
-            (job["id"], driver["id"], occurred_dt, body.lat, body.lng),
+            "INSERT INTO delivery_events (job_id, driver_id, status_code, occurred_at, lat, lng, photo_id) "
+            "VALUES (%s, %s, 'delivered', %s, %s, %s, %s)",
+            (job["id"], driver["id"], occurred_dt, lat, lng, photo_id),
         )
 
     return {"job_id": job["id"], "tracking_no": code}
 
 
 @router.post("/scans/fail", status_code=201)
-async def fail_scan(body: ScanFailRequest, request: Request, driver=Depends(get_current_driver)):
+async def fail_scan(
+    request: Request,
+    code: str = Form(...),
+    reason: str = Form(...),
+    lat: float | None = Form(None),
+    lng: float | None = Form(None),
+    occurred_at: str | None = Form(None),
+    photo: UploadFile = File(...),
+    driver=Depends(get_current_driver),
+):
     pool = get_pool(request)
-    code = body.code.strip()
+    code = code.strip()
     if not code:
         raise HTTPException(status_code=422, detail="scanned code is empty")
-    reason = body.reason.strip()
+    reason = reason.strip()
     if not reason:
         raise HTTPException(status_code=422, detail="a failure reason is required")
-    occurred_dt = _parse_occurred_at(body.occurred_at)
+    occurred_dt = _parse_occurred_at(occurred_at)
     job = await _find_open_job(pool, driver["id"], code)
+
+    photo_bytes = await photo.read()
+    photo_id = await store_photo(pool, photo_bytes, photo.content_type or "image/jpeg", driver["id"])
 
     async with pool.acquire() as conn, conn.cursor() as cur:
         await cur.execute("UPDATE delivery_jobs SET status_code = 'failed' WHERE id = %s", (job["id"],))
         await cur.execute(
-            "INSERT INTO delivery_events (job_id, driver_id, status_code, occurred_at, lat, lng, failure_reason) "
-            "VALUES (%s, %s, 'failed', %s, %s, %s, %s)",
-            (job["id"], driver["id"], occurred_dt, body.lat, body.lng, reason),
+            "INSERT INTO delivery_events (job_id, driver_id, status_code, occurred_at, lat, lng, failure_reason, photo_id) "
+            "VALUES (%s, %s, 'failed', %s, %s, %s, %s, %s)",
+            (job["id"], driver["id"], occurred_dt, lat, lng, reason, photo_id),
         )
 
     return {"job_id": job["id"], "tracking_no": code}
@@ -291,7 +316,7 @@ async def list_job_events(job_id: int, request: Request, driver=Depends(get_curr
         if await cur.fetchone() is None:
             raise HTTPException(status_code=404, detail="job not found")
         await cur.execute(
-            "SELECT id, status_code, occurred_at, lat, lng, failure_reason FROM delivery_events "
+            "SELECT id, status_code, occurred_at, lat, lng, failure_reason, photo_id FROM delivery_events "
             "WHERE job_id = %s ORDER BY occurred_at",
             (job_id,),
         )
