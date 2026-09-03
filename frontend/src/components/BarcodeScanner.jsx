@@ -2,11 +2,14 @@ import { BrowserMultiFormatReader } from "@zxing/browser";
 import { BarcodeFormat, DecodeHintType } from "@zxing/library";
 import { useEffect, useRef, useState } from "react";
 
-// Warehouse manifest barcodes are Code 39 (the "*CODE*" start/stop pattern); DO
-// slips and other labels may be Code 128/EAN/QR, so the full common set is hinted
-// explicitly -- ZXing's default (no hints) is unreliable for 1D formats like Code 39.
-const HINTS = new Map();
-HINTS.set(DecodeHintType.POSSIBLE_FORMATS, [
+// ZXing decodes by classic bar-width analysis, which is sensitive to blur/skew.
+// Chrome on Android exposes a native BarcodeDetector backed by Google Play
+// Services' on-device ML Kit, which is far more blur-tolerant -- prefer it when
+// available and fall back to ZXing (iOS Safari, desktop, older Chrome) otherwise.
+const NATIVE_FORMATS = ["code_39", "code_128", "code_93", "ean_13", "ean_8", "upc_a", "upc_e", "itf", "qr_code"];
+
+const ZXING_HINTS = new Map();
+ZXING_HINTS.set(DecodeHintType.POSSIBLE_FORMATS, [
   BarcodeFormat.CODE_39,
   BarcodeFormat.CODE_128,
   BarcodeFormat.CODE_93,
@@ -17,14 +20,12 @@ HINTS.set(DecodeHintType.POSSIBLE_FORMATS, [
   BarcodeFormat.ITF,
   BarcodeFormat.QR_CODE,
 ]);
-HINTS.set(DecodeHintType.TRY_HARDER, true);
+ZXING_HINTS.set(DecodeHintType.TRY_HARDER, true);
 
-// Deliberately NOT requesting an explicit focusMode constraint here: on some
-// Android/Chrome + camera-HAL combinations, asking for "continuous" via
-// MediaTrackConstraints has been seen to select a still-photo-oriented AF mode
-// instead of the smoother CONTINUOUS_VIDEO mode Chrome already defaults video
-// capture to when nothing is specified -- i.e. asking explicitly can make focus
-// *worse*. Only a resolution hint (moderate, not the phone's max) is requested.
+// Deliberately not requesting an explicit focusMode constraint: on some
+// Android/Chrome + camera-HAL combinations, asking for "continuous" has been seen
+// to select a still-photo AF mode instead of the smoother CONTINUOUS_VIDEO mode
+// Chrome already defaults video capture to when nothing is specified.
 const VIDEO_CONSTRAINTS = {
   facingMode: "environment",
   width: { ideal: 1280 },
@@ -35,13 +36,14 @@ const VIDEO_CONSTRAINTS = {
 // barcode; holding the same label in frame won't keep re-firing (de-duped, cleared
 // every couple seconds so scanning the same code again later still works). Tap the
 // video to force a one-shot refocus at that point, and toggle the flashlight when
-// the device supports it -- both are Chrome/Android-only (Image Capture API isn't
-// supported on iOS Safari); both are silent no-ops elsewhere.
+// the device supports it -- both act directly on the camera track, so they work
+// the same whether the native detector or the ZXing fallback is doing the decoding.
 export default function BarcodeScanner({ onDetect }) {
   const videoRef = useRef(null);
   const onDetectRef = useRef(onDetect);
   const lastCodeRef = useRef(null);
-  const controlsRef = useRef(null);
+  const trackRef = useRef(null);
+  const stopRef = useRef(null);
   const [error, setError] = useState(null);
   const [torchSupported, setTorchSupported] = useState(false);
   const [torchOn, setTorchOn] = useState(false);
@@ -51,33 +53,76 @@ export default function BarcodeScanner({ onDetect }) {
   }, [onDetect]);
 
   useEffect(() => {
-    const reader = new BrowserMultiFormatReader(HINTS);
     let stopped = false;
+    let pollTimer = null;
 
-    navigator.mediaDevices
-      .getUserMedia({ video: VIDEO_CONSTRAINTS })
-      .then((stream) =>
-        reader.decodeFromStream(stream, videoRef.current, (result) => {
-          if (stopped || !result) return;
-          const text = result.getText();
-          if (text === lastCodeRef.current) return;
-          lastCodeRef.current = text;
-          onDetectRef.current(text);
-        })
-      )
-      .then((controls) => {
-        if (stopped) {
-          controls.stop();
-          return;
+    function report(code) {
+      if (stopped || !code || code === lastCodeRef.current) return;
+      lastCodeRef.current = code;
+      onDetectRef.current(code);
+    }
+
+    async function start() {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: VIDEO_CONSTRAINTS });
+      if (stopped) {
+        stream.getTracks().forEach((t) => t.stop());
+        return;
+      }
+      const track = stream.getVideoTracks()[0];
+      trackRef.current = track;
+      try {
+        setTorchSupported(!!track.getCapabilities?.().torch);
+      } catch {
+        setTorchSupported(false);
+      }
+
+      if ("BarcodeDetector" in window) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play().catch(() => {});
+
+        let formats;
+        try {
+          const supported = await window.BarcodeDetector.getSupportedFormats();
+          formats = NATIVE_FORMATS.filter((f) => supported.includes(f));
+        } catch {
+          formats = undefined;
         }
-        controlsRef.current = controls;
-        setTorchSupported(typeof controls.switchTorch === "function");
-      })
-      .catch((err) => setError(err.message || "could not access camera"));
+        const detector = new window.BarcodeDetector(formats?.length ? { formats } : undefined);
+
+        const poll = async () => {
+          if (stopped) return;
+          try {
+            const hits = await detector.detect(videoRef.current);
+            if (hits[0]) report(hits[0].rawValue);
+          } catch {
+            // transient -- most frames don't contain a barcode
+          }
+          pollTimer = setTimeout(poll, 150);
+        };
+        poll();
+        stopRef.current = () => {
+          clearTimeout(pollTimer);
+          stream.getTracks().forEach((t) => t.stop());
+        };
+        return;
+      }
+
+      const reader = new BrowserMultiFormatReader(ZXING_HINTS);
+      const controls = await reader.decodeFromStream(stream, videoRef.current, (result) => {
+        if (result) report(result.getText());
+      });
+      if (stopped) {
+        controls.stop();
+        return;
+      }
+      stopRef.current = () => controls.stop();
+    }
+
+    start().catch((err) => setError(err.message || "could not access camera"));
 
     return () => {
       stopped = true;
-      controlsRef.current?.stop();
+      stopRef.current?.();
     };
   }, []);
 
@@ -89,20 +134,20 @@ export default function BarcodeScanner({ onDetect }) {
   }, []);
 
   function handleTapToFocus(e) {
-    const controls = controlsRef.current;
-    if (!controls) return;
+    const track = trackRef.current;
+    if (!track) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const x = (e.clientX - rect.left) / rect.width;
     const y = (e.clientY - rect.top) / rect.height;
-    controls
-      .streamVideoConstraintsApply({ advanced: [{ focusMode: "single-shot", pointsOfInterest: [{ x, y }] }] })
-      .catch(() => {});
+    track.applyConstraints({ advanced: [{ focusMode: "single-shot", pointsOfInterest: [{ x, y }] }] }).catch(() => {});
   }
 
   async function handleToggleTorch() {
+    const track = trackRef.current;
+    if (!track) return;
     const next = !torchOn;
     try {
-      await controlsRef.current?.switchTorch(next);
+      await track.applyConstraints({ advanced: [{ torch: next }] });
       setTorchOn(next);
     } catch {
       // Device claimed torch support but the call failed -- leave state as-is.
