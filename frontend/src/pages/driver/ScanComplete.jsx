@@ -103,6 +103,13 @@ export default function ScanComplete() {
             </li>
           ))}
         </ul>
+
+        <button
+          onClick={() => navigate("/driver")}
+          className="mt-6 w-full rounded-lg bg-brand-red px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-red-dark"
+        >
+          Done
+        </button>
       </div>
 
       <DeliveryOutcomeModal code={pendingCode} busy={busy} onSubmit={handleSubmitOutcome} />

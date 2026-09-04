@@ -85,12 +85,20 @@ export default function ScanRegister() {
           ))}
         </ul>
 
-        <button
-          onClick={() => navigate(`/driver/manifests/${manifestId}`)}
-          className="mt-6 w-full rounded-lg bg-brand-red px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-red-dark"
-        >
-          Done{registeredCount > 0 ? ` — view job (${registeredCount})` : " — view job"}
-        </button>
+        <div className="mt-6 grid grid-cols-1 gap-2">
+          <button
+            onClick={() => navigate(`/driver/manifests/${manifestId}`)}
+            className="w-full rounded-lg bg-white px-4 py-2.5 text-sm font-medium text-brand-black ring-1 ring-slate-200"
+          >
+            View job{registeredCount > 0 ? ` (${registeredCount})` : ""}
+          </button>
+          <button
+            onClick={() => navigate("/driver")}
+            className="w-full rounded-lg bg-brand-red px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-red-dark"
+          >
+            Done
+          </button>
+        </div>
       </div>
 
       <ScanResultModal result={result} onClose={() => setResult(null)} />
