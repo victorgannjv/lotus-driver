@@ -4,8 +4,11 @@ that job until they start a new one. A barcode is an exact, unambiguous identifi
 so scanning replaces manifest-photo OCR entirely: scan an order's barcode to
 register it into the current job, scan the same barcode again at the delivery
 outcome (delivered, or failed with a reason), with a required proof photo either
-way. When the last open order in a job resolves, the response flags job_complete so
-the app can tell the driver."""
+way. If an order was never scanned in (a driver forgot it at the warehouse), the
+outcome scan still goes through -- it's auto-registered into today's most recent
+open job with no "registered" event, rather than blocking the driver. When the last
+open order in a job resolves, the response flags job_complete so the app can tell
+the driver."""
 from datetime import date, datetime, timezone
 
 from asyncmy.cursors import DictCursor
@@ -83,10 +86,16 @@ async def _require_open_manifest(pool, driver_id: int, manifest_id: int) -> None
         raise HTTPException(status_code=409, detail="this job was cancelled")
 
 
-async def _find_open_job(pool, driver_id: int, code: str) -> dict:
+async def _find_or_create_job_for_outcome(pool, driver_id: int, code: str) -> dict:
     """Looks up the job(-order) a delivery-outcome scan refers to. 'registered' and
     'failed' are both open to a new outcome (a driver can retry after a failed
-    attempt); 'delivered'/'cancelled' are terminal."""
+    attempt); 'delivered'/'cancelled' are terminal.
+
+    If the driver never scanned this code in at the warehouse (forgot it, or it
+    wasn't in that day's load), that shouldn't block them from completing it -- it's
+    auto-registered into today's most recently started open job instead. There's
+    just no "registered" event/timestamp for it, since it never actually went
+    through that step; the outcome event is its first and only one."""
     async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
         # A code may exist in more than one of the driver's past jobs in theory;
         # the most recently registered one is the one they mean.
@@ -99,13 +108,34 @@ async def _find_open_job(pool, driver_id: int, code: str) -> dict:
         )
         job = await cur.fetchone()
 
-    if job is None:
-        raise HTTPException(status_code=404, detail=f"{code} hasn't been registered yet -- scan it in first")
-    if job["status_code"] == "delivered":
-        raise HTTPException(status_code=409, detail=f"{code} was already delivered")
-    if job["status_code"] == "cancelled":
-        raise HTTPException(status_code=409, detail=f"{code} was cancelled")
-    return job
+    if job is not None:
+        if job["status_code"] == "delivered":
+            raise HTTPException(status_code=409, detail=f"{code} was already delivered")
+        if job["status_code"] == "cancelled":
+            raise HTTPException(status_code=409, detail=f"{code} was cancelled")
+        return job
+
+    today = date.today().isoformat()
+    async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
+        await cur.execute(
+            "SELECT id FROM manifests WHERE driver_id = %s AND work_date = %s AND cancelled_at IS NULL "
+            "ORDER BY id DESC LIMIT 1",
+            (driver_id, today),
+        )
+        manifest = await cur.fetchone()
+    if manifest is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f'{code} was never scanned in, and no job is open today -- tap "Arrived at warehouse" first',
+        )
+
+    async with pool.acquire() as conn, conn.cursor() as cur:
+        await cur.execute(
+            "INSERT INTO delivery_jobs (manifest_id, tracking_no, status_code) VALUES (%s, %s, 'registered')",
+            (manifest["id"], code),
+        )
+        job_id = cur.lastrowid
+    return {"id": job_id, "manifest_id": manifest["id"], "status_code": "registered"}
 
 
 async def _is_job_complete(pool, manifest_id: int) -> bool:
@@ -199,7 +229,7 @@ async def complete_scan(
     if not code:
         raise HTTPException(status_code=422, detail="scanned code is empty")
     occurred_dt = _parse_occurred_at(occurred_at)
-    job = await _find_open_job(pool, driver["id"], code)
+    job = await _find_or_create_job_for_outcome(pool, driver["id"], code)
 
     photo_bytes = await photo.read()
     photo_id = await store_photo(pool, photo_bytes, photo.content_type or "image/jpeg", driver["id"])
@@ -235,7 +265,7 @@ async def fail_scan(
     if not reason:
         raise HTTPException(status_code=422, detail="a failure reason is required")
     occurred_dt = _parse_occurred_at(occurred_at)
-    job = await _find_open_job(pool, driver["id"], code)
+    job = await _find_or_create_job_for_outcome(pool, driver["id"], code)
 
     photo_bytes = await photo.read()
     photo_id = await store_photo(pool, photo_bytes, photo.content_type or "image/jpeg", driver["id"])

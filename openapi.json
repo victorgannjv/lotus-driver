@@ -121,7 +121,7 @@
     },
     "/api/scans/complete": {
       "post": {
-        "summary": "Mark an order delivered by scanning the same barcode again, with a required proof photo; logs a delivered event with timestamp + GPS + photo. Response flags job_complete if this resolved the last open order in its job.",
+        "summary": "Mark an order delivered by scanning the same barcode again, with a required proof photo; logs a delivered event with timestamp + GPS + photo. If the order was never scanned in at the warehouse, it's auto-registered into today's most recent open job instead of being blocked (no 'registered' event/timestamp for it). Response flags job_complete if this resolved the last open order in its job.",
         "operationId": "completeScan",
         "tags": ["driver"],
         "security": [{ "driverBearer": [] }],
@@ -148,7 +148,7 @@
             "description": "Marked delivered.",
             "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ScanCompleteResult" } } }
           },
-          "404": { "description": "That code hasn't been registered yet." },
+          "404": { "description": "No job is open today to auto-register this code into -- tap \"Arrived at warehouse\" first." },
           "409": { "description": "That code was already delivered or was cancelled." },
           "422": { "description": "Scanned code is empty." }
         }
@@ -156,7 +156,7 @@
     },
     "/api/scans/fail": {
       "post": {
-        "summary": "Mark a delivery attempt failed by scanning the barcode, with a required reason and proof photo; logs a failed event with timestamp + GPS + reason + photo. Response flags job_complete if this resolved the last open order in its job.",
+        "summary": "Mark a delivery attempt failed by scanning the barcode, with a required reason and proof photo; logs a failed event with timestamp + GPS + reason + photo. If the order was never scanned in at the warehouse, it's auto-registered into today's most recent open job instead of being blocked (no 'registered' event/timestamp for it). Response flags job_complete if this resolved the last open order in its job.",
         "operationId": "failScan",
         "tags": ["driver"],
         "security": [{ "driverBearer": [] }],
@@ -184,7 +184,7 @@
             "description": "Marked failed.",
             "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ScanCompleteResult" } } }
           },
-          "404": { "description": "That code hasn't been registered yet." },
+          "404": { "description": "No job is open today to auto-register this code into -- tap \"Arrived at warehouse\" first." },
           "409": { "description": "That code was already delivered or was cancelled." },
           "422": { "description": "Scanned code is empty, or reason is empty." }
         }
