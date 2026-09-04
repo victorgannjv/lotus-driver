@@ -15,22 +15,22 @@ export default function Jobs() {
   const [jobs, setJobs] = useState(null);
   const [error, setError] = useState(null);
 
+  const queryString = status ? `status=${encodeURIComponent(status)}` : "";
+
   useEffect(() => {
     api.get("/statuses").then((d) => setStatuses(d.statuses));
   }, []);
 
   useEffect(() => {
-    const params = new URLSearchParams();
-    if (status) params.set("status", status);
     api
-      .get(`/admin/jobs?${params.toString()}`)
+      .get(`/admin/jobs?${queryString}`)
       .then((d) => setJobs(d.jobs))
       .catch((err) => setError(err.detail || "could not load jobs"));
   }, [status]);
 
   return (
     <div>
-      <div className="mb-4 flex flex-wrap items-center gap-3">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <select
           value={status}
           onChange={(e) => setStatus(e.target.value)}
@@ -43,6 +43,13 @@ export default function Jobs() {
             </option>
           ))}
         </select>
+        <a
+          href={`/api/admin/exports/jobs.csv${queryString ? `?${queryString}` : ""}`}
+          download
+          className="rounded-lg bg-brand-red px-4 py-2 text-sm font-medium text-white hover:bg-brand-red-dark"
+        >
+          Export CSV
+        </a>
       </div>
 
       {error && <p className="text-sm text-red-600">{error}</p>}

@@ -415,6 +415,27 @@
         }
       }
     },
+    "/api/admin/exports/jobs.csv": {
+      "get": {
+        "summary": "Download the full job/event log as CSV -- one row per scan event (registered/delivered/failed, with GPS, failure reason, proof-photo URL), not just each job's current status. Same filters as GET /api/admin/jobs, unpaginated.",
+        "operationId": "adminExportJobsCsv",
+        "tags": ["admin"],
+        "security": [{ "adminSSO": [] }],
+        "parameters": [
+          { "name": "status", "in": "query", "schema": { "type": "string" } },
+          { "name": "driver_id", "in": "query", "schema": { "type": "integer" } },
+          { "name": "manifest_id", "in": "query", "schema": { "type": "integer" } },
+          { "name": "date_from", "in": "query", "schema": { "type": "string", "format": "date" } },
+          { "name": "date_to", "in": "query", "schema": { "type": "string", "format": "date" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "CSV file download (Content-Disposition: attachment).",
+            "content": { "text/csv": { "schema": { "type": "string" } } }
+          }
+        }
+      }
+    },
     "/api/admin/jobs/{job_id}": {
       "get": {
         "summary": "Get full detail for one delivery job, including its session and driver.",
