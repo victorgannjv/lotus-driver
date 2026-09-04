@@ -1,12 +1,15 @@
 description: >
   Lotus Driver Tracking System tracks NinjaVan drivers delivering Lotus warehouse
   parcels across Kuala Lumpur. Drivers sign up and log in with email/password, then
-  scan each order's barcode at pickup to register it and scan the same barcode again
-  at delivery to mark it complete -- every scan logs GPS + timestamp server-side, and
-  the barcode itself is an exact identifier so there's no OCR or manual matching
-  involved. Supervisors use a Google-SSO-gated admin dashboard to review drivers,
-  browse delivery jobs, and see each job's full chronological scan-event timeline for
-  dispute resolution.
+  tap "Arrived at warehouse" to start a job (a driver may run 1-2 jobs a day) and scan
+  each order's barcode to group it into that job; completing a delivery means scanning
+  the barcode again, choosing Delivered or Failed (with a reason), and taking a proof
+  photo -- every scan logs GPS + timestamp server-side, and the barcode itself is an
+  exact identifier so there's no OCR or manual matching involved. The app notifies the
+  driver once every order in a job is resolved. Supervisors use a Google-SSO-gated
+  admin dashboard to review drivers, browse delivery jobs and their proof photos, see
+  each job's full chronological scan-event timeline for dispute resolution, and export
+  the whole log to CSV.
 database: oceanbase
 
 # Skill/plugin version this app was last deployed with — stamped by

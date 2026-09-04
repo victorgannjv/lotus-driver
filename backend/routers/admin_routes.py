@@ -55,7 +55,9 @@ def _serialize_admin_job(row: dict) -> dict:
         "tracking_no": row["tracking_no"],
         "status_code": row["status_code"],
         "created_at": str(row["created_at"]),
+        "manifest_id": row["manifest_id"],
         "work_date": str(row["work_date"]),
+        "warehouse_arrived_at": str(row["warehouse_arrived_at"]) if row["warehouse_arrived_at"] else None,
         "driver_id": row["driver_id"],
         "driver_name": row["driver_name"],
     }
@@ -107,12 +109,12 @@ async def list_jobs(
     async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
         await cur.execute(
             f"SELECT dj.id, dj.tracking_no, dj.status_code, dj.created_at, "
-            f"       m.work_date, m.driver_id, u.name AS driver_name "
+            f"       m.id AS manifest_id, m.work_date, m.warehouse_arrived_at, m.driver_id, u.name AS driver_name "
             f"FROM delivery_jobs dj "
             f"JOIN manifests m ON m.id = dj.manifest_id "
             f"JOIN users u ON u.id = m.driver_id "
             f"{where_sql} "
-            f"ORDER BY m.work_date DESC, dj.id DESC "
+            f"ORDER BY m.work_date DESC, m.id DESC, dj.id DESC "
             f"LIMIT %s OFFSET %s",
             (*params, page_size, offset),
         )

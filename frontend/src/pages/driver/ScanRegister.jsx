@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../../api";
 import AppHeader from "../../components/AppHeader";
 import BarcodeScanner from "../../components/BarcodeScanner";
@@ -7,9 +7,9 @@ import ScanResultModal from "../../components/ScanResultModal";
 import { getPosition } from "../../lib/geolocation";
 
 export default function ScanRegister() {
+  const { manifestId } = useParams();
   const navigate = useNavigate();
   const [log, setLog] = useState([]);
-  const [manifestId, setManifestId] = useState(null);
   const [manualCode, setManualCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null);
@@ -23,11 +23,11 @@ export default function ScanRegister() {
       const position = await getPosition();
       const res = await api.post("/scans/register", {
         code,
+        manifest_id: Number(manifestId),
         lat: position.lat,
         lng: position.lng,
         occurred_at: new Date().toISOString(),
       });
-      setManifestId(res.manifest_id);
       const message = res.already_registered ? "Already registered" : "Registered";
       setLog((l) => [{ code, ok: true, message }, ...l]);
       setResult({ code, tone: "success", message });
@@ -52,10 +52,10 @@ export default function ScanRegister() {
 
   return (
     <main className="min-h-screen bg-slate-50">
-      <AppHeader backTo="/driver" title="Scan orders to start" />
+      <AppHeader backTo={`/driver/manifests/${manifestId}`} title="Scan orders" />
       <div className="mx-auto max-w-md px-4 py-6">
         <p className="text-sm text-slate-500">
-          Point the camera at each order's barcode. We'll register every new one automatically.
+          Point the camera at each order's barcode. We'll register every new one into this job automatically.
         </p>
 
         <div className="mt-4">
@@ -85,14 +85,12 @@ export default function ScanRegister() {
           ))}
         </ul>
 
-        {manifestId && (
-          <button
-            onClick={() => navigate(`/driver/manifests/${manifestId}`)}
-            className="mt-6 w-full rounded-lg bg-brand-red px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-red-dark"
-          >
-            Done — view today's jobs ({registeredCount})
-          </button>
-        )}
+        <button
+          onClick={() => navigate(`/driver/manifests/${manifestId}`)}
+          className="mt-6 w-full rounded-lg bg-brand-red px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-red-dark"
+        >
+          Done{registeredCount > 0 ? ` — view job (${registeredCount})` : " — view job"}
+        </button>
       </div>
 
       <ScanResultModal result={result} onClose={() => setResult(null)} />

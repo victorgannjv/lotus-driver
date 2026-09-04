@@ -32,6 +32,7 @@ class AddAdminRequest(BaseModel):
 
 class ScanRequest(BaseModel):
     code: str
+    manifest_id: int | None = None
     lat: float | None = None
     lng: float | None = None
     occurred_at: str | None = None

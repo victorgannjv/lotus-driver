@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { api } from "../../api";
 import AppHeader from "../../components/AppHeader";
-import { getPosition } from "../../lib/geolocation";
 
 const STATUS_STYLES = {
   registered: "bg-slate-100 text-slate-700",
@@ -13,23 +12,21 @@ const STATUS_STYLES = {
 
 export default function ManifestDetail() {
   const { manifestId } = useParams();
-  const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [cancelling, setCancelling] = useState(false);
-  const [starting, setStarting] = useState(false);
 
   function load() {
     api
       .get(`/manifests/${manifestId}`)
       .then(setData)
-      .catch((err) => setError(err.detail || "could not load manifest"));
+      .catch((err) => setError(err.detail || "could not load job"));
   }
 
   useEffect(load, [manifestId]);
 
   async function handleCancel() {
-    if (!window.confirm("Cancel this session? Registered-but-undelivered orders will be voided. This can't be undone.")) {
+    if (!window.confirm("Cancel this job? Registered-but-undelivered orders will be voided. This can't be undone.")) {
       return;
     }
     setCancelling(true);
@@ -38,25 +35,9 @@ export default function ManifestDetail() {
       await api.post(`/manifests/${manifestId}/cancel`, {});
       load();
     } catch (err) {
-      setError(err.detail || "could not cancel this session");
+      setError(err.detail || "could not cancel this job");
     } finally {
       setCancelling(false);
-    }
-  }
-
-  async function handleScanMore() {
-    setStarting(true);
-    try {
-      const position = await getPosition();
-      await api.post("/warehouse-arrival", {
-        lat: position.lat,
-        lng: position.lng,
-        occurred_at: new Date().toISOString(),
-      });
-    } catch {
-      // Best-effort logging -- don't block the driver from starting work over it.
-    } finally {
-      navigate("/driver/scans/register");
     }
   }
 
@@ -65,21 +46,29 @@ export default function ManifestDetail() {
 
   const { manifest, jobs } = data;
   const canCancel = !manifest.cancelled_at && jobs.every((j) => j.status_code === "registered");
+  const isComplete = !manifest.cancelled_at && jobs.length > 0 && jobs.every((j) => j.status_code !== "registered");
 
   return (
     <main className="min-h-screen bg-slate-50">
       <AppHeader backTo="/driver" />
       <div className="mx-auto max-w-md px-4 py-6">
-        <h1 className="text-lg font-semibold text-brand-black">{manifest.work_date}</h1>
+        <div className="flex items-center justify-between">
+          <h1 className="text-lg font-semibold text-brand-black">{manifest.work_date}</h1>
+          {isComplete && (
+            <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-medium text-emerald-800">
+              Job complete
+            </span>
+          )}
+        </div>
         {manifest.warehouse_arrived_at && (
           <p className="mt-1 text-xs text-slate-400">Arrived at warehouse: {manifest.warehouse_arrived_at}</p>
         )}
 
         {manifest.cancelled_at && (
           <div className="mt-2 rounded-lg bg-slate-100 px-4 py-3 text-sm text-slate-600">
-            <p>This session was cancelled.</p>
-            <Link to="/driver/scans/register" className="mt-2 inline-block font-medium underline">
-              Start a new session
+            <p>This job was cancelled.</p>
+            <Link to="/driver" className="mt-2 inline-block font-medium underline">
+              Back to home
             </Link>
           </div>
         )}
@@ -98,27 +87,28 @@ export default function ManifestDetail() {
               </span>
             </li>
           ))}
-          {jobs.length === 0 && <p className="text-sm text-slate-500">No orders scanned in this session yet.</p>}
+          {jobs.length === 0 && <p className="text-sm text-slate-500">No orders scanned into this job yet.</p>}
         </ul>
 
-        <div className="mt-6 grid grid-cols-1 gap-2">
-          <button
-            onClick={handleScanMore}
-            disabled={starting}
-            className="block rounded-lg bg-white px-4 py-2.5 text-center text-sm font-medium text-brand-black ring-1 ring-slate-200 disabled:opacity-50"
-          >
-            {starting ? "One sec…" : "Scan more orders"}
-          </button>
-          {canCancel && (
-            <button
-              onClick={handleCancel}
-              disabled={cancelling}
-              className="w-full rounded-lg bg-white px-4 py-2.5 text-sm font-medium text-brand-red ring-1 ring-brand-red/30 disabled:opacity-50"
+        {!manifest.cancelled_at && (
+          <div className="mt-6 grid grid-cols-1 gap-2">
+            <Link
+              to={`/driver/manifests/${manifestId}/register`}
+              className="block rounded-lg bg-white px-4 py-2.5 text-center text-sm font-medium text-brand-black ring-1 ring-slate-200"
             >
-              {cancelling ? "Cancelling…" : "Cancel this session"}
-            </button>
-          )}
-        </div>
+              Scan more orders
+            </Link>
+            {canCancel && (
+              <button
+                onClick={handleCancel}
+                disabled={cancelling}
+                className="w-full rounded-lg bg-white px-4 py-2.5 text-sm font-medium text-brand-red ring-1 ring-brand-red/30 disabled:opacity-50"
+              >
+                {cancelling ? "Cancelling…" : "Cancel this job"}
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </main>
   );

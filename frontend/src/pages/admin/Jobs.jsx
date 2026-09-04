@@ -63,6 +63,7 @@ export default function Jobs() {
                 <th className="px-4 py-3">Tracking No.</th>
                 <th className="px-4 py-3">Driver</th>
                 <th className="px-4 py-3">Date</th>
+                <th className="px-4 py-3">Job started</th>
                 <th className="px-4 py-3">Status</th>
               </tr>
             </thead>
@@ -76,6 +77,7 @@ export default function Jobs() {
                   </td>
                   <td className="px-4 py-3 text-slate-600">{job.driver_name}</td>
                   <td className="px-4 py-3 text-slate-600">{job.work_date}</td>
+                  <td className="px-4 py-3 text-slate-600">{job.warehouse_arrived_at || "—"}</td>
                   <td className="px-4 py-3">
                     <span className={`rounded-full px-2 py-1 text-xs font-medium ${STATUS_STYLES[job.status_code] || "bg-slate-100 text-slate-700"}`}>
                       {job.status_code}
@@ -85,7 +87,7 @@ export default function Jobs() {
               ))}
               {jobs.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="px-4 py-6 text-center text-slate-500">
+                  <td colSpan={5} className="px-4 py-6 text-center text-slate-500">
                     No jobs match this filter.
                   </td>
                 </tr>

@@ -20,26 +20,26 @@ export default function Home() {
     api
       .get("/manifests")
       .then((d) => setManifests(d.manifests))
-      .catch((err) => setError(err.detail || "could not load manifests"));
+      .catch((err) => setError(err.detail || "could not load jobs"));
   }, []);
 
-  const todayManifest = manifests?.find((m) => m.work_date === todayIso() && !m.cancelled_at);
-
-  async function handleStartScanning() {
-    // Only the first press of the day actually records an arrival time (the
-    // backend is idempotent on this) -- later presses just navigate through.
+  // "Arrived at warehouse" always starts a brand-new job -- a driver may make more
+  // than one warehouse trip a day (typically 1-2), and every order scanned after
+  // this groups into whichever job was started most recently.
+  async function handleArrived() {
     setStarting(true);
+    setError(null);
     try {
       const position = await getPosition();
-      await api.post("/warehouse-arrival", {
+      const res = await api.post("/manifests/start", {
         lat: position.lat,
         lng: position.lng,
         occurred_at: new Date().toISOString(),
       });
-    } catch {
-      // Best-effort logging -- don't block the driver from starting work over it.
-    } finally {
-      navigate("/driver/scans/register");
+      navigate(`/driver/manifests/${res.manifest.id}/register`);
+    } catch (err) {
+      setError(err.detail || "could not start a new job");
+      setStarting(false);
     }
   }
 
@@ -61,11 +61,11 @@ export default function Home() {
 
         <div className="mt-6 grid grid-cols-1 gap-3">
           <button
-            onClick={handleStartScanning}
+            onClick={handleArrived}
             disabled={starting}
             className="block rounded-2xl bg-brand-red px-6 py-5 text-center text-sm font-medium text-white shadow-sm hover:bg-brand-red-dark disabled:opacity-50"
           >
-            {starting ? "One sec…" : todayManifest ? "Scan more orders" : "Scan orders to start today's job"}
+            {starting ? "One sec…" : "Arrived at warehouse"}
           </button>
           <Link
             to="/driver/scans/complete"
@@ -75,32 +75,22 @@ export default function Home() {
           </Link>
         </div>
 
-        {todayManifest && (
-          <Link
-            to={`/driver/manifests/${todayManifest.id}`}
-            className="mt-6 block rounded-lg bg-white px-4 py-3 text-sm text-slate-700 shadow-sm ring-1 ring-slate-200"
-          >
-            View today's jobs →
-          </Link>
-        )}
-
         {manifests !== null && manifests.length > 0 && (
           <div className="mt-8">
-            <p className="text-sm font-medium text-slate-700">Past sessions</p>
+            <p className="text-sm font-medium text-slate-700">Your jobs</p>
             <ul className="mt-2 space-y-2">
-              {manifests
-                .filter((m) => m.work_date !== todayIso() || m.cancelled_at)
-                .map((m) => (
-                  <li key={m.id}>
-                    <Link
-                      to={`/driver/manifests/${m.id}`}
-                      className="block rounded-lg bg-white px-4 py-3 text-sm ring-1 ring-slate-200"
-                    >
-                      {m.work_date}
-                      {m.cancelled_at ? " — cancelled" : ""}
-                    </Link>
-                  </li>
-                ))}
+              {manifests.map((m) => (
+                <li key={m.id}>
+                  <Link
+                    to={`/driver/manifests/${m.id}`}
+                    className="block rounded-lg bg-white px-4 py-3 text-sm ring-1 ring-slate-200"
+                  >
+                    <span className="font-medium text-brand-black">{m.work_date}</span>
+                    {m.warehouse_arrived_at && <span className="text-slate-500"> — {m.warehouse_arrived_at}</span>}
+                    {m.cancelled_at && <span className="text-slate-400"> — cancelled</span>}
+                  </Link>
+                </li>
+              ))}
             </ul>
           </div>
         )}

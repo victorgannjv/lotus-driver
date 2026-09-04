@@ -1,23 +1,28 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { api } from "../../api";
 import AppHeader from "../../components/AppHeader";
 import BarcodeScanner from "../../components/BarcodeScanner";
 import DeliveryOutcomeModal from "../../components/DeliveryOutcomeModal";
+import JobCompleteModal from "../../components/JobCompleteModal";
 import ScanResultModal from "../../components/ScanResultModal";
 import { getPosition } from "../../lib/geolocation";
 
 export default function ScanComplete() {
+  const navigate = useNavigate();
   const [log, setLog] = useState([]);
   const [manualCode, setManualCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [pendingCode, setPendingCode] = useState(null);
   const [result, setResult] = useState(null);
+  const [completedManifestId, setCompletedManifestId] = useState(null);
+  const [showJobComplete, setShowJobComplete] = useState(false);
 
   // A code is scanned -> ask Delivered/Failed (+ reason, + proof photo) before
-  // recording anything. Ignore new scans while that flow or a result confirmation
-  // is still on screen -- one scan is handled at a time.
+  // recording anything. Ignore new scans while that flow, a result confirmation, or
+  // the job-complete popup is still on screen -- one scan is handled at a time.
   function handleDetect(code) {
-    if (busy || pendingCode || result) return;
+    if (busy || pendingCode || result || showJobComplete) return;
     setPendingCode(code);
   }
 
@@ -41,12 +46,13 @@ export default function ScanComplete() {
       if (outcome === "failed") formData.append("reason", reason);
       formData.append("photo", photo);
 
-      await api.postForm(outcome === "delivered" ? "/scans/complete" : "/scans/fail", formData);
+      const res = await api.postForm(outcome === "delivered" ? "/scans/complete" : "/scans/fail", formData);
 
       const message = outcome === "delivered" ? "Delivered" : "Marked as failed";
       const logMessage = outcome === "failed" ? `Failed — ${reason}` : message;
       setLog((l) => [{ code, ok: true, message: logMessage }, ...l]);
       setResult({ code, tone: outcome === "delivered" ? "success" : "warning", message });
+      if (res.job_complete) setCompletedManifestId(res.manifest_id);
     } catch (err) {
       const message = err.detail || "Failed";
       setLog((l) => [{ code, ok: false, message }, ...l]);
@@ -55,6 +61,11 @@ export default function ScanComplete() {
       setBusy(false);
       setPendingCode(null);
     }
+  }
+
+  function handleResultClose() {
+    setResult(null);
+    if (completedManifestId) setShowJobComplete(true);
   }
 
   return (
@@ -95,7 +106,15 @@ export default function ScanComplete() {
       </div>
 
       <DeliveryOutcomeModal code={pendingCode} busy={busy} onSubmit={handleSubmitOutcome} />
-      <ScanResultModal result={result} onClose={() => setResult(null)} />
+      <ScanResultModal result={result} onClose={handleResultClose} />
+      <JobCompleteModal
+        open={showJobComplete}
+        onViewJob={() => navigate(`/driver/manifests/${completedManifestId}`)}
+        onDismiss={() => {
+          setShowJobComplete(false);
+          setCompletedManifestId(null);
+        }}
+      />
     </main>
   );
 }

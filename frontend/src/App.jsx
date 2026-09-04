@@ -40,7 +40,7 @@ export default function App() {
             }
           />
           <Route
-            path="/driver/scans/register"
+            path="/driver/manifests/:manifestId/register"
             element={
               <RequireDriver>
                 <Suspense fallback={null}>

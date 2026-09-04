@@ -100,7 +100,7 @@
     },
     "/api/scans/register": {
       "post": {
-        "summary": "Register an order by its scanned barcode at pickup; creates today's scan session on first use and creates the job on first scan of that code (a repeat scan is a no-op, not an error).",
+        "summary": "Register an order by its scanned barcode into the given job (started via POST /api/manifests/start); a repeat scan of the same code in that job is a no-op, not an error.",
         "operationId": "registerScan",
         "tags": ["driver"],
         "security": [{ "driverBearer": [] }],
@@ -113,14 +113,15 @@
             "description": "Registered (or already was).",
             "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ScanRegisterResult" } } }
           },
-          "409": { "description": "That code was already delivered or was cancelled." },
-          "422": { "description": "Scanned code is empty." }
+          "404": { "description": "Job not found -- start one first with POST /api/manifests/start." },
+          "409": { "description": "That code was already delivered or was cancelled, or the job was cancelled." },
+          "422": { "description": "Scanned code is empty, or manifest_id is missing." }
         }
       }
     },
     "/api/scans/complete": {
       "post": {
-        "summary": "Mark an order delivered by scanning the same barcode again, with a required proof photo; logs a delivered event with timestamp + GPS + photo.",
+        "summary": "Mark an order delivered by scanning the same barcode again, with a required proof photo; logs a delivered event with timestamp + GPS + photo. Response flags job_complete if this resolved the last open order in its job.",
         "operationId": "completeScan",
         "tags": ["driver"],
         "security": [{ "driverBearer": [] }],
@@ -155,7 +156,7 @@
     },
     "/api/scans/fail": {
       "post": {
-        "summary": "Mark a delivery attempt failed by scanning the barcode, with a required reason and proof photo; logs a failed event with timestamp + GPS + reason + photo.",
+        "summary": "Mark a delivery attempt failed by scanning the barcode, with a required reason and proof photo; logs a failed event with timestamp + GPS + reason + photo. Response flags job_complete if this resolved the last open order in its job.",
         "operationId": "failScan",
         "tags": ["driver"],
         "security": [{ "driverBearer": [] }],
@@ -189,10 +190,10 @@
         }
       }
     },
-    "/api/warehouse-arrival": {
+    "/api/manifests/start": {
       "post": {
-        "summary": "Record the driver's warehouse-arrival time for today (first call of the day wins; later calls are a no-op).",
-        "operationId": "logWarehouseArrival",
+        "summary": "\"Arrived at warehouse\" -- always starts a brand-new job (a driver may make more than one warehouse trip a day), timestamped + geotagged at creation. Every order scanned afterwards groups into this job until another one is started.",
+        "operationId": "startManifest",
         "tags": ["driver"],
         "security": [{ "driverBearer": [] }],
         "requestBody": {
@@ -200,8 +201,8 @@
           "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ArrivalRequest" } } }
         },
         "responses": {
-          "200": {
-            "description": "Today's session, with warehouse_arrived_at set if this was the first call of the day.",
+          "201": {
+            "description": "The newly created job.",
             "content": {
               "application/json": {
                 "schema": { "type": "object", "properties": { "manifest": { "$ref": "#/components/schemas/Manifest" } } }
@@ -573,9 +574,10 @@
       },
       "ScanRequest": {
         "type": "object",
-        "required": ["code"],
+        "required": ["code", "manifest_id"],
         "properties": {
           "code": { "type": "string", "description": "The decoded barcode value." },
+          "manifest_id": { "type": "integer", "description": "The job to register this order into (from POST /api/manifests/start)." },
           "lat": { "type": "number", "nullable": true },
           "lng": { "type": "number", "nullable": true },
           "occurred_at": { "type": "string", "format": "date-time", "nullable": true, "description": "ISO 8601; defaults to server time if omitted." }
@@ -616,7 +618,9 @@
         "type": "object",
         "properties": {
           "job_id": { "type": "integer" },
-          "tracking_no": { "type": "string" }
+          "tracking_no": { "type": "string" },
+          "manifest_id": { "type": "integer" },
+          "job_complete": { "type": "boolean", "description": "True if every order in this job now has a resolved outcome." }
         }
       },
       "Manifest": {
@@ -646,7 +650,9 @@
           {
             "type": "object",
             "properties": {
+              "manifest_id": { "type": "integer" },
               "work_date": { "type": "string", "format": "date" },
+              "warehouse_arrived_at": { "type": "string", "nullable": true },
               "driver_id": { "type": "integer" },
               "driver_name": { "type": "string" }
             }
