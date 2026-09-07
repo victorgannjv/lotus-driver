@@ -11,6 +11,9 @@ export default function Gate() {
       <div className="min-h-screen bg-slate-50">
         <AppHeader title="Lotus Driver Tracking — Admin" />
         <nav className="flex gap-2 border-b border-slate-200 bg-white px-6 py-3">
+          <NavLink to="/admin/dashboard" className={linkClass}>
+            Dashboard
+          </NavLink>
           <NavLink to="/admin/jobs" className={linkClass}>
             Jobs
           </NavLink>

@@ -578,6 +578,29 @@
         }
       }
     },
+    "/api/admin/dashboard": {
+      "get": {
+        "summary": "High-level performance summary: job counts by status, success/failure rate among resolved jobs, and average lead time (registered scan -> delivered/failed scan). Filterable by warehouse and date range.",
+        "operationId": "adminGetDashboard",
+        "tags": ["admin"],
+        "security": [{ "adminSSO": [] }],
+        "parameters": [
+          { "name": "warehouse_id", "in": "query", "schema": { "type": "integer" }, "description": "Filters by the driver's assigned outlet (a job has no warehouse of its own)." },
+          { "name": "date_from", "in": "query", "schema": { "type": "string", "format": "date" } },
+          { "name": "date_to", "in": "query", "schema": { "type": "string", "format": "date" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Dashboard summary.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/DashboardSummary" }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/admin/jobs/{job_id}": {
       "get": {
         "summary": "Get full detail for one delivery job, including its session and driver.",
@@ -833,6 +856,21 @@
             }
           }
         ]
+      },
+      "DashboardSummary": {
+        "type": "object",
+        "properties": {
+          "total_jobs": { "type": "integer" },
+          "registered": { "type": "integer" },
+          "delivered": { "type": "integer" },
+          "failed": { "type": "integer" },
+          "cancelled": { "type": "integer" },
+          "resolved_jobs": { "type": "integer", "description": "delivered + failed" },
+          "success_rate": { "type": "number", "nullable": true, "description": "delivered / resolved_jobs * 100, null if resolved_jobs is 0" },
+          "failure_rate": { "type": "number", "nullable": true, "description": "failed / resolved_jobs * 100, null if resolved_jobs is 0" },
+          "avg_lead_time_seconds": { "type": "number", "nullable": true, "description": "average time from 'registered' scan to 'delivered'/'failed' scan, across jobs with both events" },
+          "lead_time_sample_size": { "type": "integer" }
+        }
       },
       "AdminJobDetail": {
         "type": "object",

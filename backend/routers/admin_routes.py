@@ -289,6 +289,72 @@ async def export_jobs_csv(
     )
 
 
+@router.get("/dashboard")
+async def get_dashboard(
+    request: Request,
+    warehouse_id: int | None = Query(None),
+    date_from: str | None = Query(None),
+    date_to: str | None = Query(None),
+    admin=Depends(get_current_admin),
+):
+    """High-level performance summary: job counts by status, success/failure rate
+    (delivered vs. failed among resolved jobs -- in-progress and cancelled jobs are
+    excluded from that ratio since they have no outcome yet), and average lead time
+    (registered scan -> delivered/failed scan). Auto-registered orders have no
+    'registered' event, so they're naturally excluded from the lead-time average
+    rather than skewing it with a missing start time."""
+    pool = get_pool(request)
+    where, params = _build_job_filters(None, None, None, warehouse_id, date_from, date_to)
+    where_sql = f"WHERE {' AND '.join(where)}" if where else ""
+
+    async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
+        await cur.execute(
+            f"SELECT dj.status_code, COUNT(*) AS cnt "
+            f"FROM delivery_jobs dj "
+            f"JOIN manifests m ON m.id = dj.manifest_id "
+            f"JOIN users u ON u.id = m.driver_id "
+            f"{where_sql} "
+            f"GROUP BY dj.status_code",
+            params,
+        )
+        status_rows = await cur.fetchall()
+
+        await cur.execute(
+            f"SELECT AVG(TIMESTAMPDIFF(SECOND, reg.occurred_at, term.occurred_at)) AS avg_lead_seconds, "
+            f"       COUNT(*) AS sample_size "
+            f"FROM delivery_jobs dj "
+            f"JOIN manifests m ON m.id = dj.manifest_id "
+            f"JOIN users u ON u.id = m.driver_id "
+            f"JOIN delivery_events reg ON reg.job_id = dj.id AND reg.status_code = 'registered' "
+            f"JOIN delivery_events term ON term.job_id = dj.id AND term.status_code IN ('delivered', 'failed') "
+            f"{where_sql}",
+            params,
+        )
+        lead_row = await cur.fetchone()
+
+    counts = {"registered": 0, "delivered": 0, "failed": 0, "cancelled": 0}
+    for r in status_rows:
+        counts[r["status_code"]] = r["cnt"]
+
+    resolved = counts["delivered"] + counts["failed"]
+    success_rate = (counts["delivered"] / resolved * 100) if resolved else None
+    failure_rate = (counts["failed"] / resolved * 100) if resolved else None
+    avg_lead_seconds = float(lead_row["avg_lead_seconds"]) if lead_row["avg_lead_seconds"] is not None else None
+
+    return {
+        "total_jobs": sum(counts.values()),
+        "registered": counts["registered"],
+        "delivered": counts["delivered"],
+        "failed": counts["failed"],
+        "cancelled": counts["cancelled"],
+        "resolved_jobs": resolved,
+        "success_rate": success_rate,
+        "failure_rate": failure_rate,
+        "avg_lead_time_seconds": avg_lead_seconds,
+        "lead_time_sample_size": lead_row["sample_size"],
+    }
+
+
 @router.get("/jobs/{job_id}")
 async def get_job(job_id: int, request: Request, admin=Depends(get_current_admin)):
     pool = get_pool(request)

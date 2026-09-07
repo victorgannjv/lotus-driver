@@ -14,6 +14,7 @@ import Signup from "./pages/driver/Signup";
 // scan pages pull in the (~450KB) barcode-scanning library, so they're lazy too --
 // no reason to make every driver download that just to sign in or check history.
 const AdminGate = lazy(() => import("./pages/admin/Gate"));
+const AdminDashboard = lazy(() => import("./pages/admin/Dashboard"));
 const AdminDrivers = lazy(() => import("./pages/admin/Drivers"));
 const AdminAdmins = lazy(() => import("./pages/admin/Admins"));
 const AdminWarehouses = lazy(() => import("./pages/admin/Warehouses"));
@@ -86,7 +87,8 @@ export default function App() {
               </Suspense>
             }
           >
-            <Route index element={<Navigate to="/admin/jobs" replace />} />
+            <Route index element={<Navigate to="/admin/dashboard" replace />} />
+            <Route path="dashboard" element={<AdminDashboard />} />
             <Route path="jobs" element={<AdminJobs />} />
             <Route path="jobs/:jobId" element={<AdminJobDetail />} />
             <Route path="drivers" element={<AdminDrivers />} />
