@@ -24,8 +24,14 @@ export function DriverAuthProvider({ children }) {
     persist(token, user);
   }
 
-  async function signup(email, password, name, phone) {
-    const { token, user } = await api.post("/auth/signup", { email, password, name, phone });
+  async function signup(email, password, name, phone, warehouseId) {
+    const { token, user } = await api.post("/auth/signup", {
+      email,
+      password,
+      name,
+      phone,
+      warehouse_id: warehouseId,
+    });
     persist(token, user);
   }
 
@@ -38,6 +44,12 @@ export function DriverAuthProvider({ children }) {
     persist(token, user);
   }
 
+  async function updateWarehouse(warehouseId) {
+    const { user } = await api.put("/driver/warehouse", { warehouse_id: warehouseId });
+    localStorage.setItem("lotus_driver_user", JSON.stringify(user));
+    setDriver(user);
+  }
+
   function logout() {
     setToken(null);
     localStorage.removeItem("lotus_driver_user");
@@ -45,7 +57,9 @@ export function DriverAuthProvider({ children }) {
   }
 
   return (
-    <DriverAuthContext.Provider value={{ driver, ready, login, signup, forgotPassword, resetPassword, logout }}>
+    <DriverAuthContext.Provider
+      value={{ driver, ready, login, signup, forgotPassword, resetPassword, updateWarehouse, logout }}
+    >
       {children}
     </DriverAuthContext.Provider>
   );

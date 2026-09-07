@@ -36,7 +36,8 @@
             "description": "Account created.",
             "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AuthResponse" } } }
           },
-          "409": { "description": "An account with this email already exists." }
+          "409": { "description": "An account with this email already exists." },
+          "422": { "description": "warehouse_id doesn't exist or is no longer active." }
         }
       }
     },
@@ -187,6 +188,43 @@
           "404": { "description": "No job is open today to auto-register this code into -- tap \"Arrived at warehouse\" first." },
           "409": { "description": "That code was already delivered or was cancelled." },
           "422": { "description": "Scanned code is empty, or reason is empty." }
+        }
+      }
+    },
+    "/api/driver/warehouse": {
+      "put": {
+        "summary": "Set which outlet this driver is assigned to -- a fixed assignment (not per-job), changeable any time from the driver's profile screen.",
+        "operationId": "updateDriverWarehouse",
+        "tags": ["driver"],
+        "security": [{ "driverBearer": [] }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DriverWarehouseRequest" } } }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated driver info.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "user": {
+                      "type": "object",
+                      "properties": {
+                        "id": { "type": "integer" },
+                        "email": { "type": "string" },
+                        "name": { "type": "string" },
+                        "warehouse_id": { "type": "integer", "nullable": true },
+                        "warehouse_name": { "type": "string", "nullable": true }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": { "description": "That outlet doesn't exist or is no longer active." }
         }
       }
     },
@@ -361,6 +399,26 @@
         }
       }
     },
+    "/api/warehouses": {
+      "get": {
+        "summary": "List active warehouse outlets. Public (no auth) -- needed on the driver signup form before any token exists; outlet names/addresses aren't sensitive.",
+        "operationId": "listActiveWarehouses",
+        "tags": ["common"],
+        "responses": {
+          "200": {
+            "description": "Active outlet list.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "warehouses": { "type": "array", "items": { "$ref": "#/components/schemas/WarehouseSummary" } } }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/admin/drivers": {
       "get": {
         "summary": "List all drivers, most recently registered first.",
@@ -379,6 +437,87 @@
               }
             }
           }
+        }
+      }
+    },
+    "/api/admin/warehouses": {
+      "get": {
+        "summary": "List every warehouse outlet, including removed (inactive) ones.",
+        "operationId": "adminListWarehouses",
+        "tags": ["admin"],
+        "security": [{ "adminSSO": [] }],
+        "responses": {
+          "200": {
+            "description": "Outlet list.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "warehouses": { "type": "array", "items": { "$ref": "#/components/schemas/Warehouse" } } }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a new warehouse outlet.",
+        "operationId": "adminCreateWarehouse",
+        "tags": ["admin"],
+        "security": [{ "adminSSO": [] }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/WarehouseRequest" } } }
+        },
+        "responses": {
+          "201": {
+            "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object", "properties": { "warehouse": { "$ref": "#/components/schemas/Warehouse" } } }
+              }
+            }
+          },
+          "422": { "description": "Name is empty." }
+        }
+      }
+    },
+    "/api/admin/warehouses/{warehouse_id}": {
+      "put": {
+        "summary": "Edit a warehouse outlet's name/address.",
+        "operationId": "adminUpdateWarehouse",
+        "tags": ["admin"],
+        "security": [{ "adminSSO": [] }],
+        "parameters": [{ "name": "warehouse_id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/WarehouseRequest" } } }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated.",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object", "properties": { "warehouse": { "$ref": "#/components/schemas/Warehouse" } } }
+              }
+            }
+          },
+          "404": { "description": "Outlet not found." },
+          "422": { "description": "Name is empty." }
+        }
+      },
+      "delete": {
+        "summary": "Remove a warehouse outlet (soft-delete: marks it inactive rather than deleting the row, since drivers may already be assigned to it).",
+        "operationId": "adminRemoveWarehouse",
+        "tags": ["admin"],
+        "security": [{ "adminSSO": [] }],
+        "parameters": [{ "name": "warehouse_id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": {
+          "200": {
+            "description": "Removed.",
+            "content": { "application/json": { "schema": { "type": "object", "properties": { "ok": { "type": "boolean" } } } } }
+          },
+          "404": { "description": "Outlet not found." }
         }
       }
     },
@@ -549,7 +688,8 @@
           "email": { "type": "string" },
           "password": { "type": "string" },
           "name": { "type": "string" },
-          "phone": { "type": "string", "nullable": true }
+          "phone": { "type": "string", "nullable": true },
+          "warehouse_id": { "type": "integer", "nullable": true, "description": "The driver's assigned outlet, from GET /api/warehouses." }
         }
       },
       "LoginRequest": {
@@ -591,6 +731,37 @@
           "occurred_at": { "type": "string", "format": "date-time", "nullable": true, "description": "ISO 8601; defaults to server time if omitted." }
         }
       },
+      "WarehouseRequest": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": { "type": "string" },
+          "address": { "type": "string", "nullable": true }
+        }
+      },
+      "DriverWarehouseRequest": {
+        "type": "object",
+        "required": ["warehouse_id"],
+        "properties": { "warehouse_id": { "type": "integer" } }
+      },
+      "WarehouseSummary": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "name": { "type": "string" },
+          "address": { "type": "string", "nullable": true }
+        }
+      },
+      "Warehouse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "name": { "type": "string" },
+          "address": { "type": "string", "nullable": true },
+          "is_active": { "type": "boolean" },
+          "created_at": { "type": "string" }
+        }
+      },
       "AuthResponse": {
         "type": "object",
         "properties": {
@@ -600,7 +771,9 @@
             "properties": {
               "id": { "type": "integer" },
               "email": { "type": "string" },
-              "name": { "type": "string" }
+              "name": { "type": "string" },
+              "warehouse_id": { "type": "integer", "nullable": true },
+              "warehouse_name": { "type": "string", "nullable": true }
             }
           }
         }
@@ -716,6 +889,8 @@
           "email": { "type": "string" },
           "phone": { "type": "string", "nullable": true },
           "status": { "type": "string", "enum": ["active", "disabled"] },
+          "warehouse_id": { "type": "integer", "nullable": true },
+          "warehouse_name": { "type": "string", "nullable": true },
           "created_at": { "type": "string" }
         }
       },

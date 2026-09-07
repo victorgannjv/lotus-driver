@@ -1,14 +1,23 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { api } from "../../api";
 import AppHeader from "../../components/AppHeader";
 import { useDriverAuth } from "../../auth/DriverAuthContext";
 
 export default function Signup() {
   const { signup } = useDriverAuth();
   const navigate = useNavigate();
-  const [form, setForm] = useState({ name: "", email: "", phone: "", password: "" });
+  const [form, setForm] = useState({ name: "", email: "", phone: "", password: "", warehouseId: "" });
+  const [warehouses, setWarehouses] = useState([]);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    api
+      .get("/warehouses")
+      .then((d) => setWarehouses(d.warehouses))
+      .catch(() => setWarehouses([]));
+  }, []);
 
   function update(field) {
     return (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
@@ -19,7 +28,7 @@ export default function Signup() {
     setBusy(true);
     setError(null);
     try {
-      await signup(form.email, form.password, form.name, form.phone || null);
+      await signup(form.email, form.password, form.name, form.phone || null, Number(form.warehouseId));
       navigate("/driver");
     } catch (err) {
       setError(err.detail || "signup failed");
@@ -47,6 +56,24 @@ export default function Signup() {
         <label className="mt-4 block text-sm font-medium text-slate-700">
           Phone (optional)
           <input value={form.phone} onChange={update("phone")} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+        </label>
+        <label className="mt-4 block text-sm font-medium text-slate-700">
+          Warehouse outlet
+          <select
+            required
+            value={form.warehouseId}
+            onChange={update("warehouseId")}
+            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+          >
+            <option value="" disabled>
+              Select your outlet…
+            </option>
+            {warehouses.map((w) => (
+              <option key={w.id} value={w.id}>
+                {w.name}
+              </option>
+            ))}
+          </select>
         </label>
         <label className="mt-4 block text-sm font-medium text-slate-700">
           Password

@@ -39,6 +39,20 @@ async def list_statuses(request: Request, user=Depends(get_current_user_any)):
     }
 
 
+@router.get("/warehouses")
+async def list_active_warehouses(request: Request):
+    # Public, deliberately: needed on the signup form before any token exists, and
+    # outlet names/addresses aren't sensitive. Only active outlets -- a removed one
+    # can't be newly picked, though drivers already assigned to it are unaffected.
+    pool = get_pool(request)
+    if pool is None:
+        return {"warehouses": []}
+    async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
+        await cur.execute("SELECT id, name, address FROM warehouses WHERE is_active = 1 ORDER BY name")
+        rows = await cur.fetchall()
+    return {"warehouses": [{"id": r["id"], "name": r["name"], "address": r["address"]} for r in rows]}
+
+
 @router.get("/photos/{photo_id}")
 async def get_photo(photo_id: int, request: Request, user=Depends(get_current_user_any)):
     pool = get_pool(request)

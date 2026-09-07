@@ -48,14 +48,22 @@ export default function Home() {
       <AppHeader
         title="Lotus Driver Tracking"
         right={
-          <button onClick={logout} className="text-sm text-white/70 hover:text-white">
-            Log out
-          </button>
+          <>
+            <Link to="/driver/profile" className="text-sm text-white/70 hover:text-white">
+              Profile
+            </Link>
+            <button onClick={logout} className="text-sm text-white/70 hover:text-white">
+              Log out
+            </button>
+          </>
         }
       />
       <div className="mx-auto max-w-md px-4 py-6">
         <h2 className="text-lg font-semibold text-brand-black">Hi, {driver?.name}</h2>
         <p className="text-sm text-slate-500">{todayIso()}</p>
+        <p className="text-sm text-slate-500">
+          Outlet: {driver?.warehouse_name || <Link to="/driver/profile" className="text-brand-red underline">Set your outlet</Link>}
+        </p>
 
         {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
 

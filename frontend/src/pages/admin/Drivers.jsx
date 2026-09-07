@@ -23,6 +23,7 @@ export default function Drivers() {
             <th className="px-4 py-3">Name</th>
             <th className="px-4 py-3">Email</th>
             <th className="px-4 py-3">Phone</th>
+            <th className="px-4 py-3">Outlet</th>
             <th className="px-4 py-3">Status</th>
             <th className="px-4 py-3">Joined</th>
           </tr>
@@ -33,13 +34,14 @@ export default function Drivers() {
               <td className="px-4 py-3 font-medium text-slate-900">{d.name}</td>
               <td className="px-4 py-3 text-slate-600">{d.email}</td>
               <td className="px-4 py-3 text-slate-600">{d.phone || "—"}</td>
+              <td className="px-4 py-3 text-slate-600">{d.warehouse_name || "—"}</td>
               <td className="px-4 py-3 text-slate-600">{d.status}</td>
               <td className="px-4 py-3 text-slate-600">{d.created_at}</td>
             </tr>
           ))}
           {drivers.length === 0 && (
             <tr>
-              <td colSpan={5} className="px-4 py-6 text-center text-slate-500">
+              <td colSpan={6} className="px-4 py-6 text-center text-slate-500">
                 No drivers have signed up yet.
               </td>
             </tr>

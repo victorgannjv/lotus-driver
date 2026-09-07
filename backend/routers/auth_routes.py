@@ -4,6 +4,7 @@ Also the forgot-password flow: email a one-time reset link (SMTP via mailer.py).
 import sys
 from datetime import datetime, timezone
 
+from asyncmy.cursors import DictCursor
 from fastapi import APIRouter, HTTPException, Request
 
 from auth import create_token, generate_reset_token, hash_password, hash_reset_token, verify_password
@@ -12,6 +13,23 @@ from mailer import send_password_reset_email
 from schemas import ForgotPasswordRequest, LoginRequest, ResetPasswordRequest, SignupRequest
 
 router = APIRouter()
+
+
+async def _serialize_driver_user(pool, user_id: int) -> dict:
+    async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
+        await cur.execute(
+            "SELECT u.id, u.email, u.name, u.warehouse_id, w.name AS warehouse_name "
+            "FROM users u LEFT JOIN warehouses w ON w.id = u.warehouse_id WHERE u.id = %s",
+            (user_id,),
+        )
+        row = await cur.fetchone()
+    return {
+        "id": row["id"],
+        "email": row["email"],
+        "name": row["name"],
+        "warehouse_id": row["warehouse_id"],
+        "warehouse_name": row["warehouse_name"],
+    }
 
 
 @router.post("/signup", status_code=201)
@@ -23,15 +41,21 @@ async def signup(body: SignupRequest, request: Request):
         await cur.execute("SELECT id FROM users WHERE email = %s", (body.email,))
         if await cur.fetchone() is not None:
             raise HTTPException(status_code=409, detail="an account with this email already exists")
+        if body.warehouse_id is not None:
+            await cur.execute(
+                "SELECT id FROM warehouses WHERE id = %s AND is_active = 1", (body.warehouse_id,)
+            )
+            if await cur.fetchone() is None:
+                raise HTTPException(status_code=422, detail="that outlet doesn't exist or is no longer active")
         password_hash = hash_password(body.password)
         await cur.execute(
-            "INSERT INTO users (role, email, phone, password_hash, name, status) "
-            "VALUES ('driver', %s, %s, %s, %s, 'active')",
-            (body.email, body.phone, password_hash, body.name),
+            "INSERT INTO users (role, email, phone, password_hash, name, status, warehouse_id) "
+            "VALUES ('driver', %s, %s, %s, %s, 'active', %s)",
+            (body.email, body.phone, password_hash, body.name, body.warehouse_id),
         )
         user_id = cur.lastrowid
     token = create_token(user_id)
-    return {"token": token, "user": {"id": user_id, "email": body.email, "name": body.name}}
+    return {"token": token, "user": await _serialize_driver_user(pool, user_id)}
 
 
 @router.post("/login")
@@ -41,16 +65,16 @@ async def login(body: LoginRequest, request: Request):
         raise HTTPException(status_code=503, detail="database not configured")
     async with pool.acquire() as conn, conn.cursor() as cur:
         await cur.execute(
-            "SELECT id, password_hash, name, status FROM users WHERE email = %s AND role = 'driver'",
+            "SELECT id, password_hash, status FROM users WHERE email = %s AND role = 'driver'",
             (body.email,),
         )
         row = await cur.fetchone()
     if row is None or row[1] is None or not verify_password(body.password, row[1]):
         raise HTTPException(status_code=401, detail="invalid email or password")
-    if row[3] != "active":
+    if row[2] != "active":
         raise HTTPException(status_code=403, detail="this account is disabled")
     token = create_token(row[0])
-    return {"token": token, "user": {"id": row[0], "email": body.email, "name": row[2]}}
+    return {"token": token, "user": await _serialize_driver_user(pool, row[0])}
 
 
 @router.post("/forgot-password")
@@ -109,10 +133,10 @@ async def reset_password(body: ResetPasswordRequest, request: Request):
             raise invalid
 
         await cur.execute(
-            "SELECT id, email, name, status FROM users WHERE id = %s AND role = 'driver'", (user_id,)
+            "SELECT id, status FROM users WHERE id = %s AND role = 'driver'", (user_id,)
         )
         user = await cur.fetchone()
-        if user is None or user[3] != "active":
+        if user is None or user[1] != "active":
             raise invalid
 
         password_hash = hash_password(body.new_password)
@@ -125,4 +149,4 @@ async def reset_password(body: ResetPasswordRequest, request: Request):
         )
 
     token = create_token(user_id)
-    return {"token": token, "user": {"id": user_id, "email": user[1], "name": user[2]}}
+    return {"token": token, "user": await _serialize_driver_user(pool, user_id)}

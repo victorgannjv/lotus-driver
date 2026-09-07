@@ -9,6 +9,7 @@ class SignupRequest(BaseModel):
     password: str
     name: str
     phone: str | None = None
+    warehouse_id: int | None = None
 
 
 class LoginRequest(BaseModel):
@@ -42,3 +43,12 @@ class ArrivalRequest(BaseModel):
     lat: float | None = None
     lng: float | None = None
     occurred_at: str | None = None
+
+
+class WarehouseRequest(BaseModel):
+    name: str
+    address: str | None = None
+
+
+class DriverWarehouseRequest(BaseModel):
+    warehouse_id: int

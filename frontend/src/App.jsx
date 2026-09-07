@@ -6,6 +6,7 @@ import ForgotPassword from "./pages/driver/ForgotPassword";
 import Home from "./pages/driver/Home";
 import Login from "./pages/driver/Login";
 import ManifestDetail from "./pages/driver/ManifestDetail";
+import Profile from "./pages/driver/Profile";
 import ResetPassword from "./pages/driver/ResetPassword";
 import Signup from "./pages/driver/Signup";
 
@@ -15,6 +16,7 @@ import Signup from "./pages/driver/Signup";
 const AdminGate = lazy(() => import("./pages/admin/Gate"));
 const AdminDrivers = lazy(() => import("./pages/admin/Drivers"));
 const AdminAdmins = lazy(() => import("./pages/admin/Admins"));
+const AdminWarehouses = lazy(() => import("./pages/admin/Warehouses"));
 const AdminJobs = lazy(() => import("./pages/admin/Jobs"));
 const AdminJobDetail = lazy(() => import("./pages/admin/JobDetail"));
 const ScanRegister = lazy(() => import("./pages/driver/ScanRegister"));
@@ -67,6 +69,14 @@ export default function App() {
               </RequireDriver>
             }
           />
+          <Route
+            path="/driver/profile"
+            element={
+              <RequireDriver>
+                <Profile />
+              </RequireDriver>
+            }
+          />
 
           <Route
             path="/admin"
@@ -81,6 +91,7 @@ export default function App() {
             <Route path="jobs/:jobId" element={<AdminJobDetail />} />
             <Route path="drivers" element={<AdminDrivers />} />
             <Route path="admins" element={<AdminAdmins />} />
+            <Route path="warehouses" element={<AdminWarehouses />} />
           </Route>
         </Routes>
       </DriverAuthProvider>

@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 
 from auth import get_current_admin
 from db import get_pool
-from schemas import AddAdminRequest
+from schemas import AddAdminRequest, WarehouseRequest
 
 router = APIRouter()
 
@@ -45,6 +45,18 @@ def _serialize_driver(row: dict) -> dict:
         "email": row["email"],
         "phone": row["phone"],
         "status": row["status"],
+        "warehouse_id": row["warehouse_id"],
+        "warehouse_name": row["warehouse_name"],
+        "created_at": str(row["created_at"]),
+    }
+
+
+def _serialize_warehouse(row: dict) -> dict:
+    return {
+        "id": row["id"],
+        "name": row["name"],
+        "address": row["address"],
+        "is_active": bool(row["is_active"]),
         "created_at": str(row["created_at"]),
     }
 
@@ -82,11 +94,74 @@ async def list_drivers(request: Request, admin=Depends(get_current_admin)):
     pool = get_pool(request)
     async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
         await cur.execute(
-            "SELECT id, name, email, phone, status, created_at FROM users "
-            "WHERE role = 'driver' ORDER BY created_at DESC"
+            "SELECT u.id, u.name, u.email, u.phone, u.status, u.warehouse_id, w.name AS warehouse_name, u.created_at "
+            "FROM users u LEFT JOIN warehouses w ON w.id = u.warehouse_id "
+            "WHERE u.role = 'driver' ORDER BY u.created_at DESC"
         )
         rows = await cur.fetchall()
     return {"drivers": [_serialize_driver(r) for r in rows]}
+
+
+@router.get("/warehouses")
+async def list_warehouses(request: Request, admin=Depends(get_current_admin)):
+    pool = get_pool(request)
+    async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
+        await cur.execute("SELECT id, name, address, is_active, created_at FROM warehouses ORDER BY name")
+        rows = await cur.fetchall()
+    return {"warehouses": [_serialize_warehouse(r) for r in rows]}
+
+
+@router.post("/warehouses", status_code=201)
+async def create_warehouse(body: WarehouseRequest, request: Request, admin=Depends(get_current_admin)):
+    pool = get_pool(request)
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="name is required")
+    async with pool.acquire() as conn, conn.cursor() as cur:
+        await cur.execute("INSERT INTO warehouses (name, address) VALUES (%s, %s)", (name, body.address))
+        new_id = cur.lastrowid
+    async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
+        await cur.execute("SELECT id, name, address, is_active, created_at FROM warehouses WHERE id = %s", (new_id,))
+        row = await cur.fetchone()
+    return {"warehouse": _serialize_warehouse(row)}
+
+
+@router.put("/warehouses/{warehouse_id}")
+async def update_warehouse(
+    warehouse_id: int, body: WarehouseRequest, request: Request, admin=Depends(get_current_admin)
+):
+    pool = get_pool(request)
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="name is required")
+    async with pool.acquire() as conn, conn.cursor() as cur:
+        await cur.execute("SELECT id FROM warehouses WHERE id = %s", (warehouse_id,))
+        if await cur.fetchone() is None:
+            raise HTTPException(status_code=404, detail="outlet not found")
+        await cur.execute(
+            "UPDATE warehouses SET name = %s, address = %s WHERE id = %s", (name, body.address, warehouse_id)
+        )
+    async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
+        await cur.execute(
+            "SELECT id, name, address, is_active, created_at FROM warehouses WHERE id = %s", (warehouse_id,)
+        )
+        row = await cur.fetchone()
+    return {"warehouse": _serialize_warehouse(row)}
+
+
+@router.delete("/warehouses/{warehouse_id}")
+async def remove_warehouse(warehouse_id: int, request: Request, admin=Depends(get_current_admin)):
+    """Soft-delete: marks the outlet inactive rather than removing the row, since
+    drivers may already be assigned to it -- hard-deleting would either violate that
+    reference or silently orphan it. Inactive outlets just drop out of the driver-
+    facing GET /api/warehouses list (and can't be picked as a new assignment)."""
+    pool = get_pool(request)
+    async with pool.acquire() as conn, conn.cursor() as cur:
+        await cur.execute("SELECT id FROM warehouses WHERE id = %s", (warehouse_id,))
+        if await cur.fetchone() is None:
+            raise HTTPException(status_code=404, detail="outlet not found")
+        await cur.execute("UPDATE warehouses SET is_active = 0 WHERE id = %s", (warehouse_id,))
+    return {"ok": True}
 
 
 @router.get("/jobs")

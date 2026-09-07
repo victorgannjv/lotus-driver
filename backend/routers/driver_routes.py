@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from auth import get_current_driver
 from db import get_pool
 from photos import store_photo
-from schemas import ArrivalRequest, ScanRequest
+from schemas import ArrivalRequest, DriverWarehouseRequest, ScanRequest
 
 router = APIRouter()
 
@@ -147,6 +147,35 @@ async def _is_job_complete(pool, manifest_id: int) -> bool:
             (manifest_id,),
         )
         return await cur.fetchone() is None
+
+
+@router.put("/driver/warehouse")
+async def update_driver_warehouse(body: DriverWarehouseRequest, request: Request, driver=Depends(get_current_driver)):
+    """Sets which outlet this driver is assigned to -- a fixed assignment (not
+    per-job), changeable any time from the driver's profile screen."""
+    pool = get_pool(request)
+    async with pool.acquire() as conn, conn.cursor() as cur:
+        await cur.execute("SELECT id FROM warehouses WHERE id = %s AND is_active = 1", (body.warehouse_id,))
+        if await cur.fetchone() is None:
+            raise HTTPException(status_code=422, detail="that outlet doesn't exist or is no longer active")
+        await cur.execute("UPDATE users SET warehouse_id = %s WHERE id = %s", (body.warehouse_id, driver["id"]))
+
+    async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
+        await cur.execute(
+            "SELECT u.id, u.email, u.name, u.warehouse_id, w.name AS warehouse_name "
+            "FROM users u LEFT JOIN warehouses w ON w.id = u.warehouse_id WHERE u.id = %s",
+            (driver["id"],),
+        )
+        row = await cur.fetchone()
+    return {
+        "user": {
+            "id": row["id"],
+            "email": row["email"],
+            "name": row["name"],
+            "warehouse_id": row["warehouse_id"],
+            "warehouse_name": row["warehouse_name"],
+        }
+    }
 
 
 @router.post("/manifests/start", status_code=201)
