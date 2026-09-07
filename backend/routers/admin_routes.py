@@ -16,7 +16,12 @@ router = APIRouter()
 
 
 def _build_job_filters(
-    status: str | None, driver_id: int | None, manifest_id: int | None, date_from: str | None, date_to: str | None
+    status: str | None,
+    driver_id: int | None,
+    manifest_id: int | None,
+    warehouse_id: int | None,
+    date_from: str | None,
+    date_to: str | None,
 ) -> tuple[list[str], list]:
     where: list[str] = []
     params: list = []
@@ -29,6 +34,11 @@ def _build_job_filters(
     if manifest_id:
         where.append("dj.manifest_id = %s")
         params.append(manifest_id)
+    if warehouse_id:
+        # A job has no warehouse of its own -- it's the driver's fixed outlet
+        # assignment, so this filters on the driver behind the job.
+        where.append("u.warehouse_id = %s")
+        params.append(warehouse_id)
     if date_from:
         where.append("m.work_date >= %s")
         params.append(date_from)
@@ -170,6 +180,7 @@ async def list_jobs(
     status: str | None = Query(None),
     driver_id: int | None = Query(None),
     manifest_id: int | None = Query(None),
+    warehouse_id: int | None = Query(None),
     date_from: str | None = Query(None),
     date_to: str | None = Query(None),
     page: int = Query(1, ge=1),
@@ -177,7 +188,7 @@ async def list_jobs(
     admin=Depends(get_current_admin),
 ):
     pool = get_pool(request)
-    where, params = _build_job_filters(status, driver_id, manifest_id, date_from, date_to)
+    where, params = _build_job_filters(status, driver_id, manifest_id, warehouse_id, date_from, date_to)
     where_sql = f"WHERE {' AND '.join(where)}" if where else ""
     offset = (page - 1) * page_size
 
@@ -203,6 +214,7 @@ async def export_jobs_csv(
     status: str | None = Query(None),
     driver_id: int | None = Query(None),
     manifest_id: int | None = Query(None),
+    warehouse_id: int | None = Query(None),
     date_from: str | None = Query(None),
     date_to: str | None = Query(None),
     admin=Depends(get_current_admin),
@@ -211,7 +223,7 @@ async def export_jobs_csv(
     every registered/delivered/failed timestamp, GPS fix, failure reason and proof
     photo, not just each job's current status. Same filters as GET /jobs, unpaginated."""
     pool = get_pool(request)
-    where, params = _build_job_filters(status, driver_id, manifest_id, date_from, date_to)
+    where, params = _build_job_filters(status, driver_id, manifest_id, warehouse_id, date_from, date_to)
     where_sql = f"WHERE {' AND '.join(where)}" if where else ""
 
     async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:

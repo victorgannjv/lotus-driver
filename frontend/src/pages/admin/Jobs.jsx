@@ -11,38 +11,83 @@ const STATUS_STYLES = {
 
 export default function Jobs() {
   const [statuses, setStatuses] = useState([]);
-  const [status, setStatus] = useState("");
+  const [drivers, setDrivers] = useState([]);
+  const [warehouses, setWarehouses] = useState([]);
+  const [filters, setFilters] = useState({ status: "", driverId: "", warehouseId: "", dateFrom: "", dateTo: "" });
   const [jobs, setJobs] = useState(null);
   const [error, setError] = useState(null);
 
-  const queryString = status ? `status=${encodeURIComponent(status)}` : "";
-
   useEffect(() => {
     api.get("/statuses").then((d) => setStatuses(d.statuses));
+    api.get("/admin/drivers").then((d) => setDrivers(d.drivers));
+    api.get("/admin/warehouses").then((d) => setWarehouses(d.warehouses));
   }, []);
+
+  const params = new URLSearchParams();
+  if (filters.status) params.set("status", filters.status);
+  if (filters.driverId) params.set("driver_id", filters.driverId);
+  if (filters.warehouseId) params.set("warehouse_id", filters.warehouseId);
+  if (filters.dateFrom) params.set("date_from", filters.dateFrom);
+  if (filters.dateTo) params.set("date_to", filters.dateTo);
+  const queryString = params.toString();
 
   useEffect(() => {
     api
       .get(`/admin/jobs?${queryString}`)
       .then((d) => setJobs(d.jobs))
       .catch((err) => setError(err.detail || "could not load jobs"));
-  }, [status]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters]);
+
+  function updateFilter(field) {
+    return (e) => setFilters((f) => ({ ...f, [field]: e.target.value }));
+  }
 
   return (
     <div>
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <select
-          value={status}
-          onChange={(e) => setStatus(e.target.value)}
-          className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-        >
-          <option value="">All statuses</option>
-          {statuses.map((s) => (
-            <option key={s.code} value={s.code}>
-              {s.label}
-            </option>
-          ))}
-        </select>
+      <div className="mb-4 flex flex-wrap items-end gap-3">
+        <label className="text-sm">
+          <span className="mb-1 block font-medium text-slate-700">Status</span>
+          <select value={filters.status} onChange={updateFilter("status")} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+            <option value="">All statuses</option>
+            {statuses.map((s) => (
+              <option key={s.code} value={s.code}>
+                {s.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="text-sm">
+          <span className="mb-1 block font-medium text-slate-700">Driver</span>
+          <select value={filters.driverId} onChange={updateFilter("driverId")} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+            <option value="">All drivers</option>
+            {drivers.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="text-sm">
+          <span className="mb-1 block font-medium text-slate-700">Warehouse</span>
+          <select value={filters.warehouseId} onChange={updateFilter("warehouseId")} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+            <option value="">All warehouses</option>
+            {warehouses.map((w) => (
+              <option key={w.id} value={w.id}>
+                {w.name}
+                {!w.is_active ? " (removed)" : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="text-sm">
+          <span className="mb-1 block font-medium text-slate-700">Date from</span>
+          <input type="date" value={filters.dateFrom} onChange={updateFilter("dateFrom")} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+        </label>
+        <label className="text-sm">
+          <span className="mb-1 block font-medium text-slate-700">Date to</span>
+          <input type="date" value={filters.dateTo} onChange={updateFilter("dateTo")} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+        </label>
         <a
           href={`/api/admin/exports/jobs.csv${queryString ? `?${queryString}` : ""}`}
           download

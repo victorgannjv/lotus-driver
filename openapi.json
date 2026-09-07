@@ -523,7 +523,7 @@
     },
     "/api/admin/jobs": {
       "get": {
-        "summary": "List delivery jobs across all drivers, filterable by status, driver, session and date range.",
+        "summary": "List delivery jobs across all drivers, filterable by status, driver, session, warehouse and date range.",
         "operationId": "adminListJobs",
         "tags": ["admin"],
         "security": [{ "adminSSO": [] }],
@@ -531,6 +531,7 @@
           { "name": "status", "in": "query", "schema": { "type": "string" } },
           { "name": "driver_id", "in": "query", "schema": { "type": "integer" } },
           { "name": "manifest_id", "in": "query", "schema": { "type": "integer" } },
+          { "name": "warehouse_id", "in": "query", "schema": { "type": "integer" }, "description": "Filters by the driver's assigned outlet (a job has no warehouse of its own)." },
           { "name": "date_from", "in": "query", "schema": { "type": "string", "format": "date" } },
           { "name": "date_to", "in": "query", "schema": { "type": "string", "format": "date" } },
           { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
@@ -565,6 +566,7 @@
           { "name": "status", "in": "query", "schema": { "type": "string" } },
           { "name": "driver_id", "in": "query", "schema": { "type": "integer" } },
           { "name": "manifest_id", "in": "query", "schema": { "type": "integer" } },
+          { "name": "warehouse_id", "in": "query", "schema": { "type": "integer" }, "description": "Filters by the driver's assigned outlet (a job has no warehouse of its own)." },
           { "name": "date_from", "in": "query", "schema": { "type": "string", "format": "date" } },
           { "name": "date_to", "in": "query", "schema": { "type": "string", "format": "date" } }
         ],
