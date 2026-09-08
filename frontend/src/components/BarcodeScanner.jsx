@@ -1,6 +1,7 @@
 import { BrowserMultiFormatReader } from "@zxing/browser";
 import { BarcodeFormat, DecodeHintType } from "@zxing/library";
 import { useEffect, useRef, useState } from "react";
+import { useLanguage } from "../i18n/LanguageContext";
 
 // ZXing decodes by classic bar-width analysis, which is sensitive to blur/skew.
 // Chrome on Android exposes a native BarcodeDetector backed by Google Play
@@ -39,6 +40,7 @@ const VIDEO_CONSTRAINTS = {
 // the device supports it -- both act directly on the camera track, so they work
 // the same whether the native detector or the ZXing fallback is doing the decoding.
 export default function BarcodeScanner({ onDetect }) {
+  const { t } = useLanguage();
   const videoRef = useRef(null);
   const onDetectRef = useRef(onDetect);
   const lastCodeRef = useRef(null);
@@ -118,7 +120,7 @@ export default function BarcodeScanner({ onDetect }) {
       stopRef.current = () => controls.stop();
     }
 
-    start().catch((err) => setError(err.message || "could not access camera"));
+    start().catch((err) => setError(err.message || t("barcodeScanner.couldNotAccess")));
 
     return () => {
       stopped = true;
@@ -166,12 +168,12 @@ export default function BarcodeScanner({ onDetect }) {
               torchOn ? "bg-amber-400 text-slate-900" : "bg-black/60 text-white"
             }`}
           >
-            {torchOn ? "Flash on" : "Flash off"}
+            {torchOn ? t("barcodeScanner.flashOn") : t("barcodeScanner.flashOff")}
           </button>
         )}
       </div>
-      <p className="mt-1 text-center text-xs text-slate-400">Tap the video if it won't focus</p>
-      {error && <p className="mt-2 text-sm text-red-600">Camera error: {error}. Use manual entry below instead.</p>}
+      <p className="mt-1 text-center text-xs text-slate-400">{t("barcodeScanner.tapToFocus")}</p>
+      {error && <p className="mt-2 text-sm text-red-600">{t("barcodeScanner.cameraError", { error })}</p>}
     </div>
   );
 }

@@ -1,3 +1,5 @@
+import { useLanguage } from "../i18n/LanguageContext";
+
 const TONE_STYLES = {
   success: { icon: "✓", iconClass: "text-emerald-600", textClass: "text-emerald-700" },
   warning: { icon: "⚠", iconClass: "text-amber-600", textClass: "text-amber-700" },
@@ -10,6 +12,7 @@ const TONE_STYLES = {
 // "success" (registered/delivered), "warning" (recorded but not a good outcome,
 // e.g. a failed delivery), "error" (the request itself didn't go through).
 export default function ScanResultModal({ result, onClose }) {
+  const { t } = useLanguage();
   if (!result) return null;
   const tone = TONE_STYLES[result.tone] || TONE_STYLES.success;
   return (
@@ -23,7 +26,7 @@ export default function ScanResultModal({ result, onClose }) {
           autoFocus
           className="mt-5 w-full rounded-lg bg-brand-red px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-red-dark"
         >
-          OK
+          {t("common.ok")}
         </button>
       </div>
     </div>

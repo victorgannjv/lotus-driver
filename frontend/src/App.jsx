@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react";
 import { Navigate, Route, BrowserRouter as Router, Routes } from "react-router-dom";
 import { DriverAuthProvider } from "./auth/DriverAuthContext";
 import RequireDriver from "./auth/RequireDriver";
+import { LanguageProvider } from "./i18n/LanguageContext";
 import ForgotPassword from "./pages/driver/ForgotPassword";
 import Home from "./pages/driver/Home";
 import Login from "./pages/driver/Login";
@@ -26,6 +27,7 @@ const ScanComplete = lazy(() => import("./pages/driver/ScanComplete"));
 export default function App() {
   return (
     <Router>
+      <LanguageProvider>
       <DriverAuthProvider>
         <Routes>
           <Route path="/" element={<Navigate to="/driver" replace />} />
@@ -97,6 +99,7 @@ export default function App() {
           </Route>
         </Routes>
       </DriverAuthProvider>
+      </LanguageProvider>
     </Router>
   );
 }

@@ -1,10 +1,13 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import AppHeader from "../../components/AppHeader";
+import LanguageSwitcher from "../../components/LanguageSwitcher";
 import { useDriverAuth } from "../../auth/DriverAuthContext";
+import { useLanguage } from "../../i18n/LanguageContext";
 
 export default function ForgotPassword() {
   const { forgotPassword } = useDriverAuth();
+  const { t } = useLanguage();
   const [email, setEmail] = useState("");
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -18,7 +21,7 @@ export default function ForgotPassword() {
       await forgotPassword(email);
       setSent(true);
     } catch (err) {
-      setError(err.detail || "something went wrong");
+      setError(err.detail || t("forgotPassword.error"));
     } finally {
       setBusy(false);
     }
@@ -26,21 +29,18 @@ export default function ForgotPassword() {
 
   return (
     <main className="min-h-screen bg-slate-50">
-      <AppHeader />
+      <AppHeader right={<LanguageSwitcher />} />
       <div className="flex items-center justify-center px-4 py-10">
       <div className="w-full max-w-sm rounded-2xl bg-white p-8 shadow-sm ring-1 ring-slate-200">
-        <h1 className="text-xl font-semibold text-brand-black">Forgot password</h1>
-        <p className="mt-1 text-sm text-slate-500">Lotus Driver Tracking System</p>
+        <h1 className="text-xl font-semibold text-brand-black">{t("forgotPassword.title")}</h1>
+        <p className="mt-1 text-sm text-slate-500">{t("common.appName")}</p>
 
         {sent ? (
-          <p className="mt-6 text-sm text-slate-700">
-            If an account exists for <span className="font-medium">{email}</span>, we've sent a link to reset your
-            password. Check your inbox (and spam folder) -- the link expires in 1 hour.
-          </p>
+          <p className="mt-6 text-sm text-slate-700">{t("forgotPassword.sentMessage", { email })}</p>
         ) : (
           <form onSubmit={handleSubmit}>
             <label className="mt-6 block text-sm font-medium text-slate-700">
-              Email
+              {t("forgotPassword.email")}
               <input
                 type="email"
                 required
@@ -57,13 +57,13 @@ export default function ForgotPassword() {
               disabled={busy}
               className="mt-6 w-full rounded-lg bg-brand-red px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-red-dark disabled:opacity-50"
             >
-              {busy ? "Sending…" : "Send reset link"}
+              {busy ? t("forgotPassword.sending") : t("forgotPassword.sendResetLink")}
             </button>
           </form>
         )}
 
         <p className="mt-4 text-center text-sm text-slate-500">
-          <Link to="/driver/login" className="font-medium text-brand-red underline">Back to sign in</Link>
+          <Link to="/driver/login" className="font-medium text-brand-red underline">{t("common.backToSignIn")}</Link>
         </p>
       </div>
       </div>

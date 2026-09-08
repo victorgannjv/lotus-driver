@@ -6,10 +6,12 @@ import BarcodeScanner from "../../components/BarcodeScanner";
 import DeliveryOutcomeModal from "../../components/DeliveryOutcomeModal";
 import JobCompleteModal from "../../components/JobCompleteModal";
 import ScanResultModal from "../../components/ScanResultModal";
+import { useLanguage } from "../../i18n/LanguageContext";
 import { getPosition } from "../../lib/geolocation";
 
 export default function ScanComplete() {
   const navigate = useNavigate();
+  const { t } = useLanguage();
   const [log, setLog] = useState([]);
   const [manualCode, setManualCode] = useState("");
   const [busy, setBusy] = useState(false);
@@ -48,13 +50,13 @@ export default function ScanComplete() {
 
       const res = await api.postForm(outcome === "delivered" ? "/scans/complete" : "/scans/fail", formData);
 
-      const message = outcome === "delivered" ? "Delivered" : "Marked as failed";
-      const logMessage = outcome === "failed" ? `Failed — ${reason}` : message;
+      const message = outcome === "delivered" ? t("scanComplete.delivered") : t("scanComplete.markedFailed");
+      const logMessage = outcome === "failed" ? t("scanComplete.failedWithReason", { reason }) : message;
       setLog((l) => [{ code, ok: true, message: logMessage }, ...l]);
       setResult({ code, tone: outcome === "delivered" ? "success" : "warning", message });
       if (res.job_complete) setCompletedManifestId(res.manifest_id);
     } catch (err) {
-      const message = err.detail || "Failed";
+      const message = err.detail || t("scanComplete.genericFailed");
       setLog((l) => [{ code, ok: false, message }, ...l]);
       setResult({ code, tone: "error", message });
     } finally {
@@ -70,12 +72,9 @@ export default function ScanComplete() {
 
   return (
     <main className="min-h-screen bg-slate-50">
-      <AppHeader backTo="/driver" title="Scan to complete a delivery" />
+      <AppHeader backTo="/driver" title={t("scanComplete.title")} />
       <div className="mx-auto max-w-md px-4 py-6">
-        <p className="text-sm text-slate-500">
-          Scan the order's barcode, then say whether it was delivered or the attempt failed, and take a photo as
-          proof. We'll log the time and location automatically.
-        </p>
+        <p className="text-sm text-slate-500">{t("scanComplete.instructions")}</p>
 
         <div className="mt-4">
           <BarcodeScanner onDetect={handleDetect} />
@@ -85,11 +84,11 @@ export default function ScanComplete() {
           <input
             value={manualCode}
             onChange={(e) => setManualCode(e.target.value)}
-            placeholder="Or type the code manually"
+            placeholder={t("scanRegister.manualPlaceholder")}
             className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"
           />
           <button type="submit" className="rounded-lg bg-slate-200 px-4 py-2 text-sm font-medium text-slate-700">
-            Add
+            {t("scanRegister.add")}
           </button>
         </form>
 
@@ -108,7 +107,7 @@ export default function ScanComplete() {
           onClick={() => navigate("/driver")}
           className="mt-6 w-full rounded-lg bg-brand-red px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-red-dark"
         >
-          Done
+          {t("common.done")}
         </button>
       </div>
 

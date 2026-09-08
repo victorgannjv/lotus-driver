@@ -1,7 +1,9 @@
 import { useState } from "react";
+import { useLanguage } from "../i18n/LanguageContext";
 import { resizeImage } from "../lib/imageResize";
 
 export default function PhotoCapture({ label, onChange, required = false }) {
+  const { t } = useLanguage();
   const [preview, setPreview] = useState(null);
   const [busy, setBusy] = useState(false);
 
@@ -30,7 +32,7 @@ export default function PhotoCapture({ label, onChange, required = false }) {
         onChange={handleFile}
         className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-brand-red file:px-4 file:py-2 file:text-sm file:font-medium file:text-white"
       />
-      {busy && <p className="mt-1 text-xs text-slate-500">Compressing photo…</p>}
+      {busy && <p className="mt-1 text-xs text-slate-500">{t("photoCapture.compressing")}</p>}
       {preview && <img src={preview} alt="preview" className="mt-2 h-32 w-32 rounded-lg object-cover ring-1 ring-slate-200" />}
     </label>
   );

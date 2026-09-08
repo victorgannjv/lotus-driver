@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useLanguage } from "../i18n/LanguageContext";
 import PhotoCapture from "./PhotoCapture";
 
 // Shown right after a successful scan on the "complete a delivery" screen: the
@@ -6,6 +7,7 @@ import PhotoCapture from "./PhotoCapture";
 // way takes a proof photo before the outcome is actually recorded. There's no
 // dismiss without completing every step.
 export default function DeliveryOutcomeModal({ code, busy, onSubmit }) {
+  const { t } = useLanguage();
   const [mode, setMode] = useState("choice"); // "choice" | "reason" | "photo"
   const [outcome, setOutcome] = useState(null); // "delivered" | "failed"
   const [reason, setReason] = useState("");
@@ -39,7 +41,7 @@ export default function DeliveryOutcomeModal({ code, busy, onSubmit }) {
 
         {mode === "choice" && (
           <>
-            <p className="mt-1 text-center text-sm text-slate-500">What happened at this delivery?</p>
+            <p className="mt-1 text-center text-sm text-slate-500">{t("deliveryOutcome.whatHappened")}</p>
             <div className="mt-5 grid grid-cols-2 gap-2">
               <button
                 onClick={() => {
@@ -49,7 +51,7 @@ export default function DeliveryOutcomeModal({ code, busy, onSubmit }) {
                 disabled={busy}
                 className="rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
               >
-                Delivered
+                {t("deliveryOutcome.delivered")}
               </button>
               <button
                 onClick={() => {
@@ -59,7 +61,7 @@ export default function DeliveryOutcomeModal({ code, busy, onSubmit }) {
                 disabled={busy}
                 className="rounded-lg bg-brand-red px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-red-dark disabled:opacity-50"
               >
-                Failed
+                {t("deliveryOutcome.failed")}
               </button>
             </div>
           </>
@@ -68,7 +70,7 @@ export default function DeliveryOutcomeModal({ code, busy, onSubmit }) {
         {mode === "reason" && (
           <form onSubmit={handleReasonSubmit}>
             <label className="mt-3 block text-left text-sm font-medium text-slate-700">
-              Reason for failure
+              {t("deliveryOutcome.reasonLabel")}
               <textarea
                 required
                 autoFocus
@@ -83,7 +85,7 @@ export default function DeliveryOutcomeModal({ code, busy, onSubmit }) {
               disabled={!reason.trim()}
               className="mt-4 w-full rounded-lg bg-brand-red px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-red-dark disabled:opacity-50"
             >
-              Next
+              {t("deliveryOutcome.next")}
             </button>
           </form>
         )}
@@ -91,17 +93,17 @@ export default function DeliveryOutcomeModal({ code, busy, onSubmit }) {
         {mode === "photo" && (
           <form onSubmit={handlePhotoSubmit}>
             <p className="mt-1 text-center text-sm text-slate-500">
-              Take a photo as proof {outcome === "delivered" ? "of delivery" : "of the failed attempt"}.
+              {outcome === "delivered" ? t("deliveryOutcome.proofOfDelivery") : t("deliveryOutcome.proofOfFailure")}
             </p>
             <div className="mt-3">
-              <PhotoCapture label="Proof photo" onChange={setPhoto} required />
+              <PhotoCapture label={t("deliveryOutcome.proofPhotoLabel")} onChange={setPhoto} required />
             </div>
             <button
               type="submit"
               disabled={busy || !photo}
               className="mt-4 w-full rounded-lg bg-brand-red px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-red-dark disabled:opacity-50"
             >
-              {busy ? "Submitting…" : "Submit"}
+              {busy ? t("deliveryOutcome.submitting") : t("deliveryOutcome.submit")}
             </button>
           </form>
         )}

@@ -4,11 +4,13 @@ import { api } from "../../api";
 import AppHeader from "../../components/AppHeader";
 import BarcodeScanner from "../../components/BarcodeScanner";
 import ScanResultModal from "../../components/ScanResultModal";
+import { useLanguage } from "../../i18n/LanguageContext";
 import { getPosition } from "../../lib/geolocation";
 
 export default function ScanRegister() {
   const { manifestId } = useParams();
   const navigate = useNavigate();
+  const { t } = useLanguage();
   const [log, setLog] = useState([]);
   const [manualCode, setManualCode] = useState("");
   const [busy, setBusy] = useState(false);
@@ -28,11 +30,11 @@ export default function ScanRegister() {
         lng: position.lng,
         occurred_at: new Date().toISOString(),
       });
-      const message = res.already_registered ? "Already registered" : "Registered";
+      const message = res.already_registered ? t("scanRegister.alreadyRegistered") : t("scanRegister.registered");
       setLog((l) => [{ code, ok: true, message }, ...l]);
       setResult({ code, tone: "success", message });
     } catch (err) {
-      const message = err.detail || "Failed";
+      const message = err.detail || t("scanRegister.failed");
       setLog((l) => [{ code, ok: false, message }, ...l]);
       setResult({ code, tone: "error", message });
     } finally {
@@ -52,11 +54,9 @@ export default function ScanRegister() {
 
   return (
     <main className="min-h-screen bg-slate-50">
-      <AppHeader backTo={`/driver/manifests/${manifestId}`} title="Scan orders" />
+      <AppHeader backTo={`/driver/manifests/${manifestId}`} title={t("scanRegister.title")} />
       <div className="mx-auto max-w-md px-4 py-6">
-        <p className="text-sm text-slate-500">
-          Point the camera at each order's barcode. We'll register every new one into this job automatically.
-        </p>
+        <p className="text-sm text-slate-500">{t("scanRegister.instructions")}</p>
 
         <div className="mt-4">
           <BarcodeScanner onDetect={handleDetect} />
@@ -66,11 +66,11 @@ export default function ScanRegister() {
           <input
             value={manualCode}
             onChange={(e) => setManualCode(e.target.value)}
-            placeholder="Or type the code manually"
+            placeholder={t("scanRegister.manualPlaceholder")}
             className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"
           />
           <button type="submit" className="rounded-lg bg-slate-200 px-4 py-2 text-sm font-medium text-slate-700">
-            Add
+            {t("scanRegister.add")}
           </button>
         </form>
 
@@ -90,13 +90,13 @@ export default function ScanRegister() {
             onClick={() => navigate(`/driver/manifests/${manifestId}`)}
             className="w-full rounded-lg bg-white px-4 py-2.5 text-sm font-medium text-brand-black ring-1 ring-slate-200"
           >
-            View job{registeredCount > 0 ? ` (${registeredCount})` : ""}
+            {t("scanRegister.viewJob")}{registeredCount > 0 ? ` (${registeredCount})` : ""}
           </button>
           <button
             onClick={() => navigate("/driver")}
             className="w-full rounded-lg bg-brand-red px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-red-dark"
           >
-            Done
+            {t("common.done")}
           </button>
         </div>
       </div>
