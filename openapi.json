@@ -852,7 +852,9 @@
               "work_date": { "type": "string", "format": "date" },
               "warehouse_arrived_at": { "type": "string", "nullable": true },
               "driver_id": { "type": "integer" },
-              "driver_name": { "type": "string" }
+              "driver_name": { "type": "string" },
+              "warehouse_id": { "type": "integer", "nullable": true },
+              "warehouse_name": { "type": "string", "nullable": true, "description": "the driver's assigned outlet -- a job has no warehouse of its own" }
             }
           }
         ]
@@ -884,7 +886,9 @@
           "warehouse_arrived_at": { "type": "string", "nullable": true },
           "driver_id": { "type": "integer" },
           "driver_name": { "type": "string" },
-          "driver_email": { "type": "string" }
+          "driver_email": { "type": "string" },
+          "warehouse_id": { "type": "integer", "nullable": true },
+          "warehouse_name": { "type": "string", "nullable": true, "description": "the driver's assigned outlet -- a job has no warehouse of its own" }
         }
       },
       "Event": {

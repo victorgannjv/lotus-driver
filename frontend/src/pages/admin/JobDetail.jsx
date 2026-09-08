@@ -40,6 +40,10 @@ export default function JobDetail() {
             </dd>
           </div>
           <div>
+            <dt className="text-slate-400">Warehouse</dt>
+            <dd className="text-slate-700">{job.warehouse_name || "—"}</dd>
+          </div>
+          <div>
             <dt className="text-slate-400">Session date</dt>
             <dd className="text-slate-700">{job.work_date}</dd>
           </div>

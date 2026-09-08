@@ -82,6 +82,8 @@ def _serialize_admin_job(row: dict) -> dict:
         "warehouse_arrived_at": str(row["warehouse_arrived_at"]) if row["warehouse_arrived_at"] else None,
         "driver_id": row["driver_id"],
         "driver_name": row["driver_name"],
+        "warehouse_id": row["warehouse_id"],
+        "warehouse_name": row["warehouse_name"],
     }
 
 
@@ -195,10 +197,12 @@ async def list_jobs(
     async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
         await cur.execute(
             f"SELECT dj.id, dj.tracking_no, dj.status_code, dj.created_at, "
-            f"       m.id AS manifest_id, m.work_date, m.warehouse_arrived_at, m.driver_id, u.name AS driver_name "
+            f"       m.id AS manifest_id, m.work_date, m.warehouse_arrived_at, m.driver_id, u.name AS driver_name, "
+            f"       u.warehouse_id, w.name AS warehouse_name "
             f"FROM delivery_jobs dj "
             f"JOIN manifests m ON m.id = dj.manifest_id "
             f"JOIN users u ON u.id = m.driver_id "
+            f"LEFT JOIN warehouses w ON w.id = u.warehouse_id "
             f"{where_sql} "
             f"ORDER BY m.work_date DESC, m.id DESC, dj.id DESC "
             f"LIMIT %s OFFSET %s",
@@ -230,12 +234,13 @@ async def export_jobs_csv(
         await cur.execute(
             f"SELECT dj.tracking_no, dj.status_code AS job_status, "
             f"       m.work_date, m.warehouse_arrived_at, "
-            f"       u.name AS driver_name, u.email AS driver_email, "
+            f"       u.name AS driver_name, u.email AS driver_email, w.name AS warehouse_name, "
             f"       de.status_code AS event_status, de.occurred_at AS event_occurred_at, "
             f"       de.lat, de.lng, de.failure_reason, de.photo_id "
             f"FROM delivery_jobs dj "
             f"JOIN manifests m ON m.id = dj.manifest_id "
             f"JOIN users u ON u.id = m.driver_id "
+            f"LEFT JOIN warehouses w ON w.id = u.warehouse_id "
             f"LEFT JOIN delivery_events de ON de.job_id = dj.id "
             f"{where_sql} "
             f"ORDER BY m.work_date DESC, dj.id, de.occurred_at",
@@ -250,6 +255,7 @@ async def export_jobs_csv(
             "tracking_no",
             "driver_name",
             "driver_email",
+            "warehouse_name",
             "work_date",
             "warehouse_arrived_at",
             "job_status",
@@ -269,6 +275,7 @@ async def export_jobs_csv(
                 r["tracking_no"],
                 r["driver_name"],
                 r["driver_email"],
+                r["warehouse_name"] or "",
                 r["work_date"],
                 r["warehouse_arrived_at"] or "",
                 r["job_status"],
@@ -362,10 +369,12 @@ async def get_job(job_id: int, request: Request, admin=Depends(get_current_admin
         await cur.execute(
             "SELECT dj.id, dj.tracking_no, dj.status_code, dj.created_at, "
             "       m.id AS manifest_id, m.work_date, m.warehouse_arrived_at, "
-            "       u.id AS driver_id, u.name AS driver_name, u.email AS driver_email "
+            "       u.id AS driver_id, u.name AS driver_name, u.email AS driver_email, "
+            "       u.warehouse_id, w.name AS warehouse_name "
             "FROM delivery_jobs dj "
             "JOIN manifests m ON m.id = dj.manifest_id "
             "JOIN users u ON u.id = m.driver_id "
+            "LEFT JOIN warehouses w ON w.id = u.warehouse_id "
             "WHERE dj.id = %s",
             (job_id,),
         )
@@ -384,6 +393,8 @@ async def get_job(job_id: int, request: Request, admin=Depends(get_current_admin
             "driver_id": row["driver_id"],
             "driver_name": row["driver_name"],
             "driver_email": row["driver_email"],
+            "warehouse_id": row["warehouse_id"],
+            "warehouse_name": row["warehouse_name"],
         }
     }
 

@@ -107,6 +107,7 @@ export default function Jobs() {
               <tr>
                 <th className="px-4 py-3">Tracking No.</th>
                 <th className="px-4 py-3">Driver</th>
+                <th className="px-4 py-3">Warehouse</th>
                 <th className="px-4 py-3">Date</th>
                 <th className="px-4 py-3">Job started</th>
                 <th className="px-4 py-3">Status</th>
@@ -121,6 +122,7 @@ export default function Jobs() {
                     </Link>
                   </td>
                   <td className="px-4 py-3 text-slate-600">{job.driver_name}</td>
+                  <td className="px-4 py-3 text-slate-600">{job.warehouse_name || "—"}</td>
                   <td className="px-4 py-3 text-slate-600">{job.work_date}</td>
                   <td className="px-4 py-3 text-slate-600">{job.warehouse_arrived_at || "—"}</td>
                   <td className="px-4 py-3">
@@ -132,7 +134,7 @@ export default function Jobs() {
               ))}
               {jobs.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-6 text-center text-slate-500">
+                  <td colSpan={6} className="px-4 py-6 text-center text-slate-500">
                     No jobs match this filter.
                   </td>
                 </tr>
