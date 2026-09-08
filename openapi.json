@@ -115,7 +115,7 @@
             "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ScanRegisterResult" } } }
           },
           "404": { "description": "Job not found -- start one first with POST /api/manifests/start." },
-          "409": { "description": "That code was already delivered or was cancelled, or the job was cancelled." },
+          "409": { "description": "That code was already delivered or was cancelled, the job was cancelled, or the job is already sealed (every order in it already has a resolved outcome) -- start a new job instead." },
           "422": { "description": "Scanned code is empty, or manifest_id is missing." }
         }
       }

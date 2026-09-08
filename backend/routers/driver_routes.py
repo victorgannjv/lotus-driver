@@ -149,6 +149,20 @@ async def _is_job_complete(pool, manifest_id: int) -> bool:
         return await cur.fetchone() is None
 
 
+async def _is_job_sealed(pool, manifest_id: int) -> bool:
+    """True once the job has at least one order and every one of them is resolved
+    -- an empty, freshly-started job is not sealed (there's nothing to seal yet),
+    but a job that has already gone all-delivered/failed is closed to new orders:
+    the driver starts a new job (a new "Arrived at warehouse") instead of adding to
+    this one."""
+    async with pool.acquire() as conn, conn.cursor() as cur:
+        await cur.execute("SELECT COUNT(*) FROM delivery_jobs WHERE manifest_id = %s", (manifest_id,))
+        (total,) = await cur.fetchone()
+    if total == 0:
+        return False
+    return await _is_job_complete(pool, manifest_id)
+
+
 @router.put("/driver/warehouse")
 async def update_driver_warehouse(body: DriverWarehouseRequest, request: Request, driver=Depends(get_current_driver)):
     """Sets which outlet this driver is assigned to -- a fixed assignment (not
@@ -227,6 +241,12 @@ async def register_scan(body: ScanRequest, request: Request, driver=Depends(get_
             raise HTTPException(status_code=409, detail=f"{code} was cancelled")
         # Already registered in this job -- a repeat scan is a no-op, not an error.
         return {"job_id": existing["id"], "manifest_id": manifest_id, "tracking_no": code, "already_registered": True}
+
+    if await _is_job_sealed(pool, manifest_id):
+        raise HTTPException(
+            status_code=409,
+            detail='this job is already complete -- tap "Arrived at warehouse" to start a new one',
+        )
 
     async with pool.acquire() as conn, conn.cursor() as cur:
         await cur.execute(

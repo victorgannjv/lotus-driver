@@ -83,6 +83,7 @@ export const translations = {
     manifestDetail: {
       jobLabel: "Job #{id}",
       jobComplete: "Job complete",
+      sealedNotice: "Every order in this job is done. Start your next job from the home page.",
       arrivedAt: "Arrived at warehouse: {time}",
       cancelledNotice: "This job was cancelled.",
       backHome: "Back to home",
@@ -229,6 +230,7 @@ export const translations = {
     manifestDetail: {
       jobLabel: "Kerja #{id}",
       jobComplete: "Kerja selesai",
+      sealedNotice: "Setiap pesanan dalam kerja ini telah selesai. Mulakan kerja seterusnya dari laman utama.",
       arrivedAt: "Tiba di gudang: {time}",
       cancelledNotice: "Kerja ini telah dibatalkan.",
       backHome: "Kembali ke laman utama",

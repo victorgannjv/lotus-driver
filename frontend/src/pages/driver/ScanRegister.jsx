@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../../api";
 import AppHeader from "../../components/AppHeader";
@@ -15,6 +15,26 @@ export default function ScanRegister() {
   const [manualCode, setManualCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null);
+  const [guardReady, setGuardReady] = useState(false);
+
+  // A driver landing here on an already-sealed job (back button, a stale link) gets
+  // bounced to home instead of a scanner that would just reject every scan -- the
+  // backend enforces the same rule, this just avoids showing the dead-end UI first.
+  useEffect(() => {
+    api
+      .get(`/manifests/${manifestId}`)
+      .then((d) => {
+        const jobs = d.jobs || [];
+        const sealed = jobs.length > 0 && jobs.every((j) => j.status_code !== "registered");
+        if (sealed) {
+          navigate("/driver", { replace: true });
+        } else {
+          setGuardReady(true);
+        }
+      })
+      .catch(() => setGuardReady(true));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [manifestId]);
 
   async function handleDetect(code) {
     // Ignore new scans while a result is still on screen or a request is in
@@ -51,6 +71,8 @@ export default function ScanRegister() {
   }
 
   const registeredCount = log.filter((e) => e.ok).length;
+
+  if (!guardReady) return null;
 
   return (
     <main className="min-h-screen bg-slate-50">

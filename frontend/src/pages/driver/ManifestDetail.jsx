@@ -94,7 +94,19 @@ export default function ManifestDetail() {
           {jobs.length === 0 && <p className="text-sm text-slate-500">{t("manifestDetail.noOrders")}</p>}
         </ul>
 
-        {!manifest.cancelled_at && (
+        {!manifest.cancelled_at && isComplete && (
+          <div className="mt-6">
+            <p className="text-sm text-slate-500">{t("manifestDetail.sealedNotice")}</p>
+            <Link
+              to="/driver"
+              className="mt-2 block w-full rounded-lg bg-brand-red px-4 py-2.5 text-center text-sm font-medium text-white hover:bg-brand-red-dark"
+            >
+              {t("manifestDetail.backHome")}
+            </Link>
+          </div>
+        )}
+
+        {!manifest.cancelled_at && !isComplete && (
           <div className="mt-6 grid grid-cols-1 gap-2">
             <Link
               to={`/driver/manifests/${manifestId}/register`}
