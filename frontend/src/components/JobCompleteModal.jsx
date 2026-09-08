@@ -1,7 +1,9 @@
 // Shown once every order scanned into a job has a resolved outcome (delivered or
 // failed) -- a distinct, congratulatory popup so the driver notices the job wrapped
-// up, separate from the routine per-scan result confirmation.
-export default function JobCompleteModal({ open, onViewJob, onDismiss }) {
+// up, separate from the routine per-scan result confirmation. "Back to home" is the
+// way into the next warehouse trip: Home's "Arrived at warehouse" button always
+// starts a brand-new job, so this is how a driver making 2 trips a day loops back.
+export default function JobCompleteModal({ open, onViewJob, onGoHome, onDismiss }) {
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
@@ -11,15 +13,18 @@ export default function JobCompleteModal({ open, onViewJob, onDismiss }) {
         <p className="mt-1 text-sm text-slate-500">Every order in this job has been delivered or marked failed.</p>
         <div className="mt-5 grid grid-cols-1 gap-2">
           <button
-            onClick={onViewJob}
+            onClick={onGoHome}
             className="w-full rounded-lg bg-brand-red px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-red-dark"
+          >
+            Back to home
+          </button>
+          <button
+            onClick={onViewJob}
+            className="w-full rounded-lg bg-white px-4 py-2.5 text-sm font-medium text-brand-black ring-1 ring-slate-200"
           >
             View job
           </button>
-          <button
-            onClick={onDismiss}
-            className="w-full rounded-lg bg-white px-4 py-2.5 text-sm font-medium text-brand-black ring-1 ring-slate-200"
-          >
+          <button onClick={onDismiss} className="w-full px-4 py-1.5 text-sm font-medium text-slate-500">
             Keep scanning
           </button>
         </div>

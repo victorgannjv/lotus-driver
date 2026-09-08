@@ -117,6 +117,7 @@ export default function ScanComplete() {
       <JobCompleteModal
         open={showJobComplete}
         onViewJob={() => navigate(`/driver/manifests/${completedManifestId}`)}
+        onGoHome={() => navigate("/driver")}
         onDismiss={() => {
           setShowJobComplete(false);
           setCompletedManifestId(null);
