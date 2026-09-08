@@ -15,9 +15,9 @@ export default function AppHeader({ title, backTo, right }) {
         )}
         {title && <h1 className="truncate text-sm font-semibold text-white">{title}</h1>}
       </div>
-      <div className="flex shrink-0 items-center gap-4">
+      <div className="flex shrink-0 items-center gap-5">
         {right}
-        <img src={logo} alt="Ninja Van" className="h-5 w-auto" />
+        <img src={logo} alt="Ninja Van" className="h-8 w-auto" />
       </div>
     </header>
   );
