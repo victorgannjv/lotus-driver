@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../../api";
 
 const STATUS_STYLES = {
@@ -10,10 +10,18 @@ const STATUS_STYLES = {
 };
 
 export default function Jobs() {
+  const [searchParams] = useSearchParams();
   const [statuses, setStatuses] = useState([]);
   const [drivers, setDrivers] = useState([]);
   const [warehouses, setWarehouses] = useState([]);
-  const [filters, setFilters] = useState({ status: "", driverId: "", warehouseId: "", dateFrom: "", dateTo: "" });
+  const [filters, setFilters] = useState({
+    status: "",
+    driverId: "",
+    warehouseId: "",
+    dateFrom: "",
+    dateTo: "",
+    manifestId: searchParams.get("manifest_id") || "",
+  });
   const [jobs, setJobs] = useState(null);
   const [error, setError] = useState(null);
 
@@ -23,10 +31,19 @@ export default function Jobs() {
     api.get("/admin/warehouses").then((d) => setWarehouses(d.warehouses));
   }, []);
 
+  // Re-sync when the URL's manifest_id changes -- e.g. clicking a "Job ID" link
+  // elsewhere in the admin app navigates here without remounting this page, so the
+  // filter state (seeded from the URL only once, at mount) needs to follow along.
+  useEffect(() => {
+    const fromUrl = searchParams.get("manifest_id") || "";
+    setFilters((f) => (f.manifestId === fromUrl ? f : { ...f, manifestId: fromUrl }));
+  }, [searchParams]);
+
   const params = new URLSearchParams();
   if (filters.status) params.set("status", filters.status);
   if (filters.driverId) params.set("driver_id", filters.driverId);
   if (filters.warehouseId) params.set("warehouse_id", filters.warehouseId);
+  if (filters.manifestId) params.set("manifest_id", filters.manifestId);
   if (filters.dateFrom) params.set("date_from", filters.dateFrom);
   if (filters.dateTo) params.set("date_to", filters.dateTo);
   const queryString = params.toString();
@@ -46,6 +63,17 @@ export default function Jobs() {
   return (
     <div>
       <div className="mb-4 flex flex-wrap items-end gap-3">
+        <label className="text-sm">
+          <span className="mb-1 block font-medium text-slate-700">Job ID</span>
+          <input
+            type="number"
+            min="1"
+            placeholder="Any"
+            value={filters.manifestId}
+            onChange={updateFilter("manifestId")}
+            className="w-24 rounded-lg border border-slate-300 px-3 py-2 text-sm"
+          />
+        </label>
         <label className="text-sm">
           <span className="mb-1 block font-medium text-slate-700">Status</span>
           <select value={filters.status} onChange={updateFilter("status")} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
@@ -105,6 +133,7 @@ export default function Jobs() {
           <table className="min-w-full divide-y divide-slate-200 text-sm">
             <thead className="bg-slate-50 text-left text-xs font-medium uppercase text-slate-500">
               <tr>
+                <th className="px-4 py-3">Job ID</th>
                 <th className="px-4 py-3">Tracking No.</th>
                 <th className="px-4 py-3">Driver</th>
                 <th className="px-4 py-3">Warehouse</th>
@@ -116,6 +145,15 @@ export default function Jobs() {
             <tbody className="divide-y divide-slate-100">
               {jobs.map((job) => (
                 <tr key={job.id}>
+                  <td className="px-4 py-3">
+                    <Link
+                      to={`/admin/jobs?manifest_id=${job.manifest_id}`}
+                      className="font-medium text-slate-600 underline"
+                      title="Show every order in this job"
+                    >
+                      #{job.manifest_id}
+                    </Link>
+                  </td>
                   <td className="px-4 py-3">
                     <Link to={`/admin/jobs/${job.id}`} className="font-medium text-brand-red underline">
                       {job.tracking_no}
@@ -134,7 +172,7 @@ export default function Jobs() {
               ))}
               {jobs.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-6 text-center text-slate-500">
+                  <td colSpan={7} className="px-4 py-6 text-center text-slate-500">
                     No jobs match this filter.
                   </td>
                 </tr>

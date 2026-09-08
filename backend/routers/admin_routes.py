@@ -232,7 +232,7 @@ async def export_jobs_csv(
 
     async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
         await cur.execute(
-            f"SELECT dj.tracking_no, dj.status_code AS job_status, "
+            f"SELECT m.id AS job_id, dj.tracking_no, dj.status_code AS job_status, "
             f"       m.work_date, m.warehouse_arrived_at, "
             f"       u.name AS driver_name, u.email AS driver_email, w.name AS warehouse_name, "
             f"       de.status_code AS event_status, de.occurred_at AS event_occurred_at, "
@@ -252,6 +252,7 @@ async def export_jobs_csv(
     writer = csv.writer(buffer)
     writer.writerow(
         [
+            "job_id",
             "tracking_no",
             "driver_name",
             "driver_email",
@@ -272,6 +273,7 @@ async def export_jobs_csv(
         photo_url = f"{base_url}/api/photos/{r['photo_id']}" if r["photo_id"] else ""
         writer.writerow(
             [
+                r["job_id"],
                 r["tracking_no"],
                 r["driver_name"],
                 r["driver_email"],

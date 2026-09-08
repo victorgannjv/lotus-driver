@@ -34,6 +34,15 @@ export default function JobDetail() {
         </div>
         <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
           <div>
+            <dt className="text-slate-400">Job ID</dt>
+            <dd className="text-slate-700">
+              <Link to={`/admin/jobs?manifest_id=${job.manifest_id}`} className="font-medium text-brand-red underline">
+                #{job.manifest_id}
+              </Link>{" "}
+              <span className="text-slate-400">(every order from the same warehouse trip)</span>
+            </dd>
+          </div>
+          <div>
             <dt className="text-slate-400">Driver</dt>
             <dd className="text-slate-700">
               {job.driver_name} ({job.driver_email})

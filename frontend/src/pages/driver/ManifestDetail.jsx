@@ -55,6 +55,7 @@ export default function ManifestDetail() {
     <main className="min-h-screen bg-slate-50">
       <AppHeader backTo="/driver" />
       <div className="mx-auto max-w-md px-4 py-6">
+        <p className="text-xs font-medium text-slate-400">{t("manifestDetail.jobLabel", { id: manifestId })}</p>
         <div className="flex items-center justify-between">
           <h1 className="text-lg font-semibold text-brand-black">{manifest.work_date}</h1>
           {isComplete && (

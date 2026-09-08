@@ -81,6 +81,7 @@ export const translations = {
       language: "Language",
     },
     manifestDetail: {
+      jobLabel: "Job #{id}",
       jobComplete: "Job complete",
       arrivedAt: "Arrived at warehouse: {time}",
       cancelledNotice: "This job was cancelled.",
@@ -226,6 +227,7 @@ export const translations = {
       language: "Bahasa",
     },
     manifestDetail: {
+      jobLabel: "Kerja #{id}",
       jobComplete: "Kerja selesai",
       arrivedAt: "Tiba di gudang: {time}",
       cancelledNotice: "Kerja ini telah dibatalkan.",
