@@ -424,9 +424,12 @@ async def list_admins(request: Request, admin=Depends(get_current_admin)):
 async def add_admin(body: AddAdminRequest, request: Request, admin=Depends(get_current_admin)):
     pool = get_pool(request)
     async with pool.acquire() as conn, conn.cursor() as cur:
-        await cur.execute("SELECT id FROM users WHERE email = %s", (body.email,))
+        # Scoped to role='admin': an email that already has a driver account is a
+        # separate identity here and shouldn't block adding it to the admin
+        # allowlist -- users.email is only unique per role, not across the table.
+        await cur.execute("SELECT id FROM users WHERE email = %s AND role = 'admin'", (body.email,))
         if await cur.fetchone() is not None:
-            raise HTTPException(status_code=409, detail="a user with this email already exists")
+            raise HTTPException(status_code=409, detail="an admin with this email already exists")
         await cur.execute(
             "INSERT INTO users (role, email, name, status) VALUES ('admin', %s, %s, 'active')",
             (body.email, body.name),

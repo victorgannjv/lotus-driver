@@ -38,7 +38,10 @@ async def signup(body: SignupRequest, request: Request):
     if pool is None:
         raise HTTPException(status_code=503, detail="database not configured")
     async with pool.acquire() as conn, conn.cursor() as cur:
-        await cur.execute("SELECT id FROM users WHERE email = %s", (body.email,))
+        # Scoped to role='driver': an email already on the admin allowlist (e.g. a
+        # staffer who also drives) is a separate identity here and shouldn't block
+        # this signup -- users.email is only unique per role, not across the table.
+        await cur.execute("SELECT id FROM users WHERE email = %s AND role = 'driver'", (body.email,))
         if await cur.fetchone() is not None:
             raise HTTPException(status_code=409, detail="an account with this email already exists")
         if body.warehouse_id is not None:
