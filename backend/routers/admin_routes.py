@@ -389,7 +389,7 @@ async def get_job(job_id: int, request: Request, admin=Depends(get_current_admin
     async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
         await cur.execute(
             "SELECT dj.id, dj.tracking_no, dj.status_code, dj.created_at, "
-            "       m.id AS manifest_id, m.work_date, m.warehouse_arrived_at, "
+            "       m.id AS manifest_id, m.work_date, m.warehouse_arrived_at, m.warehouse_arrived_photo_id, "
             "       u.id AS driver_id, u.name AS driver_name, u.email AS driver_email, "
             "       u.warehouse_id, w.name AS warehouse_name "
             "FROM delivery_jobs dj "
@@ -411,6 +411,7 @@ async def get_job(job_id: int, request: Request, admin=Depends(get_current_admin
             "manifest_id": row["manifest_id"],
             "work_date": str(row["work_date"]),
             "warehouse_arrived_at": str(row["warehouse_arrived_at"]) if row["warehouse_arrived_at"] else None,
+            "warehouse_arrived_photo_id": row["warehouse_arrived_photo_id"],
             "driver_id": row["driver_id"],
             "driver_name": row["driver_name"],
             "driver_email": row["driver_email"],

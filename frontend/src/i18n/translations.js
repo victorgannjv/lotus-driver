@@ -10,6 +10,7 @@ export const translations = {
       saving: "Saving…",
       ok: "OK",
       done: "Done",
+      cancel: "Cancel",
       backToSignIn: "Back to sign in",
     },
     login: {
@@ -142,6 +143,13 @@ export const translations = {
     photoCapture: {
       compressing: "Compressing photo…",
     },
+    arrivalPhoto: {
+      title: "Verify your arrival",
+      instructions: "Take a photo showing you're at the warehouse to start this job.",
+      photoLabel: "Warehouse photo",
+      submitting: "Submitting…",
+      submit: "Confirm arrival",
+    },
     status: {
       registered: "Registered",
       delivered: "Delivered",
@@ -157,6 +165,7 @@ export const translations = {
       saving: "Menyimpan…",
       ok: "OK",
       done: "Selesai",
+      cancel: "Batal",
       backToSignIn: "Kembali ke log masuk",
     },
     login: {
@@ -288,6 +297,13 @@ export const translations = {
     },
     photoCapture: {
       compressing: "Memampatkan gambar…",
+    },
+    arrivalPhoto: {
+      title: "Sahkan ketibaan anda",
+      instructions: "Ambil gambar yang menunjukkan anda berada di gudang untuk memulakan kerja ini.",
+      photoLabel: "Gambar gudang",
+      submitting: "Menghantar…",
+      submit: "Sahkan ketibaan",
     },
     status: {
       registered: "Didaftarkan",

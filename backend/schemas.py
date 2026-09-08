@@ -39,12 +39,6 @@ class ScanRequest(BaseModel):
     occurred_at: str | None = None
 
 
-class ArrivalRequest(BaseModel):
-    lat: float | None = None
-    lng: float | None = None
-    occurred_at: str | None = None
-
-
 class WarehouseRequest(BaseModel):
     name: str
     address: str | None = None

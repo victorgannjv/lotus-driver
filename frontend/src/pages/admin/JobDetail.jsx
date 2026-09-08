@@ -60,6 +60,14 @@ export default function JobDetail() {
             <dt className="text-slate-400">Arrived at warehouse</dt>
             <dd className="text-slate-700">{job.warehouse_arrived_at || "—"}</dd>
           </div>
+          {job.warehouse_arrived_photo_id && (
+            <div>
+              <dt className="text-slate-400">Arrival proof photo</dt>
+              <dd className="mt-1">
+                <PhotoThumb photoId={job.warehouse_arrived_photo_id} size="h-20 w-20" />
+              </dd>
+            </div>
+          )}
         </dl>
       </div>
 

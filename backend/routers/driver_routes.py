@@ -17,12 +17,13 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from auth import get_current_driver
 from db import get_pool
 from photos import store_photo
-from schemas import ArrivalRequest, DriverWarehouseRequest, ScanRequest
+from schemas import DriverWarehouseRequest, ScanRequest
 
 router = APIRouter()
 
 _MANIFEST_COLUMNS = (
-    "id, work_date, cancelled_at, warehouse_arrived_at, warehouse_arrived_lat, warehouse_arrived_lng, created_at"
+    "id, work_date, cancelled_at, warehouse_arrived_at, warehouse_arrived_lat, warehouse_arrived_lng, "
+    "warehouse_arrived_photo_id, created_at"
 )
 
 
@@ -34,6 +35,7 @@ def _serialize_manifest(row: dict) -> dict:
         "warehouse_arrived_at": str(row["warehouse_arrived_at"]) if row["warehouse_arrived_at"] else None,
         "warehouse_arrived_lat": float(row["warehouse_arrived_lat"]) if row["warehouse_arrived_lat"] is not None else None,
         "warehouse_arrived_lng": float(row["warehouse_arrived_lng"]) if row["warehouse_arrived_lng"] is not None else None,
+        "warehouse_arrived_photo_id": row["warehouse_arrived_photo_id"],
         "created_at": str(row["created_at"]),
     }
 
@@ -193,18 +195,30 @@ async def update_driver_warehouse(body: DriverWarehouseRequest, request: Request
 
 
 @router.post("/manifests/start", status_code=201)
-async def start_manifest(body: ArrivalRequest, request: Request, driver=Depends(get_current_driver)):
+async def start_manifest(
+    request: Request,
+    lat: float | None = Form(None),
+    lng: float | None = Form(None),
+    occurred_at: str | None = Form(None),
+    photo: UploadFile = File(...),
+    driver=Depends(get_current_driver),
+):
     """"Arrived at warehouse" -- always creates a new job (a driver may make more
-    than one warehouse trip a day), timestamped + geotagged at creation."""
+    than one warehouse trip a day), timestamped + geotagged at creation, and now
+    requires a photo proving they're actually there (same proof-photo pattern as a
+    delivery outcome)."""
     pool = get_pool(request)
-    occurred_dt = _parse_occurred_at(body.occurred_at)
+    occurred_dt = _parse_occurred_at(occurred_at)
     today = date.today().isoformat()
+
+    photo_bytes = await photo.read()
+    photo_id = await store_photo(pool, photo_bytes, photo.content_type or "image/jpeg", driver["id"])
 
     async with pool.acquire() as conn, conn.cursor() as cur:
         await cur.execute(
-            "INSERT INTO manifests (driver_id, work_date, warehouse_arrived_at, warehouse_arrived_lat, warehouse_arrived_lng) "
-            "VALUES (%s, %s, %s, %s, %s)",
-            (driver["id"], today, occurred_dt, body.lat, body.lng),
+            "INSERT INTO manifests (driver_id, work_date, warehouse_arrived_at, warehouse_arrived_lat, warehouse_arrived_lng, warehouse_arrived_photo_id) "
+            "VALUES (%s, %s, %s, %s, %s, %s)",
+            (driver["id"], today, occurred_dt, lat, lng, photo_id),
         )
         manifest_id = cur.lastrowid
 

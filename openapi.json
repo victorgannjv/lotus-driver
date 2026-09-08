@@ -230,13 +230,26 @@
     },
     "/api/manifests/start": {
       "post": {
-        "summary": "\"Arrived at warehouse\" -- always starts a brand-new job (a driver may make more than one warehouse trip a day), timestamped + geotagged at creation. Every order scanned afterwards groups into this job until another one is started.",
+        "summary": "\"Arrived at warehouse\" -- always starts a brand-new job (a driver may make more than one warehouse trip a day), timestamped + geotagged at creation, with a required proof photo showing they're actually at the warehouse. Every order scanned afterwards groups into this job until another one is started.",
         "operationId": "startManifest",
         "tags": ["driver"],
         "security": [{ "driverBearer": [] }],
         "requestBody": {
           "required": true,
-          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ArrivalRequest" } } }
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "lat": { "type": "number" },
+                  "lng": { "type": "number" },
+                  "occurred_at": { "type": "string", "format": "date-time", "description": "ISO 8601; defaults to server time if omitted." },
+                  "photo": { "type": "string", "format": "binary", "description": "Required proof-of-arrival photo." }
+                },
+                "required": ["photo"]
+              }
+            }
+          }
         },
         "responses": {
           "201": {
@@ -748,14 +761,6 @@
           "occurred_at": { "type": "string", "format": "date-time", "nullable": true, "description": "ISO 8601; defaults to server time if omitted." }
         }
       },
-      "ArrivalRequest": {
-        "type": "object",
-        "properties": {
-          "lat": { "type": "number", "nullable": true },
-          "lng": { "type": "number", "nullable": true },
-          "occurred_at": { "type": "string", "format": "date-time", "nullable": true, "description": "ISO 8601; defaults to server time if omitted." }
-        }
-      },
       "WarehouseRequest": {
         "type": "object",
         "required": ["name"],
@@ -830,6 +835,7 @@
           "warehouse_arrived_at": { "type": "string", "nullable": true },
           "warehouse_arrived_lat": { "type": "number", "nullable": true },
           "warehouse_arrived_lng": { "type": "number", "nullable": true },
+          "warehouse_arrived_photo_id": { "type": "integer", "nullable": true, "description": "proof-of-arrival photo, fetch via GET /api/photos/{id}" },
           "created_at": { "type": "string" }
         }
       },
@@ -886,6 +892,7 @@
           "manifest_id": { "type": "integer" },
           "work_date": { "type": "string", "format": "date" },
           "warehouse_arrived_at": { "type": "string", "nullable": true },
+          "warehouse_arrived_photo_id": { "type": "integer", "nullable": true, "description": "proof-of-arrival photo, fetch via GET /api/photos/{id}" },
           "driver_id": { "type": "integer" },
           "driver_name": { "type": "string" },
           "driver_email": { "type": "string" },
