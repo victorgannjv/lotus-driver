@@ -103,7 +103,16 @@ export default function Dashboard() {
 
       {summary && (
         <>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <StatTile
+              label="Average warehouse processing time"
+              value={formatLeadTime(summary.avg_warehouse_processing_seconds)}
+              sublabel={
+                summary.warehouse_processing_sample_size
+                  ? `arrival to scan-in, ${summary.warehouse_processing_sample_size} order${summary.warehouse_processing_sample_size === 1 ? "" : "s"}`
+                  : "no orders scanned in since an arrival yet"
+              }
+            />
             <StatTile
               label="Average lead time per job"
               value={formatLeadTime(summary.avg_lead_time_seconds)}

@@ -306,10 +306,11 @@ async def get_dashboard(
 ):
     """High-level performance summary: job counts by status, success/failure rate
     (delivered vs. failed among resolved jobs -- in-progress and cancelled jobs are
-    excluded from that ratio since they have no outcome yet), and average lead time
-    (registered scan -> delivered/failed scan). Auto-registered orders have no
-    'registered' event, so they're naturally excluded from the lead-time average
-    rather than skewing it with a missing start time."""
+    excluded from that ratio since they have no outcome yet), average lead time
+    (registered scan -> delivered/failed scan), and average warehouse processing
+    time ("Arrived at warehouse" -> each order's registered scan). Auto-registered
+    orders have no 'registered' event, so they're naturally excluded from both
+    time-based averages rather than skewing them with a missing start time."""
     pool = get_pool(request)
     where, params = _build_job_filters(None, None, None, warehouse_id, date_from, date_to)
     where_sql = f"WHERE {' AND '.join(where)}" if where else ""
@@ -339,6 +340,19 @@ async def get_dashboard(
         )
         lead_row = await cur.fetchone()
 
+        processing_where_sql = "WHERE " + " AND ".join(where + ["m.warehouse_arrived_at IS NOT NULL"])
+        await cur.execute(
+            f"SELECT AVG(TIMESTAMPDIFF(SECOND, m.warehouse_arrived_at, reg.occurred_at)) AS avg_processing_seconds, "
+            f"       COUNT(*) AS sample_size "
+            f"FROM delivery_jobs dj "
+            f"JOIN manifests m ON m.id = dj.manifest_id "
+            f"JOIN users u ON u.id = m.driver_id "
+            f"JOIN delivery_events reg ON reg.job_id = dj.id AND reg.status_code = 'registered' "
+            f"{processing_where_sql}",
+            params,
+        )
+        processing_row = await cur.fetchone()
+
     counts = {"registered": 0, "delivered": 0, "failed": 0, "cancelled": 0}
     for r in status_rows:
         counts[r["status_code"]] = r["cnt"]
@@ -347,6 +361,9 @@ async def get_dashboard(
     success_rate = (counts["delivered"] / resolved * 100) if resolved else None
     failure_rate = (counts["failed"] / resolved * 100) if resolved else None
     avg_lead_seconds = float(lead_row["avg_lead_seconds"]) if lead_row["avg_lead_seconds"] is not None else None
+    avg_processing_seconds = (
+        float(processing_row["avg_processing_seconds"]) if processing_row["avg_processing_seconds"] is not None else None
+    )
 
     return {
         "total_jobs": sum(counts.values()),
@@ -359,6 +376,8 @@ async def get_dashboard(
         "failure_rate": failure_rate,
         "avg_lead_time_seconds": avg_lead_seconds,
         "lead_time_sample_size": lead_row["sample_size"],
+        "avg_warehouse_processing_seconds": avg_processing_seconds,
+        "warehouse_processing_sample_size": processing_row["sample_size"],
     }
 
 

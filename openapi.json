@@ -580,7 +580,7 @@
     },
     "/api/admin/dashboard": {
       "get": {
-        "summary": "High-level performance summary: job counts by status, success/failure rate among resolved jobs, and average lead time (registered scan -> delivered/failed scan). Filterable by warehouse and date range.",
+        "summary": "High-level performance summary: job counts by status, success/failure rate among resolved jobs, average lead time (registered scan -> delivered/failed scan), and average warehouse processing time (arrival -> each order's registered scan). Filterable by warehouse and date range.",
         "operationId": "adminGetDashboard",
         "tags": ["admin"],
         "security": [{ "adminSSO": [] }],
@@ -871,7 +871,9 @@
           "success_rate": { "type": "number", "nullable": true, "description": "delivered / resolved_jobs * 100, null if resolved_jobs is 0" },
           "failure_rate": { "type": "number", "nullable": true, "description": "failed / resolved_jobs * 100, null if resolved_jobs is 0" },
           "avg_lead_time_seconds": { "type": "number", "nullable": true, "description": "average time from 'registered' scan to 'delivered'/'failed' scan, across jobs with both events" },
-          "lead_time_sample_size": { "type": "integer" }
+          "lead_time_sample_size": { "type": "integer" },
+          "avg_warehouse_processing_seconds": { "type": "number", "nullable": true, "description": "average time from the manifest's 'Arrived at warehouse' timestamp to each order's 'registered' scan" },
+          "warehouse_processing_sample_size": { "type": "integer" }
         }
       },
       "AdminJobDetail": {
