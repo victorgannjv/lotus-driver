@@ -12,9 +12,10 @@ export function formatDuration(minutes) {
   return neg ? `−${body}` : body;
 }
 
-// "2026-09-11 08:05:12" / ISO -> "08:05". Server sends naive local-ish strings,
-// so this stays deliberately dumb rather than parsing into a Date and shifting
-// the clock by a timezone nobody asked for.
+// "2026-09-11 08:05:12" -> "08:05". The API converts to Malaysia time before
+// it serialises (backend/clocks.py), so what arrives is already the wall clock
+// a driver would have read. Parsing this into a Date would re-apply the
+// browser's own offset and shift it a second time.
 export function formatTime(value) {
   if (!value) return "";
   const m = String(value).match(/(\d{2}):(\d{2})/);

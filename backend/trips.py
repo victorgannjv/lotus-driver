@@ -18,6 +18,8 @@ from datetime import datetime
 
 from asyncmy.cursors import DictCursor
 
+from clocks import fmt, to_local
+
 # gap_code -> (from checkpoint, to checkpoint, default fault party or None)
 # None means "ask the driver" -- loading time can be Lotus's manpower or ours.
 GAP_DEFS: list[tuple[str, str, str, str | None]] = [
@@ -143,7 +145,7 @@ def serialize_checkpoint(row: dict) -> dict:
     return {
         "checkpoint": row["checkpoint"],
         "label": CHECKPOINT_LABELS.get(row["checkpoint"], row["checkpoint"]),
-        "occurred_at": str(row["occurred_at"]),
+        "occurred_at": fmt(row["occurred_at"]),
         "lat": float(row["lat"]) if row["lat"] is not None else None,
         "lng": float(row["lng"]) if row["lng"] is not None else None,
         "photo_id": row["photo_id"],
@@ -239,6 +241,13 @@ def schedule_variance(slot: dict | None, arrived, departed) -> dict | None:
     """
     if slot is None or arrived is None:
         return None
+
+    # A contracted window of 09:30-12:00 means half past nine in Puchong, but
+    # checkpoints are stored as naive UTC. Comparing the two directly scored
+    # every trip eight hours out -- a run that left at 17:30 local read as
+    # 09:30 and passed a window it had missed by hours.
+    arrived = to_local(arrived)
+    departed = to_local(departed)
 
     start = _as_minutes(slot["window_start"])
     end = _as_minutes(slot["window_end"])

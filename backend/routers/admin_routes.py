@@ -3,9 +3,10 @@ chronological scan-event log (timestamp, status, GPS). No more orphan-event revi
 barcode scans are exact matches, so there's nothing left ambiguous to resolve."""
 import csv
 import io
-from datetime import date as date_cls
 
 from asyncmy.cursors import DictCursor
+
+from clocks import fmt, local_today
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 
 from auth import get_current_admin
@@ -59,7 +60,7 @@ def _serialize_driver(row: dict) -> dict:
         "status": row["status"],
         "warehouse_id": row["warehouse_id"],
         "warehouse_name": row["warehouse_name"],
-        "created_at": str(row["created_at"]),
+        "created_at": fmt(row["created_at"]),
     }
 
 
@@ -69,7 +70,7 @@ def _serialize_warehouse(row: dict) -> dict:
         "name": row["name"],
         "address": row["address"],
         "is_active": bool(row["is_active"]),
-        "created_at": str(row["created_at"]),
+        "created_at": fmt(row["created_at"]),
     }
 
 
@@ -78,10 +79,10 @@ def _serialize_admin_job(row: dict) -> dict:
         "id": row["id"],
         "tracking_no": row["tracking_no"],
         "status_code": row["status_code"],
-        "created_at": str(row["created_at"]),
+        "created_at": fmt(row["created_at"]),
         "manifest_id": row["manifest_id"],
         "work_date": str(row["work_date"]),
-        "warehouse_arrived_at": str(row["warehouse_arrived_at"]) if row["warehouse_arrived_at"] else None,
+        "warehouse_arrived_at": fmt(row["warehouse_arrived_at"]),
         "driver_id": row["driver_id"],
         "driver_name": row["driver_name"],
         "warehouse_id": row["warehouse_id"],
@@ -95,7 +96,7 @@ def _serialize_admin_event(row: dict) -> dict:
         "job_id": row["job_id"],
         "driver_id": row["driver_id"],
         "status_code": row["status_code"],
-        "occurred_at": str(row["occurred_at"]),
+        "occurred_at": fmt(row["occurred_at"]),
         "lat": float(row["lat"]) if row["lat"] is not None else None,
         "lng": float(row["lng"]) if row["lng"] is not None else None,
         "failure_reason": row["failure_reason"],
@@ -297,7 +298,7 @@ async def export_jobs_csv(
             ]
         )
 
-    filename = f"lotus-jobs-{date_cls.today().isoformat()}.csv"
+    filename = f"lotus-jobs-{local_today().isoformat()}.csv"
     return Response(
         content=buffer.getvalue(),
         media_type="text/csv",
@@ -414,10 +415,10 @@ async def get_job(job_id: int, request: Request, admin=Depends(get_current_admin
             "id": row["id"],
             "tracking_no": row["tracking_no"],
             "status_code": row["status_code"],
-            "created_at": str(row["created_at"]),
+            "created_at": fmt(row["created_at"]),
             "manifest_id": row["manifest_id"],
             "work_date": str(row["work_date"]),
-            "warehouse_arrived_at": str(row["warehouse_arrived_at"]) if row["warehouse_arrived_at"] else None,
+            "warehouse_arrived_at": fmt(row["warehouse_arrived_at"]),
             "warehouse_arrived_photo_id": row["warehouse_arrived_photo_id"],
             "driver_id": row["driver_id"],
             "driver_name": row["driver_name"],
@@ -454,7 +455,7 @@ async def list_admins(request: Request, admin=Depends(get_current_admin)):
         rows = await cur.fetchall()
     return {
         "admins": [
-            {"id": r["id"], "name": r["name"], "email": r["email"], "status": r["status"], "created_at": str(r["created_at"])}
+            {"id": r["id"], "name": r["name"], "email": r["email"], "status": r["status"], "created_at": fmt(r["created_at"])}
             for r in rows
         ]
     }

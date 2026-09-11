@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from auth import get_current_driver
 from db import get_pool
 from photos import evidence_caption, store_photo
-from clocks import stamp as clock_stamp
+from clocks import fmt, local_today, stamp as clock_stamp
 from trips import (
     CHECKPOINT_GAP,
     CHECKPOINT_LABELS,
@@ -118,7 +118,7 @@ async def _trip_state(pool, trip: dict) -> dict:
             "id": mid,
             "work_date": str(trip["work_date"]),
             "expected_job_count": trip["expected_job_count"],
-            "day_closed_at": str(trip["day_closed_at"]) if trip["day_closed_at"] else None,
+            "day_closed_at": fmt(trip["day_closed_at"]),
             "schedule_slot_no": trip.get("schedule_slot_no"),
         },
         "window": window,
@@ -128,8 +128,8 @@ async def _trip_state(pool, trip: dict) -> dict:
         "jobs": [
             {
                 "id": j["id"], "seq": j["seq"], "status": j["status"],
-                "started_at": str(j["started_at"]) if j["started_at"] else None,
-                "completed_at": str(j["completed_at"]) if j["completed_at"] else None,
+                "started_at": fmt(j["started_at"]),
+                "completed_at": fmt(j["completed_at"]),
                 "photo_id": j["photo_id"], "orders": counts.get(j["seq"], 0),
             }
             for j in jobs
@@ -594,7 +594,7 @@ async def my_days(
             "trips": [], "totals": {"trips": 0, "jobs": 0, "orders": 0, "failed_orders": 0, "over_target": 0},
         })
         if t["day_closed_at"]:
-            day["day_closed_at"] = str(t["day_closed_at"])
+            day["day_closed_at"] = fmt(t["day_closed_at"])
         day["trips"].append(trip_out)
         if t["cancelled_at"] is None:
             day["totals"]["trips"] += 1
@@ -619,7 +619,7 @@ async def my_open_trip(request: Request, driver=Depends(get_current_driver)):
     """Today's trip that still has steps left, so the app can open straight on
     the work in hand rather than making the driver find it."""
     pool = get_pool(request)
-    today = date.today().isoformat()
+    today = local_today().isoformat()
     async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
         await cur.execute(
             "SELECT m.id, m.driver_id, m.work_date, m.cancelled_at, m.day_closed_at, m.expected_job_count, "

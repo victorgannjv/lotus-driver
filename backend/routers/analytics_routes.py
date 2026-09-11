@@ -16,6 +16,8 @@ re-score history while the target is still being negotiated with Lotus.
 from datetime import date, timedelta
 
 from asyncmy.cursors import DictCursor
+
+from clocks import fmt, local_today
 from fastapi import APIRouter, Depends, Query, Request
 
 from auth import get_current_admin
@@ -42,7 +44,7 @@ PERIODS = {"today": 1, "l7d": 7, "l1m": 30, "l3m": 90}
 def _range_for(period: str, date_from: str | None, date_to: str | None) -> tuple[date, date, date, date]:
     """Returns (start, end, prev_start, prev_end). The previous window is the
     same length immediately before, so 'vs previous period' is like for like."""
-    today = date.today()
+    today = local_today()
     if date_from and date_to:
         start, end = date.fromisoformat(date_from), date.fromisoformat(date_to)
     else:
@@ -124,7 +126,7 @@ async def _scored(pool, rows: list[dict]) -> list[dict]:
             "window": window,
             "missed_window": bool(window and window.get("departed_late_minutes")),
             "work_date": str(r["work_date"]),
-            "day_closed_at": str(r["day_closed_at"]) if r["day_closed_at"] else None,
+            "day_closed_at": fmt(r["day_closed_at"]),
             "expected_job_count": r["expected_job_count"],
             "jobs": int((jobs.get(r["id"]) or {}).get("n") or 0),
             "orders": int((orders.get(r["id"]) or {}).get("n") or 0),
@@ -327,7 +329,7 @@ async def evidence(
     """The detail extract. Filtered and paged rather than dumped: at a few
     hundred trips a month, scrolling is not a way to find anything."""
     pool = get_pool(request)
-    end = date.fromisoformat(date_to) if date_to else date.today()
+    end = date.fromisoformat(date_to) if date_to else local_today()
     start = date.fromisoformat(date_from) if date_from else end - timedelta(days=29)
 
     trips = await _scored(pool, await _load_trips(pool, start, end, warehouse_id))
@@ -399,7 +401,7 @@ async def trip_detail(manifest_id: int, request: Request, admin=Depends(get_curr
     scored["job_detail"] = [
         {
             "id": j["id"], "seq": j["seq"], "status": j["status"],
-            "completed_at": str(j["completed_at"]) if j["completed_at"] else None,
+            "completed_at": fmt(j["completed_at"]),
             "photo_id": j["photo_id"],
             "orders": by_job.get(j["id"], []),
         }

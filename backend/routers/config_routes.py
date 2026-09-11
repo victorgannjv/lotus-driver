@@ -13,6 +13,8 @@ on the same row so history re-scores consistently.
 import json
 
 from asyncmy.cursors import DictCursor
+
+from clocks import fmt
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 
@@ -69,7 +71,7 @@ async def list_activity(
         )
         rows = await cur.fetchall()
     return {
-        "activity": [{**r, "created_at": str(r["created_at"])} for r in rows],
+        "activity": [{**r, "created_at": fmt(r["created_at"])} for r in rows],
         "total": total,
         "limit": limit,
         "offset": offset,
@@ -261,7 +263,7 @@ async def list_settings(request: Request, admin=Depends(get_current_admin)):
     async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
         await cur.execute("SELECT setting_key, value, notes, updated_at FROM app_setting ORDER BY setting_key")
         rows = await cur.fetchall()
-    return {"settings": [{**r, "updated_at": str(r["updated_at"])} for r in rows]}
+    return {"settings": [{**r, "updated_at": fmt(r["updated_at"])} for r in rows]}
 
 
 @router.put("/settings/{key}")

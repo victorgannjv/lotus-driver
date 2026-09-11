@@ -9,7 +9,7 @@ outcome scan still goes through -- it's auto-registered into today's most recent
 open job with no "registered" event, rather than blocking the driver. When the last
 open order in a job resolves, the response flags job_complete so the app can tell
 the driver."""
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 
 from asyncmy.cursors import DictCursor
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from auth import get_current_driver
 from db import get_pool
 from photos import evidence_caption, store_photo
-from clocks import stamp as clock_stamp
+from clocks import fmt, local_today, stamp as clock_stamp
 from schemas import DriverWarehouseRequest, ScanRequest
 
 router = APIRouter()
@@ -32,12 +32,12 @@ def _serialize_manifest(row: dict) -> dict:
     return {
         "id": row["id"],
         "work_date": str(row["work_date"]),
-        "cancelled_at": str(row["cancelled_at"]) if row["cancelled_at"] else None,
-        "warehouse_arrived_at": str(row["warehouse_arrived_at"]) if row["warehouse_arrived_at"] else None,
+        "cancelled_at": fmt(row["cancelled_at"]),
+        "warehouse_arrived_at": fmt(row["warehouse_arrived_at"]),
         "warehouse_arrived_lat": float(row["warehouse_arrived_lat"]) if row["warehouse_arrived_lat"] is not None else None,
         "warehouse_arrived_lng": float(row["warehouse_arrived_lng"]) if row["warehouse_arrived_lng"] is not None else None,
         "warehouse_arrived_photo_id": row["warehouse_arrived_photo_id"],
-        "created_at": str(row["created_at"]),
+        "created_at": fmt(row["created_at"]),
     }
 
 
@@ -46,7 +46,7 @@ def _serialize_job(row: dict) -> dict:
         "id": row["id"],
         "tracking_no": row["tracking_no"],
         "status_code": row["status_code"],
-        "created_at": str(row["created_at"]),
+        "created_at": fmt(row["created_at"]),
     }
 
 
@@ -54,7 +54,7 @@ def _serialize_event(row: dict) -> dict:
     return {
         "id": row["id"],
         "status_code": row["status_code"],
-        "occurred_at": str(row["occurred_at"]),
+        "occurred_at": fmt(row["occurred_at"]),
         "lat": float(row["lat"]) if row["lat"] is not None else None,
         "lng": float(row["lng"]) if row["lng"] is not None else None,
         "failure_reason": row["failure_reason"],
@@ -140,7 +140,7 @@ async def _find_or_create_job_for_outcome(pool, driver_id: int, code: str) -> di
             raise HTTPException(status_code=409, detail=f"{code} was cancelled")
         return job
 
-    today = date.today().isoformat()
+    today = local_today().isoformat()
     async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
         await cur.execute(
             "SELECT id FROM manifests WHERE driver_id = %s AND work_date = %s AND cancelled_at IS NULL "
@@ -232,7 +232,7 @@ async def start_manifest(
     delivery outcome)."""
     pool = get_pool(request)
     occurred_dt = _parse_occurred_at(occurred_at)
-    today = date.today().isoformat()
+    today = local_today().isoformat()
 
     outlet = await _driver_outlet(pool, driver["id"])
     photo_bytes = await photo.read()
