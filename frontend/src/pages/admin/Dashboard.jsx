@@ -1,149 +1,365 @@
 import { useEffect, useState } from "react";
 import { api } from "../../api";
+import Icon from "../../components/Icon";
+import { formatDuration } from "../../lib/duration";
 
-function formatLeadTime(seconds) {
-  if (seconds === null || seconds === undefined) return "—";
-  const totalMinutes = Math.round(seconds / 60);
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  if (hours === 0) return `${minutes}m`;
-  return `${hours}h ${minutes}m`;
-}
+// The monitoring surface. Every figure answers one question: how much time did
+// Lotus cost us, and can we prove it? Nothing here grows as data accumulates --
+// the detail lives on the Evidence screen, so this stays readable at a glance.
+//
+// Colour has exactly two meanings on this page and they never mix: WHO OWNS the
+// lost time (amber Lotus / blue Ninja Van / green external) and WHETHER it beat
+// its target (green within / red over). Each block repeats the part of that key
+// it uses, so nothing sends you back to the top.
 
-function formatRate(rate) {
-  if (rate === null || rate === undefined) return "—";
-  return `${rate.toFixed(1)}%`;
-}
+const PERIODS = [
+  { key: "today", label: "Today" },
+  { key: "l7d", label: "Last 7 days" },
+  { key: "l1m", label: "Last 30 days" },
+  { key: "l3m", label: "Last 90 days" },
+];
 
-function StatTile({ label, value, sublabel, tone = "default" }) {
-  const toneClasses = {
-    default: "text-slate-900",
-    good: "text-emerald-700",
-    bad: "text-amber-700",
-  };
+const PARTY = {
+  lotus: { label: "Lotus", bar: "bg-amber-500", chip: "bg-amber-100 text-amber-800", dot: "bg-amber-500" },
+  njv: { label: "Ninja Van", bar: "bg-blue-600", chip: "bg-blue-100 text-blue-800", dot: "bg-blue-600" },
+  external: { label: "External", bar: "bg-emerald-600", chip: "bg-emerald-100 text-emerald-800", dot: "bg-emerald-600" },
+};
+
+function Tile({ label, value, sub, delta, deltaBad, accent }) {
   return (
-    <div className="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-      <p className="text-sm font-medium text-slate-500">{label}</p>
-      <p className={`mt-2 text-3xl font-semibold ${toneClasses[tone]}`}>{value}</p>
-      {sublabel && <p className="mt-1 text-xs text-slate-400">{sublabel}</p>}
+    <div className={`rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200 ${accent ? "border-l-4 border-brand-red" : ""}`}>
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{label}</p>
+      <p className="mt-1.5 text-3xl font-semibold tabular-nums text-brand-black">{value}</p>
+      {sub && <p className="mt-1 text-xs text-slate-500">{sub}</p>}
+      {delta && (
+        <p className={`mt-1.5 font-mono text-xs ${deltaBad ? "text-brand-red" : "text-emerald-700"}`}>{delta}</p>
+      )}
+    </div>
+  );
+}
+
+function Legend({ items }) {
+  return (
+    <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 border-t border-slate-100 pt-2.5 text-xs text-slate-500">
+      {items.map((i) => (
+        <span key={i.label} className="flex items-center gap-1.5">
+          <span className={`h-2.5 w-2.5 rounded-sm ${i.dot}`} />
+          <span>
+            <b className="font-semibold text-slate-700">{i.label}</b>
+            {i.note ? ` — ${i.note}` : ""}
+          </span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function OwnedBar({ owned }) {
+  const total = owned.lotus + owned.njv + owned.external;
+  if (!total) return <p className="mt-3 text-xs text-slate-400">No time over target in this period.</p>;
+  return (
+    <div className="mt-3">
+      <div className="flex h-2.5 gap-0.5 overflow-hidden rounded-full bg-slate-100">
+        {["lotus", "njv", "external"].map((p) =>
+          owned[p] ? <span key={p} className={PARTY[p].bar} style={{ width: `${(owned[p] / total) * 100}%` }} /> : null
+        )}
+      </div>
+      <div className="mt-1.5 flex flex-wrap gap-x-4 font-mono text-[11px] text-slate-500">
+        {["lotus", "njv", "external"].map((p) =>
+          owned[p] ? <span key={p}>{PARTY[p].label} {formatDuration(owned[p])}</span> : null
+        )}
+      </div>
+    </div>
+  );
+}
+
+// One line per outlet per week against the target. Drawn rather than charted by
+// a library: two series and a reference line do not justify 400KB.
+function TrendChart({ trend, target = 55 }) {
+  const outlets = [...new Set(trend.map((t) => t.outlet))];
+  const weeks = [...new Set(trend.map((t) => t.week_start))].sort();
+  if (weeks.length < 2) {
+    return <p className="mt-3 text-xs text-slate-400">Not enough weeks yet to show a trend.</p>;
+  }
+  const colours = ["#4A3AA7", "#C2185B", "#00695C"];
+  const W = 680, H = 220, L = 54, R = 96, T = 14, B = 30;
+  const pw = W - L - R, ph = H - T - B;
+  const max = Math.max(90, ...trend.map((t) => t.avg_at_outlet_minutes || 0)) * 1.1;
+  const x = (i) => L + (pw * i) / Math.max(1, weeks.length - 1);
+  const y = (v) => T + ph - (ph * v) / max;
+
+  return (
+    <div className="mt-3 overflow-x-auto">
+      <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full min-w-[520px]" role="img"
+           aria-label="Average time at outlet per week, by outlet, against target">
+        {[0, 30, 60, 90].filter((v) => v <= max).map((v) => (
+          <g key={v}>
+            <line x1={L} y1={y(v)} x2={L + pw} y2={y(v)} stroke="#E2E8F0" strokeWidth="1" />
+            <text x={L - 8} y={y(v) + 4} textAnchor="end" fontSize="11" fill="#94A3B8" fontFamily="monospace">
+              {formatDuration(v)}
+            </text>
+          </g>
+        ))}
+        <line x1={L} y1={y(target)} x2={L + pw} y2={y(target)} stroke="#94A3B8" strokeWidth="2" strokeDasharray="5 4" />
+        <text x={L + 6} y={y(target) - 7} fontSize="11" fill="#94A3B8" fontFamily="monospace">
+          target {formatDuration(target)}
+        </text>
+        {weeks.map((w, i) => (
+          <text key={w} x={x(i)} y={H - 10} textAnchor="middle" fontSize="10" fill="#94A3B8" fontFamily="monospace">
+            {w.slice(5)}
+          </text>
+        ))}
+        {outlets.map((o, oi) => {
+          const pts = weeks
+            .map((w, i) => {
+              const row = trend.find((t) => t.outlet === o && t.week_start === w);
+              return row ? `${x(i)},${y(row.avg_at_outlet_minutes)}` : null;
+            })
+            .filter(Boolean);
+          if (!pts.length) return null;
+          const last = pts[pts.length - 1].split(",");
+          return (
+            <g key={o}>
+              <polyline points={pts.join(" ")} fill="none" stroke={colours[oi % colours.length]} strokeWidth="2"
+                        strokeLinejoin="round" strokeLinecap="round" />
+              {pts.map((p, i) => {
+                const [cx, cy] = p.split(",");
+                return <circle key={i} cx={cx} cy={cy} r="3.5" fill={colours[oi % colours.length]}
+                               stroke="#fff" strokeWidth="1.5" />;
+              })}
+              <text x={Number(last[0]) + 9} y={Number(last[1]) + 4} fontSize="12" fontWeight="600" fill="#1E293B">
+                {o}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
     </div>
   );
 }
 
 export default function Dashboard() {
+  const [period, setPeriod] = useState("l7d");
   const [warehouses, setWarehouses] = useState([]);
-  const [filters, setFilters] = useState({ warehouseId: "", dateFrom: "", dateTo: "" });
-  const [summary, setSummary] = useState(null);
+  const [warehouseId, setWarehouseId] = useState("");
+  const [data, setData] = useState(null);
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    api.get("/admin/warehouses").then((d) => setWarehouses(d.warehouses));
+    api.get("/admin/warehouses").then((d) => setWarehouses(d.warehouses)).catch(() => {});
   }, []);
 
-  const params = new URLSearchParams();
-  if (filters.warehouseId) params.set("warehouse_id", filters.warehouseId);
-  if (filters.dateFrom) params.set("date_from", filters.dateFrom);
-  if (filters.dateTo) params.set("date_to", filters.dateTo);
-  const queryString = params.toString();
-
   useEffect(() => {
-    setSummary(null);
+    setData(null);
+    setError(null);
+    const qs = new URLSearchParams({ period });
+    if (warehouseId) qs.set("warehouse_id", warehouseId);
     api
-      .get(`/admin/dashboard?${queryString}`)
-      .then((d) => setSummary(d))
-      .catch((err) => setError(err.detail || "could not load dashboard"));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters]);
+      .get(`/admin/overview?${qs}`)
+      .then(setData)
+      .catch((err) => setError(err.detail || "could not load the dashboard"));
+  }, [period, warehouseId]);
 
-  function updateFilter(field) {
-    return (e) => setFilters((f) => ({ ...f, [field]: e.target.value }));
-  }
+  const t = data?.totals;
+  const maxReason = data?.reasons?.[0]?.minutes || 1;
 
   return (
     <div>
-      <div className="mb-4 flex flex-wrap items-end gap-3">
-        <label className="text-sm">
-          <span className="mb-1 block font-medium text-slate-700">Warehouse</span>
-          <select
-            value={filters.warehouseId}
-            onChange={updateFilter("warehouseId")}
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          >
-            <option value="">All warehouses</option>
-            {warehouses.map((w) => (
-              <option key={w.id} value={w.id}>
-                {w.name}
-                {!w.is_active ? " (removed)" : ""}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="text-sm">
-          <span className="mb-1 block font-medium text-slate-700">Date from</span>
-          <input
-            type="date"
-            value={filters.dateFrom}
-            onChange={updateFilter("dateFrom")}
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          />
-        </label>
-        <label className="text-sm">
-          <span className="mb-1 block font-medium text-slate-700">Date to</span>
-          <input
-            type="date"
-            value={filters.dateTo}
-            onChange={updateFilter("dateTo")}
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          />
-        </label>
+      <div className="mb-5 flex flex-wrap items-center gap-3">
+        <div className="flex gap-1 rounded-lg bg-slate-200/70 p-1">
+          {PERIODS.map((p) => (
+            <button
+              key={p.key}
+              type="button"
+              onClick={() => setPeriod(p.key)}
+              aria-pressed={period === p.key}
+              className={`rounded-md px-3 py-1.5 text-sm font-semibold ${
+                period === p.key ? "bg-white text-brand-black shadow-sm" : "text-slate-500"
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+        <select
+          value={warehouseId}
+          onChange={(e) => setWarehouseId(e.target.value)}
+          className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+        >
+          <option value="">All outlets</option>
+          {warehouses.map((w) => (
+            <option key={w.id} value={w.id}>{w.name}</option>
+          ))}
+        </select>
       </div>
 
       {error && <p className="text-sm text-red-600">{error}</p>}
-      {!summary && !error && <p className="text-sm text-slate-500">Loading…</p>}
+      {!data && !error && <p className="text-sm text-slate-500">Loading…</p>}
 
-      {summary && (
-        <>
+      {data && (
+        <div className="space-y-5">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <StatTile
-              label="Average warehouse processing time"
-              value={formatLeadTime(summary.avg_warehouse_processing_seconds)}
-              sublabel={
-                summary.warehouse_processing_sample_size
-                  ? `arrival to scan-in, ${summary.warehouse_processing_sample_size} order${summary.warehouse_processing_sample_size === 1 ? "" : "s"}`
-                  : "no orders scanned in since an arrival yet"
+            <Tile
+              accent
+              label="Disputable delay"
+              value={formatDuration(t.owned_minutes.lotus)}
+              sub="Lotus-owned time over target"
+              delta={
+                t.owned_minutes_previous.lotus
+                  ? `was ${formatDuration(t.owned_minutes_previous.lotus)} last period`
+                  : null
               }
+              deltaBad={t.owned_minutes.lotus > t.owned_minutes_previous.lotus}
             />
-            <StatTile
-              label="Average lead time per job"
-              value={formatLeadTime(summary.avg_lead_time_seconds)}
-              sublabel={
-                summary.lead_time_sample_size
-                  ? `based on ${summary.lead_time_sample_size} job${summary.lead_time_sample_size === 1 ? "" : "s"} with a registered scan`
-                  : "no jobs with both a registered and a completed scan yet"
+            <Tile
+              label="Trips over target"
+              value={`${t.over_target} / ${t.trips}`}
+              sub={t.breach_rate !== null ? `${t.breach_rate}% missed the target` : "no trips yet"}
+            />
+            <Tile
+              label="Avg time at outlet"
+              value={formatDuration(t.avg_at_outlet_minutes)}
+              sub="arrival to departure"
+              delta={
+                t.avg_delta_minutes !== null
+                  ? `${t.avg_delta_minutes > 0 ? "▲" : "▼"} ${formatDuration(Math.abs(t.avg_delta_minutes))} vs previous period`
+                  : null
               }
+              deltaBad={t.avg_delta_minutes > 0}
             />
-            <StatTile
-              label="Success rate"
-              value={formatRate(summary.success_rate)}
-              sublabel={summary.resolved_jobs ? `${summary.delivered} of ${summary.resolved_jobs} resolved jobs delivered` : "no resolved jobs yet"}
-              tone="good"
-            />
-            <StatTile
-              label="Failure rate"
-              value={formatRate(summary.failure_rate)}
-              sublabel={summary.resolved_jobs ? `${summary.failed} of ${summary.resolved_jobs} resolved jobs failed` : "no resolved jobs yet"}
-              tone="bad"
+            <Tile
+              label="Ours to fix"
+              value={formatDuration(t.owned_minutes.njv)}
+              sub="Ninja Van-owned — concede before filing"
             />
           </div>
 
-          <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-5">
-            <StatTile label="Total orders" value={summary.total_jobs} />
-            <StatTile label="Delivered" value={summary.delivered} tone="good" />
-            <StatTile label="Failed" value={summary.failed} tone="bad" />
-            <StatTile label="In progress" value={summary.registered} />
-            <StatTile label="Cancelled" value={summary.cancelled} />
-          </div>
-        </>
+          <section className="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+            <h2 className="text-base font-semibold text-brand-black">Manpower</h2>
+            <p className="mt-0.5 text-xs text-slate-500">
+              Before blaming Lotus, rule us out — if we ran short-handed our own trips stretch, and Lotus will say so
+              first. On duty is counted from trips actually run; rostered comes from Configuration → Shift roster.
+            </p>
+            {!data.roster_configured && (
+              <p className="mt-3 flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                <Icon name="alert" className="mt-0.5 h-3.5 w-3.5" />
+                No shift roster set up yet, so “rostered” is blank and short-handed days can’t be detected. Add one
+                under Configuration → Shift roster.
+              </p>
+            )}
+            <div className="mt-3 overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-xs uppercase tracking-wide text-slate-400">
+                    <th className="py-2 pr-4">Day</th>
+                    <th className="py-2 pr-4">On duty</th>
+                    <th className="py-2 pr-4">Rostered</th>
+                    <th className="py-2 pr-4">Trips</th>
+                    <th className="py-2 pr-4">Trips / driver</th>
+                    <th className="py-2 pr-4">Orders</th>
+                    <th className="py-2 pr-4">Avg at outlet</th>
+                    <th className="py-2">Over target</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.manpower.map((d) => (
+                    <tr key={d.work_date} className="border-t border-slate-100">
+                      <td className="py-2 pr-4 font-medium">{d.work_date}</td>
+                      <td className={`py-2 pr-4 font-mono ${d.short_handed ? "font-semibold text-brand-red" : ""}`}>
+                        {d.on_duty}
+                      </td>
+                      <td className="py-2 pr-4 font-mono text-slate-500">{d.rostered ?? "—"}</td>
+                      <td className="py-2 pr-4 font-mono">{d.trips}</td>
+                      <td className="py-2 pr-4 font-mono">{d.trips_per_driver}</td>
+                      <td className="py-2 pr-4 font-mono">{d.orders}</td>
+                      <td className={`py-2 pr-4 font-mono ${d.avg_at_outlet_minutes > 55 ? "font-semibold text-brand-red" : ""}`}>
+                        {formatDuration(d.avg_at_outlet_minutes)}
+                      </td>
+                      <td className="py-2 font-mono">{d.over_target}</td>
+                    </tr>
+                  ))}
+                  {data.manpower.length === 0 && (
+                    <tr><td colSpan="8" className="py-3 text-sm text-slate-400">No trips in this period.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <Legend items={[
+              { label: "Red figure", note: "short-handed, or over the 55m target", dot: "bg-brand-red" },
+              { label: "Short-handed time", note: "counts as Ninja Van-owned", dot: PARTY.njv.dot },
+            ]} />
+          </section>
+
+          <section className="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+            <h2 className="text-base font-semibold text-brand-black">Time at outlet, by week</h2>
+            <p className="mt-0.5 text-xs text-slate-500">
+              Each point is that outlet’s average arrival-to-departure for the week, against target.
+            </p>
+            <TrendChart trend={data.trend} />
+          </section>
+
+          <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            {data.outlets.map((o) => (
+              <div key={o.outlet} className="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+                <div className="flex items-baseline gap-2">
+                  <h3 className="text-base font-semibold text-brand-black">{o.outlet}</h3>
+                  <span className="font-mono text-xs text-slate-400">{o.trips} trips</span>
+                </div>
+                <dl className="mt-3 grid grid-cols-2 gap-y-1 text-sm">
+                  <dt className="text-slate-500">Avg time at outlet</dt>
+                  <dd className={`text-right font-mono ${o.avg_at_outlet_minutes > 55 ? "font-semibold text-brand-red" : "text-emerald-700"}`}>
+                    {formatDuration(o.avg_at_outlet_minutes)}
+                  </dd>
+                  <dt className="text-slate-500">Trips over target</dt>
+                  <dd className="text-right font-mono">{o.over_target} of {o.trips}</dd>
+                  <dt className="text-slate-500">Avg jobs per trip</dt>
+                  <dd className="text-right font-mono">{o.avg_jobs_per_trip}</dd>
+                </dl>
+                <OwnedBar owned={o.owned_minutes} />
+                <Legend items={[
+                  { label: "Lotus", note: "goes into the claim", dot: PARTY.lotus.dot },
+                  { label: "Ninja Van", note: "comes out before filing", dot: PARTY.njv.dot },
+                  { label: "External", note: "neither side liable", dot: PARTY.external.dot },
+                ]} />
+              </div>
+            ))}
+            {data.outlets.length === 0 && (
+              <p className="text-sm text-slate-400">No trips in this period.</p>
+            )}
+          </section>
+
+          <section className="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+            <h2 className="text-base font-semibold text-brand-black">Delay by reason code</h2>
+            <p className="mt-0.5 text-xs text-slate-500">
+              Time lost over target, ranked. This only exists because reasons are coded rather than typed.
+            </p>
+            <div className="mt-4 space-y-2.5">
+              {data.reasons.map((r) => (
+                <div key={r.label} className="grid grid-cols-[minmax(120px,1.2fr)_minmax(0,3fr)_70px] items-center gap-3 text-sm">
+                  <span className="truncate">{r.label}</span>
+                  <span className="h-4 rounded bg-slate-100">
+                    <span
+                      className={`block h-full rounded ${PARTY[r.fault_party]?.bar || "bg-slate-400"}`}
+                      style={{ width: `${Math.max(3, (r.minutes / maxReason) * 100)}%` }}
+                      title={`${r.minutes} minutes across ${r.occurrences} occurrences`}
+                    />
+                  </span>
+                  <span className="text-right font-mono text-xs text-slate-500">{formatDuration(r.minutes)}</span>
+                </div>
+              ))}
+              {data.reasons.length === 0 && (
+                <p className="text-sm text-slate-400">
+                  Nothing coded yet — reasons appear here once drivers start explaining gaps that ran over.
+                </p>
+              )}
+            </div>
+            <Legend items={[
+              { label: "Lotus", note: "goes into the claim", dot: PARTY.lotus.dot },
+              { label: "Ninja Van", note: "comes out before filing", dot: PARTY.njv.dot },
+              { label: "External", note: "neither side liable", dot: PARTY.external.dot },
+            ]} />
+          </section>
+        </div>
       )}
     </div>
   );

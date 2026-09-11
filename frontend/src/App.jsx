@@ -20,6 +20,22 @@ const AdminDrivers = lazy(() => import("./pages/admin/Drivers"));
 const AdminAdmins = lazy(() => import("./pages/admin/Admins"));
 const AdminWarehouses = lazy(() => import("./pages/admin/Warehouses"));
 const AdminJobs = lazy(() => import("./pages/admin/Jobs"));
+const AdminEvidence = lazy(() => import("./pages/admin/Evidence"));
+const ConfigLayout = lazy(() =>
+  import("./pages/admin/Configuration").then((m) => ({ default: m.ConfigurationLayout }))
+);
+const ConfigReasons = lazy(() =>
+  import("./pages/admin/Configuration").then((m) => ({ default: m.ReasonCodes }))
+);
+const ConfigTargets = lazy(() =>
+  import("./pages/admin/Configuration").then((m) => ({ default: m.Targets }))
+);
+const ConfigRoster = lazy(() =>
+  import("./pages/admin/Configuration").then((m) => ({ default: m.Roster }))
+);
+const ConfigDriverApp = lazy(() =>
+  import("./pages/admin/Configuration").then((m) => ({ default: m.DriverApp }))
+);
 const AdminJobDetail = lazy(() => import("./pages/admin/JobDetail"));
 const ScanRegister = lazy(() => import("./pages/driver/ScanRegister"));
 const ScanComplete = lazy(() => import("./pages/driver/ScanComplete"));
@@ -91,11 +107,26 @@ export default function App() {
           >
             <Route index element={<Navigate to="/admin/dashboard" replace />} />
             <Route path="dashboard" element={<AdminDashboard />} />
+            <Route path="evidence" element={<AdminEvidence />} />
             <Route path="jobs" element={<AdminJobs />} />
             <Route path="jobs/:jobId" element={<AdminJobDetail />} />
-            <Route path="drivers" element={<AdminDrivers />} />
-            <Route path="admins" element={<AdminAdmins />} />
-            <Route path="warehouses" element={<AdminWarehouses />} />
+
+            {/* Setup, grouped under one menu rather than sitting in the work row. */}
+            <Route path="config" element={<ConfigLayout />}>
+              <Route index element={<Navigate to="/admin/config/drivers" replace />} />
+              <Route path="drivers" element={<AdminDrivers />} />
+              <Route path="admins" element={<AdminAdmins />} />
+              <Route path="outlets" element={<AdminWarehouses />} />
+              <Route path="reasons" element={<ConfigReasons />} />
+              <Route path="targets" element={<ConfigTargets />} />
+              <Route path="roster" element={<ConfigRoster />} />
+              <Route path="driver-app" element={<ConfigDriverApp />} />
+            </Route>
+
+            {/* Old paths kept working -- an admin with a bookmark should not hit a blank page. */}
+            <Route path="drivers" element={<Navigate to="/admin/config/drivers" replace />} />
+            <Route path="admins" element={<Navigate to="/admin/config/admins" replace />} />
+            <Route path="warehouses" element={<Navigate to="/admin/config/outlets" replace />} />
           </Route>
         </Routes>
       </DriverAuthProvider>
