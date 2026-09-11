@@ -72,6 +72,18 @@ function Row({ children }) {
   return <div className="flex flex-wrap items-center gap-4 border-b border-slate-100 py-4 last:border-0">{children}</div>;
 }
 
+// Columns that line up down the page. `cols` is a Tailwind grid-template, applied
+// from md up; below that everything stacks.
+function GridRow({ cols, children }) {
+  return (
+    <div className={`grid grid-cols-1 items-center gap-2 border-b border-slate-100 py-4 last:border-0 md:gap-4 ${cols}`}>
+      {children}
+    </div>
+  );
+}
+
+const actionsCell = "flex flex-wrap items-center gap-2 md:justify-end";
+
 function Err({ children }) {
   if (!children) return null;
   return (
@@ -206,15 +218,17 @@ export function ReasonCodes() {
             <button type="button" className={btn} onClick={() => setEdit((v) => ({ ...v, [r.code]: undefined }))}>Cancel</button>
           </div>
         ) : (
-          <Row key={r.code}>
-            <span className={`min-w-[14rem] flex-1 text-sm ${r.is_active ? "text-brand-black" : "text-slate-400 line-through"}`}>
+          <GridRow key={r.code} cols="md:grid-cols-[minmax(0,1fr)_7rem_10rem_auto]">
+            <span className={`text-sm ${r.is_active ? "text-brand-black" : "text-slate-400 line-through"}`}>
               {r.label}
             </span>
-            <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${PARTY[r.fault_party].chip}`}>
-              {PARTY[r.fault_party].label}
+            <span>
+              <span className={`inline-block rounded-full px-2.5 py-1 text-xs font-medium ${PARTY[r.fault_party].chip}`}>
+                {PARTY[r.fault_party].label}
+              </span>
             </span>
             <span className="text-xs text-slate-400">{gapName(r.applies_to_gap.split(",")[0])}</span>
-            <span className="flex-1" />
+            <span className={actionsCell}>
             <button type="button" className={btn}
                     onClick={() => setEdit((v) => ({ ...v, [r.code]: {
                       label: r.label, fault_party: r.fault_party, applies_to_gap: r.applies_to_gap } }))}>
@@ -226,7 +240,8 @@ export function ReasonCodes() {
                       : api.put(`/admin/config/reason-codes/${r.code}`, { is_active: true }))}>
               {r.is_active ? "Stop offering" : "Offer again"}
             </button>
-          </Row>
+            </span>
+          </GridRow>
         );
       })}
     </Panel>
@@ -384,8 +399,8 @@ export function Targets() {
         const value = edits[r.id] ?? r.target_minutes;
         const dirty = Number(value) !== r.target_minutes;
         return (
-          <Row key={r.id}>
-            <span className="min-w-[18rem] flex-1">
+          <GridRow key={r.id} cols="md:grid-cols-[minmax(0,1fr)_13rem_auto]">
+            <span>
               <span className="block text-sm text-brand-black">{GAP_LABEL[r.gap_code] || r.gap_code}</span>
               <span className="block text-xs text-slate-400">{r.warehouse_name ? `${r.warehouse_name} only` : "Every outlet"}</span>
             </span>
@@ -394,6 +409,7 @@ export function Targets() {
                      onChange={(e) => setEdits((v) => ({ ...v, [r.id]: e.target.value }))} />
               minutes
             </label>
+            <span className={actionsCell}>
             <button type="button" className={btnPrimary} disabled={busy || !dirty}
                     onClick={async () => {
                       const ok = await run(() => api.post("/admin/config/targets", {
@@ -409,7 +425,8 @@ export function Targets() {
                     ) && run(() => api.del(`/admin/config/targets/${r.id}`))}>
               Delete
             </button>
-          </Row>
+            </span>
+          </GridRow>
         );
       })}
     </Panel>
@@ -563,8 +580,8 @@ export function DriversConfig() {
       ) : rows.map((d) => {
         const draft = edit[d.id];
         return (
-          <Row key={d.id}>
-            <span className="min-w-[14rem] flex-1">
+          <GridRow key={d.id} cols="md:grid-cols-[minmax(0,1fr)_11rem_9rem_auto]">
+            <span>
               <span className="block text-sm font-medium text-brand-black">{d.name}</span>
               <span className="block text-xs text-slate-400">{d.email}{d.phone ? ` · ${d.phone}` : ""}</span>
             </span>
@@ -586,7 +603,7 @@ export function DriversConfig() {
                         : api.del(`/admin/config/drivers/${d.id}`))} />
               Can sign in
             </span>
-            <span className="flex-1" />
+            <span className={actionsCell}>
             {draft ? (
               <>
                 <button type="button" className={btnPrimary} disabled={busy}
@@ -603,7 +620,8 @@ export function DriversConfig() {
                 Change outlet
               </button>
             )}
-          </Row>
+            </span>
+          </GridRow>
         );
       })}
     </Panel>
@@ -645,13 +663,15 @@ export function AdminsConfig() {
         </div>
       )}
       {!admins ? <p className="text-sm text-slate-500">Loading…</p> : admins.map((u) => (
-        <Row key={u.id}>
-          <span className="min-w-[14rem] flex-1">
+        <GridRow key={u.id} cols="md:grid-cols-[minmax(0,1fr)_9rem_auto]">
+          <span>
             <span className="block text-sm font-medium text-brand-black">{u.name}</span>
             <span className="block text-xs text-slate-400">{u.email}</span>
           </span>
-          {u.status !== "active" && <span className="text-xs text-slate-400">Access removed</span>}
-          <span className="flex-1" />
+          <span className="text-xs text-slate-400">
+            {u.status === "active" ? "" : "Access removed"}
+          </span>
+          <span className={actionsCell}>
           {u.status === "active" && (
             <button type="button" className={btnDanger} disabled={busy}
                     onClick={() => confirmed(`Remove dashboard access for ${u.name}?`)
@@ -659,7 +679,8 @@ export function AdminsConfig() {
               Remove access
             </button>
           )}
-        </Row>
+          </span>
+        </GridRow>
       ))}
     </Panel>
   );
@@ -906,17 +927,19 @@ export function ActivityLog() {
       {!rows ? <p className="text-sm text-slate-500">Loading…</p> : rows.length === 0 ? (
         <p className="text-sm text-slate-500">Nothing changed yet.</p>
       ) : rows.map((a) => (
-        <Row key={a.id}>
-          <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${ACTION_CHIP[a.action]}`}>
-            {a.action === "create" ? "Added" : a.action === "delete" ? "Deleted" : "Changed"}
+        <GridRow key={a.id} cols="md:grid-cols-[5.5rem_9rem_minmax(0,1fr)_13rem_10rem]">
+          <span>
+            <span className={`inline-block rounded-full px-2.5 py-1 text-xs font-medium ${ACTION_CHIP[a.action]}`}>
+              {a.action === "create" ? "Added" : a.action === "delete" ? "Deleted" : "Changed"}
+            </span>
           </span>
-          <span className="min-w-[8rem] text-xs font-medium uppercase tracking-wide text-slate-400">
+          <span className="text-xs font-medium uppercase tracking-wide text-slate-400">
             {ENTITY_LABEL[a.entity] || a.entity}
           </span>
-          <span className="min-w-[16rem] flex-1 text-sm text-brand-black">{a.summary}</span>
-          <span className="text-sm text-slate-500">{a.actor_email || "—"}</span>
+          <span className="text-sm text-brand-black">{a.summary}</span>
+          <span className="truncate text-sm text-slate-500">{a.actor_email || "—"}</span>
           <span className="font-mono text-xs text-slate-400">{a.created_at}</span>
-        </Row>
+        </GridRow>
       ))}
     </Panel>
   );
