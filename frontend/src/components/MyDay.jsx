@@ -183,7 +183,12 @@ export default function MyDay({ refreshKey }) {
                   );
                 })}
 
-                {isToday && !day.day_closed_at && (
+                {/* Any open day can be closed, not just today -- a driver who
+                    forgot to tap on Tuesday should not be stuck with it open
+                    forever. Past days whose trips all came back are closed
+                    automatically server-side; this is the manual way out for
+                    the ones that did not. */}
+                {!day.day_closed_at && (
                   <>
                     <button
                       type="button"
@@ -191,7 +196,7 @@ export default function MyDay({ refreshKey }) {
                       onClick={() => closeDay(day.work_date)}
                       className="mt-4 w-full rounded-xl bg-white px-4 py-3 text-sm font-semibold text-brand-black ring-1 ring-slate-300 hover:bg-slate-50 disabled:opacity-50"
                     >
-                      {closing ? t("myDay.closing") : t("myDay.closeDay")}
+                      {closing ? t("myDay.closing") : isToday ? t("myDay.closeDay") : t("myDay.closeThisDay")}
                     </button>
                     <p className="mt-1.5 text-center text-xs text-slate-400">{t("myDay.closeHint")}</p>
                   </>

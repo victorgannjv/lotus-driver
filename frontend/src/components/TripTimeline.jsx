@@ -126,7 +126,12 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
     try {
       const fd = new FormData();
       fd.append("job_count", String(n));
-      setState(await api.postForm(`/trips/${manifestId}/jobs`, fd));
+      const path = `/trips/${manifestId}/jobs`;
+      setState(
+        state.jobs.length > 0
+          ? await api.putForm(path, fd)
+          : await api.postForm(path, fd)
+      );
       setPendingCount(false);
     } catch (err) {
       setError(err.detail || t("trip.stampError"));
@@ -188,8 +193,47 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
     };
   }
 
+  const win = state.window;
+
   return (
     <div>
+      {/* The contracted window comes first: it is what Lotus bills on. The dwell
+          figure below explains a miss, but does not decide one. */}
+      {win && (
+        <div className="mb-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
+          <div className="flex items-baseline justify-between gap-2">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{win.label}</p>
+            <p className="font-mono text-xs text-slate-500">{win.window_start}–{win.window_end}</p>
+          </div>
+          <p className={`mt-1 text-sm font-semibold ${win.arrived_on_time ? "text-emerald-700" : "text-brand-red"}`}>
+            {win.arrived_on_time
+              ? t("window.arrivedOnTime")
+              : t("window.arrivedLate", { late: formatDuration(win.arrived_late_minutes) })}
+          </p>
+          {win.still_open ? (
+            <p className="mt-0.5 font-mono text-xs text-slate-500">
+              {t("window.mustLeaveBy", { time: win.window_end })}
+            </p>
+          ) : (
+            <p className={`mt-0.5 font-mono text-xs ${win.departed_on_time ? "text-emerald-700" : "text-brand-red"}`}>
+              {win.departed_on_time
+                ? t("window.leftOnTime")
+                : t("window.leftLate", { late: formatDuration(win.departed_late_minutes) })}
+            </p>
+          )}
+          {!win.still_open && !win.departed_on_time && (
+            <p className="mt-2 rounded-lg bg-slate-50 px-2.5 py-1.5 text-xs text-slate-600">
+              {win.lotus_late_minutes > 0
+                ? t("window.splitLotus", {
+                    lotus: formatDuration(win.lotus_late_minutes),
+                    njv: formatDuration(win.njv_late_minutes),
+                  })
+                : t("window.splitOurs", { njv: formatDuration(win.njv_late_minutes) })}
+            </p>
+          )}
+        </div>
+      )}
+
       {tao && (
         <div className="mb-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{t("trip.timeAtOutlet")}</p>
@@ -213,7 +257,20 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
           >
             {starting ? t("home.oneSec") : action.label}
           </button>
-          <p className="mt-2 text-center text-xs text-slate-400">{t("trip.ctaHint")}</p>
+          <p className="mt-2 text-center text-xs text-slate-400">
+            {nextJob && stamped.has("departed") ? t("trip.jobCtaHint") : t("trip.ctaHint")}
+          </p>
+          {/* A job is a drop; a scan is one parcel inside it. Both are needed,
+              so say which is which instead of leaving two similar buttons. */}
+          {nextJob && stamped.has("departed") && (
+            <Link
+              to="/driver/scans/complete"
+              className="mt-3 flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-medium text-brand-black shadow-sm ring-1 ring-slate-200"
+            >
+              <Icon name="route" className="h-4 w-4" />
+              {t("home.scanToComplete")}
+            </Link>
+          )}
         </>
       )}
 
@@ -273,17 +330,32 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
                   {done.reason_label}
                 </p>
               )}
-              {over && done && !done.reason_code && (
+              {/* Reason codes are the point of the whole exercise, so they are
+                  offered on any stamped step -- a driver who knows Lotus held
+                  them up should not have to wait for a threshold to say so. A
+                  breach still asks unprompted. */}
+              {done && gap && (
                 <button
                   type="button"
                   onClick={() => openReason(cp)}
-                  className="mt-1 flex items-center gap-1 text-xs font-semibold text-brand-red underline"
+                  className={`mt-1 flex items-center gap-1 text-xs font-semibold underline ${
+                    over && !done.reason_code ? "text-brand-red" : "text-slate-500"
+                  }`}
                 >
-                  <Icon name="alert" className="h-3.5 w-3.5" />
-                  {t("trip.addReason")}
+                  {over && !done.reason_code && <Icon name="alert" className="h-3.5 w-3.5" />}
+                  {done.reason_code ? t("trip.changeReason") : t("trip.addReason")}
                 </button>
               )}
 
+              {cp === "deliveries_done" && state.jobs.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setPendingCount(true)}
+                  className="mt-1 text-xs font-semibold text-slate-500 underline"
+                >
+                  {t("trip.editJobCount", { n: state.jobs.length })}
+                </button>
+              )}
               {cp === "deliveries_done" && state.jobs.length > 0 && (
                 <ul className="mt-2 space-y-1.5">
                   {state.jobs.map((j) => (
@@ -313,9 +385,10 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
         })}
       </ol>
 
-      {/* Scanning orders in happens BETWEEN goods being ready and the truck
-          being confirmed loaded -- that is the order in the driver's own
-          process flow, so the link lives in that window. */}
+      {/* Scanning lives inside the trip at the step it applies to, rather than
+          floating at the bottom of the screen where it competed with the one
+          real next action. Parcels are scanned IN between goods-ready and
+          loaded... */}
       {stamped.has("goods_ready") && !stamped.has("departed") && (
         <Link
           to={`/driver/manifests/${manifestId}/register`}

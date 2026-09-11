@@ -189,3 +189,91 @@ def setting_bool(settings: dict, key: str, default: bool = False) -> bool:
 def setting_list(settings: dict, key: str) -> list[str]:
     raw = settings.get(key, "")
     return [p.strip() for p in raw.split(",") if p.strip()]
+
+
+# ---------------------------------------------------------------------------
+# Contracted windows.
+#
+# The gap targets above measure dwell -- how long a step took. That is
+# diagnostic. What Lotus actually charges on is the contracted window each run
+# has to land in (first trip 09:30-12:00, and so on), so lateness is an
+# absolute-time judgement, not a duration one.
+#
+# Keeping both is the point: the window says WHETHER the commitment was missed,
+# the gaps say WHY, and putting them together attributes the miss.
+# ---------------------------------------------------------------------------
+
+async def load_schedules(pool) -> list[dict]:
+    async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
+        await cur.execute(
+            "SELECT id, warehouse_id, slot_no, label, window_start, window_end, grace_minutes "
+            "FROM trip_schedule WHERE is_active = 1 ORDER BY slot_no"
+        )
+        return await cur.fetchall()
+
+
+def slots_for(schedules: list[dict], warehouse_id: int | None) -> dict[int, dict]:
+    """Outlet-specific windows win wholesale where they exist; otherwise the
+    global set. Mixing the two per-slot would make a schedule impossible to
+    reason about from the contract it came from."""
+    specific = {s["slot_no"]: s for s in schedules if s["warehouse_id"] == warehouse_id}
+    if specific:
+        return specific
+    return {s["slot_no"]: s for s in schedules if s["warehouse_id"] is None}
+
+
+def _as_minutes(value) -> int:
+    """TIME comes back as timedelta on this driver; DATETIME as datetime."""
+    if hasattr(value, "total_seconds"):
+        return int(value.total_seconds() // 60)
+    return value.hour * 60 + value.minute
+
+
+def schedule_variance(slot: dict | None, arrived, departed) -> dict | None:
+    """How a trip sat against its contracted window, and who owns any overrun.
+
+    The attribution is the whole reason this exists: arriving late is ours and
+    is counted first, so a claim never asks Lotus to pay for our own late start.
+    Anything beyond that -- the truck was there in time and still left after the
+    window closed -- is the outlet holding us.
+    """
+    if slot is None or arrived is None:
+        return None
+
+    start = _as_minutes(slot["window_start"])
+    end = _as_minutes(slot["window_end"])
+    grace = slot["grace_minutes"] or 0
+
+    arrived_min = arrived.hour * 60 + arrived.minute
+    arrival_variance = arrived_min - start          # negative = early
+    arrival_late = max(0, arrival_variance - grace)
+
+    out = {
+        "slot_no": slot["slot_no"],
+        "label": slot["label"],
+        "window_start": f"{start // 60:02d}:{start % 60:02d}",
+        "window_end": f"{end // 60:02d}:{end % 60:02d}",
+        "grace_minutes": grace,
+        "arrival_variance_minutes": arrival_variance,
+        "arrived_late_minutes": arrival_late,
+        "arrived_on_time": arrival_late == 0,
+        "departure_variance_minutes": None,
+        "departed_late_minutes": 0,
+        "departed_on_time": None,
+        "njv_late_minutes": arrival_late,
+        "lotus_late_minutes": 0,
+        "still_open": departed is None,
+    }
+
+    if departed is None:
+        return out
+
+    departed_min = departed.hour * 60 + departed.minute
+    departure_variance = departed_min - end
+    departed_late = max(0, departure_variance - grace)
+    out["departure_variance_minutes"] = departure_variance
+    out["departed_late_minutes"] = departed_late
+    out["departed_on_time"] = departed_late == 0
+    # Our late arrival is deducted first; the remainder is the outlet's.
+    out["lotus_late_minutes"] = max(0, departed_late - arrival_late)
+    return out

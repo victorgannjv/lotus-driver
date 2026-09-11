@@ -19,6 +19,9 @@ from db import get_pool
 from photos import store_photo
 from trips import (
     CHECKPOINT_GAP,
+    load_schedules,
+    schedule_variance,
+    slots_for,
     CHECKPOINT_ORDER,
     compute_gaps,
     compute_time_at_outlet,
@@ -54,7 +57,7 @@ async def _owned_trip(pool, driver_id: int, manifest_id: int) -> dict:
     async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
         await cur.execute(
             "SELECT m.id, m.driver_id, m.work_date, m.cancelled_at, m.day_closed_at, m.expected_job_count, "
-            "u.warehouse_id "
+            "m.schedule_slot_no, u.warehouse_id "
             "FROM manifests m JOIN users u ON u.id = m.driver_id "
             "WHERE m.id = %s AND m.driver_id = %s",
             (manifest_id, driver_id),
@@ -102,13 +105,20 @@ async def _trip_state(pool, trip: dict) -> dict:
         next_cp = cp
         break
 
+    slots = slots_for(await load_schedules(pool), trip["warehouse_id"])
+    window = schedule_variance(
+        slots.get(trip.get("schedule_slot_no")), stamps.get("arrived"), stamps.get("departed")
+    )
+
     return {
         "trip": {
             "id": mid,
             "work_date": str(trip["work_date"]),
             "expected_job_count": trip["expected_job_count"],
             "day_closed_at": str(trip["day_closed_at"]) if trip["day_closed_at"] else None,
+            "schedule_slot_no": trip.get("schedule_slot_no"),
         },
+        "window": window,
         "checkpoints": [serialize_checkpoint(cps[c]) for c in CHECKPOINT_ORDER if c in cps],
         "gaps": gaps,
         "time_at_outlet": compute_time_at_outlet(stamps, targets, trip["warehouse_id"]),
@@ -297,6 +307,54 @@ async def set_job_count(
     return await _trip_state(pool, trip)
 
 
+@router.put("/trips/{manifest_id}/jobs")
+async def amend_job_count(
+    manifest_id: int,
+    request: Request,
+    job_count: int = Form(...),
+    driver=Depends(get_current_driver),
+):
+    """Corrects a miscounted load. Growing the count appends drops; shrinking it
+    removes only trailing drops that are still pending -- a job already closed
+    is evidence and is never deleted to make a number tidy. The originally
+    entered count stays on the trip, so "told 6, ran 8" remains reportable."""
+    pool = get_pool(request)
+    trip = await _owned_trip(pool, driver["id"], manifest_id)
+    settings = await load_settings(pool)
+    max_jobs = int(settings.get("job_count_manual_max", "40"))
+    if job_count < 1 or job_count > max_jobs:
+        raise HTTPException(status_code=422, detail=f"job count must be between 1 and {max_jobs}")
+
+    async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
+        await cur.execute(
+            "SELECT id, seq, status FROM trip_job WHERE manifest_id = %s ORDER BY seq", (manifest_id,)
+        )
+        jobs = await cur.fetchall()
+
+    current = len(jobs)
+    if job_count == current:
+        return await _trip_state(pool, trip)
+
+    if job_count > current:
+        async with pool.acquire() as conn, conn.cursor() as cur:
+            for seq in range(current + 1, job_count + 1):
+                await cur.execute("INSERT INTO trip_job (manifest_id, seq) VALUES (%s, %s)", (manifest_id, seq))
+    else:
+        removable = [j for j in jobs[job_count:] if j["status"] == "pending"]
+        if len(removable) != current - job_count:
+            raise HTTPException(
+                status_code=409,
+                detail="some of those jobs are already done -- they can't be removed",
+            )
+        async with pool.acquire() as conn, conn.cursor() as cur:
+            for j in removable:
+                await cur.execute("UPDATE delivery_jobs SET trip_job_id = NULL WHERE trip_job_id = %s", (j["id"],))
+                await cur.execute("DELETE FROM trip_job WHERE id = %s", (j["id"],))
+
+    trip["expected_job_count"] = job_count
+    return await _trip_state(pool, trip)
+
+
 @router.post("/trips/{manifest_id}/jobs/add", status_code=201)
 async def add_job(manifest_id: int, request: Request, driver=Depends(get_current_driver)):
     """Appends one drop when the load changes after loading."""
@@ -393,6 +451,33 @@ async def close_day(work_date: str, request: Request, driver=Depends(get_current
     return {"work_date": work_date, "closed": True, "trips": n}
 
 
+async def _autoclose_finished_days(pool, driver_id: int) -> None:
+    """A past day whose every trip came back to the outlet is finished, whatever
+    the driver remembered to tap. Closing it on read keeps the history honest
+    rather than leaving a trail of days stuck open behind them."""
+    async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
+        await cur.execute(
+            "SELECT m.work_date, COUNT(*) AS trips, "
+            "SUM(tc.id IS NOT NULL) AS returned, MAX(tc.occurred_at) AS last_return "
+            "FROM manifests m "
+            "LEFT JOIN trip_checkpoint tc ON tc.manifest_id = m.id AND tc.checkpoint = 'returned' "
+            "WHERE m.driver_id = %s AND m.cancelled_at IS NULL AND m.day_closed_at IS NULL "
+            "AND m.work_date < CURDATE() GROUP BY m.work_date",
+            (driver_id,),
+        )
+        rows = await cur.fetchall()
+    done = [r for r in rows if r["trips"] and r["returned"] == r["trips"]]
+    if not done:
+        return
+    async with pool.acquire() as conn, conn.cursor() as cur:
+        for r in done:
+            await cur.execute(
+                "UPDATE manifests SET day_closed_at = %s "
+                "WHERE driver_id = %s AND work_date = %s AND cancelled_at IS NULL AND day_closed_at IS NULL",
+                (r["last_return"], driver_id, r["work_date"]),
+            )
+
+
 @router.get("/my-days")
 async def my_days(
     request: Request,
@@ -408,6 +493,7 @@ async def my_days(
     be worth taking into a dispute.
     """
     pool = get_pool(request)
+    await _autoclose_finished_days(pool, driver["id"])
     where = ["m.driver_id = %s"]
     params: list = [driver["id"]]
     if date_from:
@@ -419,7 +505,8 @@ async def my_days(
 
     async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
         await cur.execute(
-            "SELECT m.id, m.work_date, m.cancelled_at, m.day_closed_at, m.expected_job_count, u.warehouse_id "
+            "SELECT m.id, m.work_date, m.cancelled_at, m.day_closed_at, m.expected_job_count, "
+            "m.schedule_slot_no, u.warehouse_id "
             "FROM manifests m JOIN users u ON u.id = m.driver_id "
             f"WHERE {' AND '.join(where)} ORDER BY m.work_date DESC, m.id DESC LIMIT %s",
             tuple(params + [max(1, min(limit, 200))]),
@@ -433,6 +520,7 @@ async def my_days(
     placeholders = ",".join(["%s"] * len(ids))
     cps_by_trip = await fetch_checkpoints(pool, ids)
     targets = await load_targets(pool)
+    schedules = await load_schedules(pool)
 
     async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
         await cur.execute(
@@ -459,8 +547,13 @@ async def my_days(
         jr = job_rows.get(t["id"], {})
         orr = order_rows.get(t["id"], {})
 
+        window = schedule_variance(
+            slots_for(schedules, t["warehouse_id"]).get(t["schedule_slot_no"]),
+            stamps.get("arrived"), stamps.get("departed"),
+        )
         trip_out = {
             "id": t["id"],
+            "window": window,
             "cancelled": t["cancelled_at"] is not None,
             "jobs": int(jr.get("n") or 0),
             "jobs_done": int(jr.get("done") or 0),
@@ -508,7 +601,7 @@ async def my_open_trip(request: Request, driver=Depends(get_current_driver)):
     async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
         await cur.execute(
             "SELECT m.id, m.driver_id, m.work_date, m.cancelled_at, m.day_closed_at, m.expected_job_count, "
-            "u.warehouse_id FROM manifests m JOIN users u ON u.id = m.driver_id "
+            "m.schedule_slot_no, u.warehouse_id FROM manifests m JOIN users u ON u.id = m.driver_id "
             "WHERE m.driver_id = %s AND m.work_date = %s AND m.cancelled_at IS NULL "
             "ORDER BY m.id DESC LIMIT 1",
             (driver["id"], today),

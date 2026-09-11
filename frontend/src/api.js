@@ -56,6 +56,7 @@ export const api = {
   get: (path) => request(path),
   post: (path, body, opts = {}) => request(path, { method: "POST", body, ...opts }),
   postForm: (path, formData) => request(path, { method: "POST", body: formData, isForm: true }),
+  putForm: (path, formData) => request(path, { method: "PUT", body: formData, isForm: true }),
   put: (path, body) => request(path, { method: "PUT", body }),
   del: (path) => request(path, { method: "DELETE" }),
 };

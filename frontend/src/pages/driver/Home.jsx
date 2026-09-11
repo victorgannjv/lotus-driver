@@ -184,13 +184,6 @@ export default function Home() {
               />
             )}
 
-            <Link
-              to="/driver/scans/complete"
-              className="mt-4 flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-medium text-brand-black shadow-sm ring-1 ring-slate-200"
-            >
-              <Icon name="camera" className="h-4 w-4" />
-              {t("home.scanToComplete")}
-            </Link>
           </>
         )}
 

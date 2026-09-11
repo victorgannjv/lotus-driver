@@ -214,11 +214,23 @@ async def start_manifest(
     photo_bytes = await photo.read()
     photo_id = await store_photo(pool, photo_bytes, photo.content_type or "image/jpeg", driver["id"])
 
+    # Which contracted window this run is against -- the day's first trip is
+    # slot 1, the second slot 2. Stamped at the start so cancelling or
+    # re-ordering a later trip can never retro-change an earlier commitment.
     async with pool.acquire() as conn, conn.cursor() as cur:
         await cur.execute(
-            "INSERT INTO manifests (driver_id, work_date, warehouse_arrived_at, warehouse_arrived_lat, warehouse_arrived_lng, warehouse_arrived_photo_id) "
-            "VALUES (%s, %s, %s, %s, %s, %s)",
-            (driver["id"], today, occurred_dt, lat, lng, photo_id),
+            "SELECT COUNT(*) FROM manifests WHERE driver_id = %s AND work_date = %s AND cancelled_at IS NULL",
+            (driver["id"], today),
+        )
+        (prior,) = await cur.fetchone()
+    slot_no = prior + 1
+
+    async with pool.acquire() as conn, conn.cursor() as cur:
+        await cur.execute(
+            "INSERT INTO manifests (driver_id, work_date, warehouse_arrived_at, warehouse_arrived_lat, "
+            "warehouse_arrived_lng, warehouse_arrived_photo_id, schedule_slot_no) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            (driver["id"], today, occurred_dt, lat, lng, photo_id, slot_no),
         )
         manifest_id = cur.lastrowid
 

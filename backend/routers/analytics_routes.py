@@ -22,6 +22,9 @@ from auth import get_current_admin
 from db import get_pool
 from trips import (
     CHECKPOINT_ORDER,
+    load_schedules,
+    schedule_variance,
+    slots_for,
     compute_gaps,
     compute_time_at_outlet,
     fetch_checkpoints,
@@ -58,7 +61,7 @@ async def _load_trips(pool, start: date, end: date, warehouse_id: int | None) ->
         params.append(warehouse_id)
     async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
         await cur.execute(
-            "SELECT m.id, m.work_date, m.day_closed_at, m.expected_job_count, "
+            "SELECT m.id, m.work_date, m.day_closed_at, m.expected_job_count, m.schedule_slot_no, "
             "u.id AS driver_id, u.name AS driver_name, u.warehouse_id, w.name AS warehouse_name "
             "FROM manifests m JOIN users u ON u.id = m.driver_id "
             "LEFT JOIN warehouses w ON w.id = u.warehouse_id "
@@ -96,6 +99,7 @@ async def _scored(pool, rows: list[dict]) -> list[dict]:
     ids = [r["id"] for r in rows]
     cps_all = await fetch_checkpoints(pool, ids)
     targets = await load_targets(pool)
+    schedules = await load_schedules(pool)
     jobs, orders = await _counts(pool, ids)
 
     out = []
@@ -111,8 +115,14 @@ async def _scored(pool, rows: list[dict]) -> list[dict]:
              and cps[g["to_checkpoint"]].get("reason_label")),
             None,
         )
+        window = schedule_variance(
+            slots_for(schedules, r["warehouse_id"]).get(r.get("schedule_slot_no")),
+            stamps.get("arrived"), stamps.get("departed"),
+        )
         out.append({
             **{k: r[k] for k in ("id", "driver_id", "driver_name", "warehouse_id", "warehouse_name")},
+            "window": window,
+            "missed_window": bool(window and window.get("departed_late_minutes")),
             "work_date": str(r["work_date"]),
             "day_closed_at": str(r["day_closed_at"]) if r["day_closed_at"] else None,
             "expected_job_count": r["expected_job_count"],
@@ -168,6 +178,20 @@ async def overview(
     prev = await _scored(pool, await _load_trips(pool, pstart, pend, warehouse_id))
 
     owned, prev_owned = _owned_minutes(trips), _owned_minutes(prev)
+
+    # Against the contract, not just dwell. This is the figure Lotus bills on,
+    # and the split says who actually caused each miss: our late arrival is
+    # counted first, so a claim never bills them for our own late start.
+    windowed = [t for t in trips if t["window"] and t["window"]["departed_on_time"] is not None]
+    missed = [t for t in windowed if not t["window"]["departed_on_time"]]
+    window_stats = {
+        "trips_with_window": len(windowed),
+        "missed": len(missed),
+        "on_time_rate": round((len(windowed) - len(missed)) / len(windowed) * 100, 1) if windowed else None,
+        "late_minutes_njv": sum(t["window"]["njv_late_minutes"] for t in windowed),
+        "late_minutes_lotus": sum(t["window"]["lotus_late_minutes"] for t in windowed),
+        "late_arrivals": sum(1 for t in windowed if not t["window"]["arrived_on_time"]),
+    }
     avg, prev_avg = _avg_at_outlet(trips), _avg_at_outlet(prev)
     breached = sum(1 for t in trips if t["over_target"])
 
@@ -277,6 +301,7 @@ async def overview(
             "jobs": sum(t["jobs"] for t in trips),
             "orders": sum(t["orders"] for t in trips),
         },
+        "window": window_stats,
         "outlets": outlets,
         "reasons": reason_rows,
         "trend": trend,
