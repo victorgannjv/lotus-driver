@@ -32,7 +32,7 @@ function Tile({ label, value, sub, delta, deltaBad, accent }) {
       <p className="mt-1.5 text-3xl font-semibold tabular-nums text-brand-black">{value}</p>
       {sub && <p className="mt-1 text-xs text-slate-500">{sub}</p>}
       {delta && (
-        <p className={`mt-1.5 font-mono text-xs ${deltaBad ? "text-brand-red" : "text-emerald-700"}`}>{delta}</p>
+        <p className={`mt-1.5 text-xs ${deltaBad ? "text-brand-red" : "text-emerald-700"}`}>{delta}</p>
       )}
     </div>
   );
@@ -64,7 +64,7 @@ function OwnedBar({ owned }) {
           owned[p] ? <span key={p} className={PARTY[p].bar} style={{ width: `${(owned[p] / total) * 100}%` }} /> : null
         )}
       </div>
-      <div className="mt-1.5 flex flex-wrap gap-x-4 font-mono text-[11px] text-slate-500">
+      <div className="mt-1.5 flex flex-wrap gap-x-4 text-[11px] text-slate-500">
         {["lotus", "njv", "external"].map((p) =>
           owned[p] ? <span key={p}>{PARTY[p].label} {formatDuration(owned[p])}</span> : null
         )}
@@ -257,14 +257,14 @@ export default function Dashboard() {
                   {data.manpower.map((d) => (
                     <tr key={d.work_date} className="border-t border-slate-100">
                       <td className="py-2 pr-4 font-medium">{d.work_date}</td>
-                      <td className="py-2 pr-4 font-mono">{d.on_duty}</td>
-                      <td className="py-2 pr-4 font-mono">{d.trips}</td>
-                      <td className="py-2 pr-4 font-mono">{d.trips_per_driver}</td>
-                      <td className="py-2 pr-4 font-mono">{d.orders}</td>
-                      <td className={`py-2 pr-4 font-mono ${d.avg_at_outlet_minutes > 55 ? "font-semibold text-brand-red" : ""}`}>
+                      <td className="py-2 pr-4">{d.on_duty}</td>
+                      <td className="py-2 pr-4">{d.trips}</td>
+                      <td className="py-2 pr-4">{d.trips_per_driver}</td>
+                      <td className="py-2 pr-4">{d.orders}</td>
+                      <td className={`py-2 pr-4 ${d.avg_at_outlet_minutes > 55 ? "font-semibold text-brand-red" : ""}`}>
                         {formatDuration(d.avg_at_outlet_minutes)}
                       </td>
-                      <td className="py-2 font-mono">{d.over_target}</td>
+                      <td className="py-2">{d.over_target}</td>
                     </tr>
                   ))}
                   {data.manpower.length === 0 && (
@@ -291,17 +291,17 @@ export default function Dashboard() {
               <div key={o.outlet} className="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
                 <div className="flex items-baseline gap-2">
                   <h3 className="text-base font-semibold text-brand-black">{o.outlet}</h3>
-                  <span className="font-mono text-xs text-slate-400">{o.trips} trips</span>
+                  <span className="text-xs text-slate-400">{o.trips} trips</span>
                 </div>
                 <dl className="mt-3 grid grid-cols-2 gap-y-1 text-sm">
                   <dt className="text-slate-500">Avg time at outlet</dt>
-                  <dd className={`text-right font-mono ${o.avg_at_outlet_minutes > 55 ? "font-semibold text-brand-red" : "text-emerald-700"}`}>
+                  <dd className={`text-right ${o.avg_at_outlet_minutes > 55 ? "font-semibold text-brand-red" : "text-emerald-700"}`}>
                     {formatDuration(o.avg_at_outlet_minutes)}
                   </dd>
                   <dt className="text-slate-500">Trips over target</dt>
-                  <dd className="text-right font-mono">{o.over_target} of {o.trips}</dd>
+                  <dd className="text-right">{o.over_target} of {o.trips}</dd>
                   <dt className="text-slate-500">Avg jobs per trip</dt>
-                  <dd className="text-right font-mono">{o.avg_jobs_per_trip}</dd>
+                  <dd className="text-right">{o.avg_jobs_per_trip}</dd>
                 </dl>
                 <OwnedBar owned={o.owned_minutes} />
                 <Legend items={[
@@ -332,7 +332,7 @@ export default function Dashboard() {
                       title={`${r.minutes} minutes across ${r.occurrences} occurrences`}
                     />
                   </span>
-                  <span className="text-right font-mono text-xs text-slate-500">{formatDuration(r.minutes)}</span>
+                  <span className="text-right text-xs text-slate-500">{formatDuration(r.minutes)}</span>
                 </div>
               ))}
               {data.reasons.length === 0 && (

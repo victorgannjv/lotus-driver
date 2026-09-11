@@ -16,7 +16,8 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 
 from auth import get_current_driver
 from db import get_pool
-from photos import store_photo
+from photos import evidence_caption, store_photo
+from clocks import stamp as clock_stamp
 from schemas import DriverWarehouseRequest, ScanRequest
 
 router = APIRouter()
@@ -86,6 +87,28 @@ async def _require_open_manifest(pool, driver_id: int, manifest_id: int) -> None
         raise HTTPException(status_code=404, detail="job not found -- tap \"Arrived at warehouse\" to start one")
     if row[0] is not None:
         raise HTTPException(status_code=409, detail="this job was cancelled")
+
+
+async def _driver_outlet(pool, driver_id: int) -> str | None:
+    """Name and address of the outlet this driver works from, for the photo
+    caption. The address we hold under contract, not a reverse geocode."""
+    async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
+        await cur.execute(
+            "SELECT w.name, w.address FROM users u JOIN warehouses w ON w.id = u.warehouse_id "
+            "WHERE u.id = %s",
+            (driver_id,),
+        )
+        row = await cur.fetchone()
+    if not row:
+        return None
+    return " - ".join(x for x in (row["name"], row["address"]) if x) or None
+
+
+async def _job_address(pool, job_id: int) -> str | None:
+    async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
+        await cur.execute("SELECT address FROM delivery_jobs WHERE id = %s", (job_id,))
+        row = await cur.fetchone()
+    return (row or {}).get("address") or None
 
 
 async def _find_or_create_job_for_outcome(pool, driver_id: int, code: str) -> dict:
@@ -211,8 +234,13 @@ async def start_manifest(
     occurred_dt = _parse_occurred_at(occurred_at)
     today = date.today().isoformat()
 
+    outlet = await _driver_outlet(pool, driver["id"])
     photo_bytes = await photo.read()
-    photo_id = await store_photo(pool, photo_bytes, photo.content_type or "image/jpeg", driver["id"])
+    photo_id = await store_photo(
+        pool, photo_bytes, photo.content_type or "image/jpeg", driver["id"],
+        evidence_caption(ref="Arrived at outlet", what="", who=driver.get("name"),
+                         lat=lat, lng=lng, place=outlet, when=clock_stamp(occurred_dt)),
+    )
 
     # Which contracted window this run is against -- the day's first trip is
     # slot 1, the second slot 2. Stamped at the start so cancelling or
@@ -318,7 +346,12 @@ async def complete_scan(
     job = await _find_or_create_job_for_outcome(pool, driver["id"], code)
 
     photo_bytes = await photo.read()
-    photo_id = await store_photo(pool, photo_bytes, photo.content_type or "image/jpeg", driver["id"])
+    photo_id = await store_photo(
+        pool, photo_bytes, photo.content_type or "image/jpeg", driver["id"],
+        evidence_caption(ref=code, what="Delivered", who=driver.get("name"),
+                         lat=lat, lng=lng, place=await _job_address(pool, job["id"]),
+                         when=clock_stamp(occurred_dt)),
+    )
 
     async with pool.acquire() as conn, conn.cursor() as cur:
         await cur.execute("UPDATE delivery_jobs SET status_code = 'delivered' WHERE id = %s", (job["id"],))
@@ -354,7 +387,12 @@ async def fail_scan(
     job = await _find_or_create_job_for_outcome(pool, driver["id"], code)
 
     photo_bytes = await photo.read()
-    photo_id = await store_photo(pool, photo_bytes, photo.content_type or "image/jpeg", driver["id"])
+    photo_id = await store_photo(
+        pool, photo_bytes, photo.content_type or "image/jpeg", driver["id"],
+        evidence_caption(ref=code, what=f"Not delivered - {reason}", who=driver.get("name"),
+                         lat=lat, lng=lng, place=await _job_address(pool, job["id"]),
+                         when=clock_stamp(occurred_dt)),
+    )
 
     async with pool.acquire() as conn, conn.cursor() as cur:
         await cur.execute("UPDATE delivery_jobs SET status_code = 'failed' WHERE id = %s", (job["id"],))

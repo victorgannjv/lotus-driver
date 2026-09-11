@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
+import PhotoThumb from "./PhotoThumb";
 import Icon, { CHECKPOINT_ICON } from "./Icon";
 import { useLanguage } from "../i18n/LanguageContext";
 import { formatDayLabel, formatDuration, formatTime } from "../lib/duration";
@@ -40,10 +41,10 @@ function CheckpointTrail({ trip }) {
                 <Icon name={CHECKPOINT_ICON[c.checkpoint]} className="h-3.5 w-3.5 text-slate-400" />
                 {t(`checkpoint.${c.checkpoint}`)}
               </p>
-              <p className="shrink-0 font-mono text-xs text-slate-500">{formatTime(c.occurred_at)}</p>
+              <p className="shrink-0 text-xs text-slate-500">{formatTime(c.occurred_at)}</p>
             </div>
             {gap && (
-              <p className={`font-mono text-[11px] ${over ? "font-semibold text-brand-red" : "text-slate-400"}`}>
+              <p className={`text-[11px] ${over ? "font-semibold text-brand-red" : "text-slate-400"}`}>
                 {gap.label} {formatDuration(gap.minutes)} / {formatDuration(gap.target_minutes)}
               </p>
             )}
@@ -52,11 +53,19 @@ function CheckpointTrail({ trip }) {
                 {c.reason_label}
               </p>
             )}
+            {/* The driver's own copy of the evidence. He is the one Lotus's
+                version of events lands on first, so he gets to see the same
+                stamped photo ops would attach -- not just a note saying one
+                exists. */}
             {c.photo_id && (
-              <p className="mt-1 flex items-center gap-1 font-mono text-[10px] text-slate-400">
-                <Icon name="camera" className="h-3 w-3" />
-                {t("myDay.photoStamped")}
-              </p>
+              <div className="mt-2 flex items-center gap-2">
+                <PhotoThumb photoId={c.photo_id} size="h-14 w-14"
+                            caption={`${t(`checkpoint.${c.checkpoint}`)} · ${formatTime(c.occurred_at)}`} />
+                <span className="flex items-center gap-1 text-[10px] text-slate-400">
+                  <Icon name="camera" className="h-3 w-3" />
+                  {t("myDay.photoStamped")}
+                </span>
+              </div>
             )}
           </li>
         );
@@ -161,7 +170,7 @@ export default function MyDay({ refreshKey }) {
                           <span className="block text-sm font-semibold text-brand-black">
                             {t("myDay.trip", { n: i + 1 })}
                           </span>
-                          <span className="block font-mono text-[11px] text-slate-500">
+                          <span className="block text-[11px] text-slate-500">
                             {formatTime(trip.started_at)}
                             {trip.ended_at ? ` – ${formatTime(trip.ended_at)}` : ` – ${t("myDay.running")}`} ·{" "}
                             {t("myDay.jobsOrders", { jobs: trip.jobs, orders: trip.orders })}

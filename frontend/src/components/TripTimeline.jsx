@@ -203,7 +203,7 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
         <div className="mb-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
           <div className="flex items-baseline justify-between gap-2">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{win.label}</p>
-            <p className="font-mono text-xs text-slate-500">{win.window_start}–{win.window_end}</p>
+            <p className="text-xs text-slate-500">{win.window_start}–{win.window_end}</p>
           </div>
           <p className={`mt-1 text-sm font-semibold ${win.arrived_on_time ? "text-emerald-700" : "text-brand-red"}`}>
             {win.arrived_on_time
@@ -211,11 +211,11 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
               : t("window.arrivedLate", { late: formatDuration(win.arrived_late_minutes) })}
           </p>
           {win.still_open ? (
-            <p className="mt-0.5 font-mono text-xs text-slate-500">
+            <p className="mt-0.5 text-xs text-slate-500">
               {t("window.mustLeaveBy", { time: win.window_end })}
             </p>
           ) : (
-            <p className={`mt-0.5 font-mono text-xs ${win.departed_on_time ? "text-emerald-700" : "text-brand-red"}`}>
+            <p className={`mt-0.5 text-xs ${win.departed_on_time ? "text-emerald-700" : "text-brand-red"}`}>
               {win.departed_on_time
                 ? t("window.leftOnTime")
                 : t("window.leftLate", { late: formatDuration(win.departed_late_minutes) })}
@@ -314,14 +314,14 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
                 {t(`checkpoint.${cp}`)}
               </p>
               {done ? (
-                <p className="font-mono text-xs text-slate-500">{formatTime(done.occurred_at)}</p>
+                <p className="text-xs text-slate-500">{formatTime(done.occurred_at)}</p>
               ) : (
                 <p className="text-xs text-slate-400">
                   {SERVER_FIRED.has(cp) ? t("checkpoint.auto") : t("checkpoint.pending")}
                 </p>
               )}
               {gap && (
-                <p className={`font-mono text-xs ${over ? "font-semibold text-brand-red" : "text-emerald-700"}`}>
+                <p className={`text-xs ${over ? "font-semibold text-brand-red" : "text-emerald-700"}`}>
                   {gap.label} {formatDuration(gap.minutes)} / {formatDuration(gap.target_minutes)}
                 </p>
               )}
@@ -368,7 +368,7 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
                       }`}
                     >
                       <span className="font-semibold">{t("trip.job", { n: j.seq })}</span>
-                      <span className="flex items-center gap-1.5 font-mono text-xs text-slate-500">
+                      <span className="flex items-center gap-1.5 text-xs text-slate-500">
                         {j.status === "pending" ? (
                           t("trip.jobPending")
                         ) : (

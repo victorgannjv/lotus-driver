@@ -16,9 +16,11 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 
 from auth import get_current_driver
 from db import get_pool
-from photos import store_photo
+from photos import evidence_caption, store_photo
+from clocks import stamp as clock_stamp
 from trips import (
     CHECKPOINT_GAP,
+    CHECKPOINT_LABELS,
     load_schedules,
     schedule_variance,
     slots_for,
@@ -57,8 +59,9 @@ async def _owned_trip(pool, driver_id: int, manifest_id: int) -> dict:
     async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
         await cur.execute(
             "SELECT m.id, m.driver_id, m.work_date, m.cancelled_at, m.day_closed_at, m.expected_job_count, "
-            "m.schedule_slot_no, u.warehouse_id "
+            "m.schedule_slot_no, u.warehouse_id, w.name AS warehouse_name, w.address AS warehouse_address "
             "FROM manifests m JOIN users u ON u.id = m.driver_id "
+            "LEFT JOIN warehouses w ON w.id = u.warehouse_id "
             "WHERE m.id = %s AND m.driver_id = %s",
             (manifest_id, driver_id),
         )
@@ -213,19 +216,30 @@ async def stamp_checkpoint(
         if earlier not in existing:
             raise HTTPException(status_code=409, detail=f"stamp '{earlier}' first")
 
-    photo_id = None
-    if photo is not None:
-        photo_id = await store_photo(pool, await photo.read(), photo.content_type or "image/jpeg", driver["id"])
-    elif checkpoint in setting_list(settings, "photo_required_checkpoints"):
-        raise HTTPException(status_code=422, detail="a photo is required for this checkpoint")
-
     # The server clock is the default stamp source: a handset with the wrong time
-    # would hand Lotus an easy challenge on every photo in the claim.
+    # would hand Lotus an easy challenge on every photo in the claim. Resolved
+    # BEFORE the photo is stored, because the caption burned into the image has
+    # to be the same instant that goes into trip_checkpoint -- a photo whose
+    # pixels disagree with the row beneath them argues against us.
     occurred_dt = (
         _parse_occurred_at(occurred_at)
         if settings.get("photo_timestamp_source") == "handset"
         else datetime.now(timezone.utc).replace(tzinfo=None)
     )
+
+    photo_id = None
+    if photo is not None:
+        place = " - ".join(x for x in (trip.get("warehouse_name"), trip.get("warehouse_address")) if x)
+        caption = evidence_caption(
+            ref=f"T-{manifest_id}",
+            what=CHECKPOINT_LABELS.get(checkpoint, checkpoint),
+            who=driver.get("name"),
+            lat=lat, lng=lng, place=place, when=clock_stamp(occurred_dt),
+        )
+        photo_id = await store_photo(
+            pool, await photo.read(), photo.content_type or "image/jpeg", driver["id"], caption)
+    elif checkpoint in setting_list(settings, "photo_required_checkpoints"):
+        raise HTTPException(status_code=422, detail="a photo is required for this checkpoint")
 
     async with pool.acquire() as conn, conn.cursor() as cur:
         await cur.execute(
@@ -386,7 +400,7 @@ async def complete_job(
     pool = get_pool(request)
     async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
         await cur.execute(
-            "SELECT tj.id, tj.manifest_id, tj.status FROM trip_job tj "
+            "SELECT tj.id, tj.manifest_id, tj.seq, tj.status FROM trip_job tj "
             "JOIN manifests m ON m.id = tj.manifest_id "
             "WHERE tj.id = %s AND m.driver_id = %s",
             (trip_job_id, driver["id"]),
@@ -398,10 +412,18 @@ async def complete_job(
         raise HTTPException(status_code=409, detail="that job is already closed")
 
     trip = await _owned_trip(pool, driver["id"], job["manifest_id"])
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+
     photo_id = None
     if photo is not None:
-        photo_id = await store_photo(pool, await photo.read(), photo.content_type or "image/jpeg", driver["id"])
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+        caption = evidence_caption(
+            ref=f"T-{job['manifest_id']}",
+            what=f"Drop {job['seq']} - {'not delivered' if failed else 'delivered'}",
+            who=driver.get("name"),
+            lat=lat, lng=lng, when=clock_stamp(now),
+        )
+        photo_id = await store_photo(
+            pool, await photo.read(), photo.content_type or "image/jpeg", driver["id"], caption)
 
     async with pool.acquire() as conn, conn.cursor() as cur:
         await cur.execute(

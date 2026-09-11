@@ -910,7 +910,7 @@ export function Roster() {
                 {days.map((d, i) => (
                   <th key={i} className="px-2 py-2 text-center font-semibold">
                     <span className="block">{DOW[i]}</span>
-                    <span className="block font-mono text-[10px] font-normal text-slate-300">{d.getDate()}</span>
+                    <span className="block text-[10px] font-normal text-slate-300">{d.getDate()}</span>
                   </th>
                 ))}
                 <th className="py-2 pl-2 text-right">All week</th>
@@ -1041,7 +1041,7 @@ export function ActivityLog() {
           </span>
           <span className="text-sm text-brand-black">{a.summary}</span>
           <span className="truncate text-sm text-slate-500">{a.actor_email || "—"}</span>
-          <span className="font-mono text-xs text-slate-400">{a.created_at}</span>
+          <span className="text-xs text-slate-400">{a.created_at}</span>
         </GridRow>
       ))}
 
@@ -1050,7 +1050,7 @@ export function ActivityLog() {
           <button type="button" className={btn} disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
             ← Previous
           </button>
-          <span className="font-mono text-xs text-slate-500">Page {page} of {pages}</span>
+          <span className="text-xs text-slate-500">Page {page} of {pages}</span>
           <button type="button" className={btn} disabled={page >= pages} onClick={() => setPage((p) => p + 1)}>
             Next →
           </button>

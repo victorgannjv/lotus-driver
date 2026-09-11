@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../../api";
+import PhotoThumb from "../../components/PhotoThumb";
 import Icon, { CHECKPOINT_ICON } from "../../components/Icon";
 import { formatDuration, formatTime } from "../../lib/duration";
 
@@ -39,7 +40,7 @@ function Metric({ label, value, tone }) {
   return (
     <span className="flex flex-col leading-tight">
       <span className="text-[9.5px] font-bold uppercase tracking-widest text-slate-400">{label}</span>
-      <span className={`font-mono text-xs tabular-nums ${tone || "text-brand-black"}`}>{value}</span>
+      <span className={`text-xs tabular-nums ${tone || "text-brand-black"}`}>{value}</span>
     </span>
   );
 }
@@ -110,7 +111,7 @@ function TripCard({ trip, open, onToggle }) {
               return (
                 <li
                   key={c.checkpoint}
-                  className={`grid grid-cols-[26px_minmax(110px,1fr)_90px_minmax(0,1.4fr)_80px] items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs ${
+                  className={`grid grid-cols-[26px_minmax(110px,1fr)_90px_minmax(0,1.4fr)_56px] items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs ${
                     over ? "border-l-[3px] border-l-brand-red" : "border-l-[3px] border-l-emerald-600"
                   }`}
                 >
@@ -118,18 +119,18 @@ function TripCard({ trip, open, onToggle }) {
                     <Icon name={CHECKPOINT_ICON[c.checkpoint]} className="h-3.5 w-3.5" />
                   </span>
                   <span className="font-semibold text-brand-black">{CHECKPOINT_LABEL[c.checkpoint]}</span>
-                  <span className="font-mono tabular-nums">{formatTime(c.occurred_at)}</span>
-                  <span className={`font-mono ${over ? "font-semibold text-brand-red" : "text-slate-500"}`}>
+                  <span>{formatTime(c.occurred_at)}</span>
+                  <span className={`${over ? "font-semibold text-brand-red" : "text-slate-500"}`}>
                     {gap ? `${gap.label} ${formatDuration(gap.minutes)} / ${formatDuration(gap.target_minutes)}` : ""}
                     {c.reason_label ? ` · ${c.reason_label}` : ""}
                   </span>
-                  <span className="text-right font-mono text-[10px] text-slate-400">
+                  <span className="flex justify-end">
                     {c.photo_id ? (
-                      <a href={`/api/photos/${c.photo_id}`} target="_blank" rel="noreferrer"
-                         className="inline-flex items-center gap-1 underline">
-                        <Icon name="camera" className="h-3 w-3" /> photo
-                      </a>
-                    ) : ""}
+                      <PhotoThumb photoId={c.photo_id} size="h-10 w-10"
+                                  caption={`T-${trip.id} · ${CHECKPOINT_LABEL[c.checkpoint]} · ${formatTime(c.occurred_at)}`} />
+                    ) : (
+                      <span className="text-[10px] text-slate-300">no photo</span>
+                    )}
                   </span>
                 </li>
               );
@@ -147,14 +148,12 @@ function TripCard({ trip, open, onToggle }) {
                   <li key={j.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs">
                     <span className={`h-4 w-1 rounded ${j.status === "failed" ? "bg-amber-500" : j.status === "done" ? "bg-emerald-600" : "bg-slate-300"}`} />
                     <span className="font-semibold">Job {j.seq}</span>
-                    <span className="font-mono text-slate-500">{formatTime(j.completed_at) || "pending"}</span>
-                    <span className="font-mono text-slate-500">{j.orders.length} orders</span>
+                    <span className="text-slate-500">{formatTime(j.completed_at) || "pending"}</span>
+                    <span className="text-slate-500">{j.orders.length} orders</span>
                     <span className="flex-1" />
                     {j.photo_id && (
-                      <a href={`/api/photos/${j.photo_id}`} target="_blank" rel="noreferrer"
-                         className="inline-flex items-center gap-1 font-mono text-[10px] text-slate-400 underline">
-                        <Icon name="camera" className="h-3 w-3" /> photo
-                      </a>
+                      <PhotoThumb photoId={j.photo_id} size="h-10 w-10"
+                                  caption={`T-${trip.id} · Job ${j.seq} · ${formatTime(j.completed_at)}`} />
                     )}
                   </li>
                 ))}
@@ -242,7 +241,7 @@ export default function Evidence() {
           </label>
         </div>
         {data && (
-          <p className="mt-3 font-mono text-xs text-slate-500">
+          <p className="mt-3 text-xs text-slate-500">
             Showing {data.trips.length} of {data.total} trips · {data.over_target_total} over target
           </p>
         )}
@@ -279,7 +278,7 @@ export default function Evidence() {
             <div className="flex items-center gap-3">
               <button type="button" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}
                       className="font-semibold text-brand-red disabled:text-slate-300">← Previous</button>
-              <span className="font-mono text-xs text-slate-500">Page {data.page} of {data.pages}</span>
+              <span className="text-xs text-slate-500">Page {data.page} of {data.pages}</span>
               <button type="button" disabled={page >= data.pages} onClick={() => setPage((p) => p + 1)}
                       className="font-semibold text-brand-red disabled:text-slate-300">Next →</button>
             </div>

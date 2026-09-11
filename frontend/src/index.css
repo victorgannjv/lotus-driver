@@ -1,3 +1,19 @@
+/* Self-hosted, so the app looks the same on a phone with no data allowance and
+   on a corporate network that blocks Google Fonts. Vite fingerprints the woff2
+   into dist/assets alongside everything else. */
+@import "@fontsource-variable/inter";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Figures the same width as each other, everywhere. Times, durations and
+   counts sit in columns all over this app; proportional digits make those
+   columns jitter row to row, which is what the monospace scattered through the
+   markup was compensating for. This does the same job without switching
+   typeface mid-sentence. */
+html {
+  font-variant-numeric: tabular-nums;
+  -webkit-font-feature-settings: "tnum";
+  font-feature-settings: "tnum";
+}

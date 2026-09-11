@@ -229,6 +229,7 @@ export const translations = {
       chooseFile: "Choose file",
       ready: "Photo ready",
       compressing: "Compressing photo…",
+      stampNote: "Date, time and location are added to the photo automatically.",
     },
     arrivalPhoto: {
       title: "Verify your arrival",
@@ -471,6 +472,7 @@ export const translations = {
       chooseFile: "Pilih fail",
       ready: "Gambar sedia",
       compressing: "Memampatkan gambar…",
+      stampNote: "Tarikh, masa dan lokasi ditambah pada gambar secara automatik.",
     },
     arrivalPhoto: {
       title: "Sahkan ketibaan anda",

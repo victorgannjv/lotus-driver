@@ -53,6 +53,14 @@ export default function PhotoCapture({ label, onChange, required = false }) {
         </button>
       </div>
 
+      {/* Says up front what the server is going to do to the picture. A driver
+          who does not know the stamp is coming frames the shot for himself, not
+          for a dispute -- and wonders later who wrote on his photo. */}
+      <p className="mt-2 flex items-start gap-1.5 text-xs text-slate-500">
+        <Icon name="clock" className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+        {t("photoCapture.stampNote")}
+      </p>
+
       {busy && <p className="mt-2 text-xs text-slate-500">{t("photoCapture.compressing")}</p>}
       {preview && (
         <div className="mt-3 flex items-center gap-3">
