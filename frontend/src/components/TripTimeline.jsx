@@ -226,29 +226,34 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
       {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
 
       <ol className="mt-6 space-y-0">
-        {STEPS.map((cp) => {
+        {STEPS.map((cp, i) => {
           const done = stamped.get(cp);
           const isNext = cp === nextCp && !done;
           const gap = gapFor(state, cp);
           const over = gap && gap.over_target;
           return (
-            <li key={cp} className="relative pl-8 pb-5 last:pb-0">
+            <li key={cp} className="relative pb-5 pl-10 last:pb-0">
+              {/* The rail is drawn only between steps. Rendering it on the last
+                  one (the old `last:hidden` never matched -- this span is not
+                  the li's last child) left a line dangling into nothing. */}
+              {i < STEPS.length - 1 && (
+                <span
+                  className="absolute bottom-0 left-[13px] top-7 w-0.5 bg-slate-200"
+                  aria-hidden="true"
+                />
+              )}
               <span
-                className={`absolute left-0 top-0.5 flex h-6 w-6 items-center justify-center rounded-full ring-2 ${
+                className={`absolute left-0 top-0 z-10 flex h-7 w-7 items-center justify-center rounded-full ${
                   done
-                    ? "bg-emerald-600 text-white ring-emerald-600"
+                    ? "bg-emerald-600 text-white"
                     : isNext
-                      ? "bg-brand-red text-white ring-brand-red"
-                      : "bg-white text-slate-300 ring-slate-300"
+                      ? "bg-brand-red text-white"
+                      : "border border-slate-300 bg-white text-slate-400"
                 }`}
               >
                 <Icon name={CHECKPOINT_ICON[cp]} className="h-3.5 w-3.5" />
               </span>
-              <span
-                className="absolute left-3 top-7 -ml-px h-[calc(100%-1.75rem)] w-0.5 bg-slate-200 last:hidden"
-                aria-hidden="true"
-              />
-              <p className={`text-sm font-semibold ${done || isNext ? "text-brand-black" : "text-slate-400"}`}>
+              <p className={`pt-1 text-sm font-semibold leading-tight ${done || isNext ? "text-brand-black" : "text-slate-400"}`}>
                 {t(`checkpoint.${cp}`)}
               </p>
               {done ? (

@@ -24,14 +24,14 @@ function CheckpointTrail({ trip }) {
   const { t } = useLanguage();
   const gapFor = (cp) => (trip.gaps || []).find((g) => g.to_checkpoint === cp);
   return (
-    <ol className="mt-3 space-y-2 border-l-2 border-slate-200 pl-3">
+    <ol className="mt-3 space-y-2 border-l-2 border-slate-200 pl-4">
       {trip.checkpoints.map((c) => {
         const gap = gapFor(c.checkpoint);
         const over = gap && gap.over_target;
         return (
           <li key={c.checkpoint} className="relative">
             <span
-              className={`absolute -left-[1.42rem] top-1 flex h-3 w-3 items-center justify-center rounded-full ring-2 ring-white ${
+              className={`absolute -left-[23px] top-1 h-3 w-3 rounded-full ring-2 ring-white ${
                 over ? "bg-brand-red" : "bg-emerald-600"
               }`}
             />
