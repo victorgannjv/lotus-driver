@@ -14,6 +14,7 @@ import json
 
 from asyncmy.cursors import DictCursor
 
+import demo
 from clocks import fmt, fmt_time, parse_hhmm
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
@@ -580,3 +581,44 @@ async def copy_week(
     await audit(pool, admin, "roster", None, "create",
                 f"Copied the roster from week of {from_monday} to week of {to_monday} ({added} shifts)")
     return {"added": added}
+
+
+# ------------------------------------------------------------------ sample data
+
+@router.get("/demo")
+async def demo_status(request: Request, admin=Depends(get_current_admin)):
+    return await demo.status(get_pool(request))
+
+
+@router.post("/demo/seed")
+async def demo_seed(request: Request, admin=Depends(get_current_admin)):
+    """Loads a deterministic sample month for showing the app to stakeholders.
+
+    Writes through the real tables so the walkthrough exercises the real
+    scoring, and audits itself -- if figures are ever questioned, the log says
+    when sample data was present and who loaded it.
+    """
+    pool = get_pool(request)
+    try:
+        result = await demo.seed(pool)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    if result.get("already_loaded"):
+        raise HTTPException(status_code=409, detail="sample data is already loaded - remove it first")
+    await audit(pool, admin, "demo", "sample", "create",
+                f"Loaded sample data: {result['trips']} trips across {result['drivers']} sample drivers",
+                after=result)
+    return result
+
+
+@router.post("/demo/reset")
+async def demo_reset(request: Request, admin=Depends(get_current_admin)):
+    """Removes every sample row. Scoped by is_demo, so real trips cannot be
+    reached by it."""
+    pool = get_pool(request)
+    result = await demo.purge(pool)
+    await audit(pool, admin, "demo", "sample", "delete",
+                f"Removed sample data: {result['removed_trips']} trips, "
+                f"{result['removed_drivers']} sample drivers",
+                before=result)
+    return result

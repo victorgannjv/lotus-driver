@@ -22,6 +22,7 @@ const TABS = [
   ["/admin/config/reasons", "Delay reasons"],
   ["/admin/config/driver-app", "Driver app"],
   ["/admin/config/activity", "Activity log"],
+  ["/admin/config/sample", "Sample data"],
 ];
 
 export function ConfigurationLayout() {
@@ -1165,6 +1166,84 @@ export function OutletsConfig() {
           </Row>
         );
       })}
+    </Panel>
+  );
+}
+
+
+/* ---------------------------------------------------------------- sample data */
+
+export function SampleData() {
+  const [state, setState] = useState(null);
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(() => {
+    api.get("/admin/config/demo").then(setState)
+      .catch((e) => setError(e.detail || "Could not check the sample data."));
+  }, []);
+  useEffect(load, [load]);
+
+  async function run(path, ok) {
+    setBusy(true); setError(null);
+    try { await api.post(path, {}); load(); if (ok) window.alert(ok); }
+    catch (e) { setError(e.detail || "That did not work."); }
+    finally { setBusy(false); }
+  }
+
+  const loaded = state?.loaded;
+
+  return (
+    <Panel
+      title="Sample data"
+      blurb="A worked example month, for showing the app to people who have not seen it."
+      footer="Loading and removing sample data are both recorded in the activity log, so a figure can always be traced back to whether the sample was present when it was read."
+    >
+      <Err>{error}</Err>
+
+      {!state ? <p className="text-sm text-slate-500">Loading…</p> : (
+        <>
+          <div className={`mb-5 rounded-xl px-4 py-3 text-sm ${
+            loaded ? "bg-amber-50 text-amber-900 ring-1 ring-amber-200" : "bg-slate-50 text-slate-600"
+          }`}>
+            {loaded
+              ? `Sample data is loaded — ${state.trips} trips across ${state.drivers} sample drivers. Every figure on the dashboard and in Evidence currently includes it.`
+              : "No sample data is loaded. Everything you see is real."}
+          </div>
+
+          <Section
+            title="What it puts in"
+            blurb="Four weeks of trips written through the same tables a driver's phone writes to — so the walkthrough exercises the real scoring, not a mock."
+          >
+            <ul className="space-y-1.5 py-2 text-sm text-slate-600">
+              <li>· Six sample drivers, named with “(sample)” and spread across your real outlets.</li>
+              <li>· About three trips a day each, aligned to the contracted delivery windows.</li>
+              <li>· Roughly a third run over target, with delay reasons attached where they do.</li>
+              <li>· One outlet performs noticeably worse than the others, so the outlet breakdown has something to point at.</li>
+              <li>· The same numbers every time — you can rehearse on Monday and present on Thursday against identical figures.</li>
+            </ul>
+          </Section>
+
+          <Section
+            title="Removing it"
+            blurb="Every sample row hangs off a sample driver, so removing it is a delete by ownership rather than a guess about which rows were pretend. Nothing real can be caught by it."
+          >
+            <div className="flex flex-wrap items-center gap-3 py-2">
+              <button type="button" className={btnPrimary} disabled={busy || loaded}
+                      onClick={() => run("/admin/config/demo/seed", "Sample data loaded. Open the Dashboard to see it.")}>
+                Load sample data
+              </button>
+              <button type="button" className={btnDanger} disabled={busy || !loaded}
+                      onClick={() => confirmed(
+                        `Remove all sample data? This deletes ${state.trips} sample trips and ${state.drivers} sample drivers. Real trips are untouched.`
+                      ) && run("/admin/config/demo/reset", "Sample data removed. You are back to real figures.")}>
+                Remove sample data
+              </button>
+              {busy && <span className="text-sm text-slate-500">Working… this takes a few seconds.</span>}
+            </div>
+          </Section>
+        </>
+      )}
     </Panel>
   );
 }

@@ -24,6 +24,9 @@ const ConfigLayout = lazy(() =>
 const ConfigOutlets = lazy(() =>
   import("./pages/admin/Configuration").then((m) => ({ default: m.OutletsConfig }))
 );
+const ConfigSample = lazy(() =>
+  import("./pages/admin/Configuration").then((m) => ({ default: m.SampleData }))
+);
 const ConfigActivity = lazy(() =>
   import("./pages/admin/Configuration").then((m) => ({ default: m.ActivityLog }))
 );
@@ -131,6 +134,7 @@ export default function App() {
               <Route path="targets" element={<ConfigTargets />} />
               <Route path="driver-app" element={<ConfigDriverApp />} />
               <Route path="activity" element={<ConfigActivity />} />
+              <Route path="sample" element={<ConfigSample />} />
             </Route>
 
             {/* Old paths kept working -- an admin with a bookmark should not hit a blank page. */}

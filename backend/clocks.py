@@ -86,3 +86,10 @@ def parse_hhmm(value: str) -> int | None:
     if not (0 <= h <= 23 and 0 <= m <= 59):
         return None
     return h * 60 + m
+
+
+def from_local(dt: datetime) -> datetime:
+    """Naive local -> naive UTC, for writing. The inverse of to_local: the
+    seeder thinks in wall-clock ("this trip arrived at 09:40"), the column
+    holds UTC like every other timestamp in the app."""
+    return dt.replace(tzinfo=LOCAL_TZ).astimezone(timezone.utc).replace(tzinfo=None)

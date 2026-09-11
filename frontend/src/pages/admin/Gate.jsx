@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import RequireAdmin from "../../auth/RequireAdmin";
 import AppHeader from "../../components/AppHeader";
+import SampleDataBanner from "../../components/SampleDataBanner";
 import Icon from "../../components/Icon";
 
 // Work on the left, setup on the right.
@@ -96,6 +97,7 @@ export default function Gate() {
           </div>
         </nav>
         <div className="px-6 py-6">
+          <SampleDataBanner />
           <Outlet />
         </div>
       </div>
