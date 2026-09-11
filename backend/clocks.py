@@ -49,3 +49,40 @@ def stamp(dt: datetime | None) -> str:
     stand on its own, like the caption burned into a proof photo."""
     local = to_local(dt)
     return "" if local is None else f"{local.strftime('%Y-%m-%d %H:%M:%S')} {LOCAL_TZ_LABEL}"
+
+
+def fmt_time(value) -> str:
+    """A TIME column as "HH:MM", zero-padded.
+
+    asyncmy hands TIME back as a timedelta, and str(timedelta(hours=9,
+    minutes=30)) is "9:30:00" -- no leading zero. <input type="time"> rejects a
+    single-digit hour outright and renders blank, so every window starting
+    before 10am looked unset however many times it had been saved. Padding is
+    not cosmetic here: it is what makes the value round-trip.
+    """
+    if value is None:
+        return ""
+    if hasattr(value, "total_seconds"):                     # timedelta
+        total = int(value.total_seconds()) // 60
+    elif hasattr(value, "hour"):                            # datetime.time
+        total = value.hour * 60 + value.minute
+    else:
+        total = parse_hhmm(str(value))
+        if total is None:
+            return ""
+    return f"{total // 60:02d}:{total % 60:02d}"
+
+
+def parse_hhmm(value: str) -> int | None:
+    """"9:30", "09:30" or "09:30:00" -> minutes since midnight. None if it is
+    not a time at all, so callers can reject rather than guess."""
+    parts = str(value).strip().split(":")
+    if len(parts) < 2:
+        return None
+    try:
+        h, m = int(parts[0]), int(parts[1])
+    except ValueError:
+        return None
+    if not (0 <= h <= 23 and 0 <= m <= 59):
+        return None
+    return h * 60 + m

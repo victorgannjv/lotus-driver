@@ -14,7 +14,7 @@ import json
 
 from asyncmy.cursors import DictCursor
 
-from clocks import fmt
+from clocks import fmt, fmt_time, parse_hhmm
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 
@@ -426,7 +426,7 @@ async def list_schedule(request: Request, admin=Depends(get_current_admin)):
     return {
         "schedule": [
             {**r, "is_active": bool(r["is_active"]),
-             "window_start": str(r["window_start"]), "window_end": str(r["window_end"])}
+             "window_start": fmt_time(r["window_start"]), "window_end": fmt_time(r["window_end"])}
             for r in rows
         ]
     }
@@ -439,8 +439,23 @@ async def upsert_schedule(body: ScheduleIn, request: Request, admin=Depends(get_
     than inherited piecemeal."""
     if body.slot_no < 1 or body.slot_no > 12:
         raise HTTPException(status_code=422, detail="slot must be between 1 and 12")
-    if body.window_end <= body.window_start:
+
+    # Parsed to minutes, not compared as text. The old string compare read
+    # "12:00:00" <= "9:30:00" as True -- '1' sorts before '9' -- so an
+    # unpadded 09:30-12:00 was rejected as ending before it started. It also
+    # let an empty field through, which wrote a blank into a TIME column and
+    # silently became 00:00.
+    start_min = parse_hhmm(body.window_start)
+    end_min = parse_hhmm(body.window_end)
+    if start_min is None or end_min is None:
+        raise HTTPException(status_code=422, detail="both times are needed, as HH:MM")
+    if end_min <= start_min:
         raise HTTPException(status_code=422, detail="the window has to end after it starts")
+
+    # Normalised on the way in, so the column never holds a shape the editor
+    # cannot read back.
+    window_start = f"{start_min // 60:02d}:{start_min % 60:02d}:00"
+    window_end = f"{end_min // 60:02d}:{end_min % 60:02d}:00"
     pool = get_pool(request)
     async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
         if body.warehouse_id is None:
@@ -456,18 +471,18 @@ async def upsert_schedule(body: ScheduleIn, request: Request, admin=Depends(get_
             await cur.execute(
                 "UPDATE trip_schedule SET label = %s, window_start = %s, window_end = %s, "
                 "grace_minutes = %s, is_active = %s WHERE id = %s",
-                (body.label, body.window_start, body.window_end, body.grace_minutes,
+                (body.label, window_start, window_end, body.grace_minutes,
                  1 if body.is_active else 0, existing["id"]),
             )
         else:
             await cur.execute(
                 "INSERT INTO trip_schedule (warehouse_id, slot_no, label, window_start, window_end, "
                 "grace_minutes, is_active) VALUES (%s, %s, %s, %s, %s, %s, %s)",
-                (body.warehouse_id, body.slot_no, body.label, body.window_start, body.window_end,
+                (body.warehouse_id, body.slot_no, body.label, window_start, window_end,
                  body.grace_minutes, 1 if body.is_active else 0),
             )
     await audit(pool, admin, "schedule", f"slot{body.slot_no}", "update" if existing else "create",
-                f"Set '{body.label}' window to {body.window_start}-{body.window_end}"
+                f"Set '{body.label}' window to {window_start[:5]}-{window_end[:5]}"
                 + (f" for outlet {body.warehouse_id}" if body.warehouse_id else " for every outlet"),
                 after=body.model_dump())
     return {"slot_no": body.slot_no, "warehouse_id": body.warehouse_id}

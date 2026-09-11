@@ -302,7 +302,15 @@ export function TripWindows() {
     api.get("/admin/warehouses").then((d) => setOutlets(d.warehouses)).catch(() => {});
   }, []);
 
-  const hhmm = (v) => String(v).slice(0, 5);
+  // Not a blind slice. The API now sends "09:30", but a row written before
+  // that fix still reads back "9:30:00", and slicing that to "9:30:" gives
+  // <input type="time"> a value it silently refuses to render -- which is what
+  // made a saved 09:30 look like it had reset itself.
+  const hhmm = (v) => {
+    const m = String(v ?? "").match(/^(\d{1,2}):(\d{2})/);
+    return m ? `${m[1].padStart(2, "0")}:${m[2]}` : "";
+  };
+  const valid = (v) => /^\d{2}:\d{2}$/.test(v);
 
   return (
     <Panel
@@ -392,7 +400,8 @@ export function TripWindows() {
               min
             </label>
             <span className="flex-1" />
-            <button type="button" className={btnPrimary} disabled={busy || !dirty}
+            <button type="button" className={btnPrimary}
+                    disabled={busy || !dirty || !valid(start) || !valid(end)}
                     onClick={async () => {
                       const ok = await run(() => api.post("/admin/config/schedule", {
                         warehouse_id: r.warehouse_id, slot_no: r.slot_no, label: r.label,
