@@ -22,6 +22,9 @@ const AdminEvidence = lazy(() => import("./pages/admin/Evidence"));
 const ConfigLayout = lazy(() =>
   import("./pages/admin/Configuration").then((m) => ({ default: m.ConfigurationLayout }))
 );
+const ConfigActivity = lazy(() =>
+  import("./pages/admin/Configuration").then((m) => ({ default: m.ActivityLog }))
+);
 const ConfigWindows = lazy(() =>
   import("./pages/admin/Configuration").then((m) => ({ default: m.TripWindows }))
 );
@@ -129,6 +132,7 @@ export default function App() {
               <Route path="targets" element={<ConfigTargets />} />
               <Route path="roster" element={<ConfigRoster />} />
               <Route path="driver-app" element={<ConfigDriverApp />} />
+              <Route path="activity" element={<ConfigActivity />} />
             </Route>
 
             {/* Old paths kept working -- an admin with a bookmark should not hit a blank page. */}

@@ -10,14 +10,59 @@ Every list here is soft-edited: a reason code is deactivated rather than deleted
 (historical checkpoints still reference it), and a target change is a new value
 on the same row so history re-scores consistently.
 """
+import json
+
 from asyncmy.cursors import DictCursor
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from auth import get_current_admin
 from db import get_pool
 
 router = APIRouter()
+
+
+async def audit(pool, actor, entity: str, entity_id, action: str, summary: str,
+                before: dict | None = None, after: dict | None = None) -> None:
+    """Records a settings change.
+
+    These are not preferences: a window, an allowance or the party a reason code
+    blames all decide how PAST trips score, because variance is computed on
+    read. So "why does last month read differently now?" will be asked, and a
+    claim has to survive Lotus asking whether the bar moved after the fact.
+    """
+    async with pool.acquire() as conn, conn.cursor() as cur:
+        await cur.execute(
+            "INSERT INTO config_audit (entity, entity_id, action, summary, before_json, after_json, "
+            "actor_id, actor_email) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+            (entity, str(entity_id) if entity_id is not None else None, action, summary[:500],
+             json.dumps(before, default=str) if before else None,
+             json.dumps(after, default=str) if after else None,
+             (actor or {}).get("id"), (actor or {}).get("email")),
+        )
+
+
+@router.get("/activity")
+async def list_activity(
+    request: Request,
+    entity: str | None = None,
+    limit: int = Query(100, ge=1, le=500),
+    admin=Depends(get_current_admin),
+):
+    pool = get_pool(request)
+    where, params = [], []
+    if entity:
+        where.append("entity = %s")
+        params.append(entity)
+    clause = f"WHERE {' AND '.join(where)}" if where else ""
+    async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
+        await cur.execute(
+            "SELECT id, entity, entity_id, action, summary, actor_email, created_at "
+            f"FROM config_audit {clause} ORDER BY id DESC LIMIT %s",
+            tuple(params + [limit]),
+        )
+        rows = await cur.fetchall()
+    return {"activity": [{**r, "created_at": str(r["created_at"])} for r in rows]}
 
 
 class ReasonCodeIn(BaseModel):
@@ -89,6 +134,8 @@ async def create_reason_code(body: ReasonCodeIn, request: Request, admin=Depends
             (body.code.strip(), body.label.strip(), body.fault_party,
              body.applies_to_gap.strip() or "any", body.sort_order, 1 if body.is_active else 0),
         )
+    await audit(pool, admin, "reason_code", body.code, "create",
+                f"Added delay reason '{body.label}' blamed on {body.fault_party}", after=body.model_dump())
     return {"code": body.code}
 
 
@@ -110,6 +157,9 @@ async def update_reason_code(code: str, body: ReasonCodeUpdate, request: Request
     pool = get_pool(request)
     async with pool.acquire() as conn, conn.cursor() as cur:
         await cur.execute(f"UPDATE reason_code SET {', '.join(fields)} WHERE code = %s", tuple(params + [code]))
+    changed = {k: v for k, v in body.model_dump().items() if v is not None}
+    await audit(pool, admin, "reason_code", code, "update",
+                f"Edited delay reason '{code}'", after=changed)
     return {"code": code}
 
 
@@ -120,6 +170,7 @@ async def deactivate_reason_code(code: str, request: Request, admin=Depends(get_
     pool = get_pool(request)
     async with pool.acquire() as conn, conn.cursor() as cur:
         await cur.execute("UPDATE reason_code SET is_active = 0 WHERE code = %s", (code,))
+    await audit(pool, admin, "reason_code", code, "update", f"Stopped offering delay reason '{code}'")
     return {"code": code, "is_active": False}
 
 
@@ -168,6 +219,10 @@ async def upsert_target(body: TargetIn, request: Request, admin=Depends(get_curr
                 "INSERT INTO gap_target (gap_code, warehouse_id, target_minutes) VALUES (%s, %s, %s)",
                 (body.gap_code, body.warehouse_id, body.target_minutes),
             )
+    await audit(pool, admin, "target", body.gap_code, "update" if existing else "create",
+                f"Set '{body.gap_code}' allowance to {body.target_minutes} minutes"
+                + (f" for outlet {body.warehouse_id}" if body.warehouse_id else " for every outlet"),
+                after=body.model_dump())
     return {"gap_code": body.gap_code, "warehouse_id": body.warehouse_id, "target_minutes": body.target_minutes}
 
 
@@ -181,10 +236,10 @@ async def delete_target(target_id: int, request: Request, admin=Depends(get_curr
         row = await cur.fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail="target not found")
-    if row["warehouse_id"] is None:
-        raise HTTPException(status_code=409, detail="the global default can be changed but not removed")
     async with pool.acquire() as conn, conn.cursor() as cur:
         await cur.execute("DELETE FROM gap_target WHERE id = %s", (target_id,))
+    await audit(pool, admin, "target", target_id, "delete",
+                "Removed a time allowance" + ("" if row["warehouse_id"] else " (the every-outlet default)"))
     return {"deleted": target_id}
 
 
@@ -206,6 +261,9 @@ async def update_setting(key: str, body: SettingIn, request: Request, admin=Depe
         if await cur.fetchone() is None:
             raise HTTPException(status_code=404, detail="unknown setting")
         await cur.execute("UPDATE app_setting SET value = %s WHERE setting_key = %s", (body.value.strip(), key))
+    await audit(pool, admin, "setting", key, "update",
+                f"Changed driver-app setting '{key}' to '{body.value.strip()}'",
+                after={"value": body.value.strip()})
     return {"setting_key": key, "value": body.value.strip()}
 
 
@@ -253,6 +311,8 @@ async def add_roster(body: RosterIn, request: Request, admin=Depends(get_current
             "INSERT INTO shift_roster (work_date, warehouse_id, driver_id, shift) VALUES (%s, %s, %s, %s)",
             (body.work_date, body.warehouse_id, body.driver_id, body.shift),
         )
+    await audit(pool, admin, "roster", f"{body.work_date}/{body.driver_id}", "create",
+                f"Rostered driver {body.driver_id} on {body.work_date}", after=body.model_dump())
     return {"work_date": body.work_date, "driver_id": body.driver_id}
 
 
@@ -261,6 +321,7 @@ async def delete_roster(roster_id: int, request: Request, admin=Depends(get_curr
     pool = get_pool(request)
     async with pool.acquire() as conn, conn.cursor() as cur:
         await cur.execute("DELETE FROM shift_roster WHERE id = %s", (roster_id,))
+    await audit(pool, admin, "roster", roster_id, "delete", "Removed a roster line")
     return {"deleted": roster_id}
 
 
@@ -296,6 +357,8 @@ async def update_driver(driver_id: int, body: DriverUpdate, request: Request, ad
         if await cur.fetchone() is None:
             raise HTTPException(status_code=404, detail="driver not found")
         await cur.execute(f"UPDATE users SET {', '.join(fields)} WHERE id = %s", tuple(params + [driver_id]))
+    await audit(pool, admin, "driver", driver_id, "update", f"Updated driver {driver_id}",
+                after={k: v for k, v in body.model_dump().items() if v is not None})
     return {"id": driver_id}
 
 
@@ -306,6 +369,7 @@ async def disable_driver(driver_id: int, request: Request, admin=Depends(get_cur
     pool = get_pool(request)
     async with pool.acquire() as conn, conn.cursor() as cur:
         await cur.execute("UPDATE users SET status = 'disabled' WHERE id = %s AND role = 'driver'", (driver_id,))
+    await audit(pool, admin, "driver", driver_id, "update", f"Turned off sign-in for driver {driver_id}")
     return {"id": driver_id, "status": "disabled"}
 
 
@@ -320,6 +384,7 @@ async def disable_admin(admin_id: int, request: Request, admin=Depends(get_curre
         if active <= 1:
             raise HTTPException(status_code=409, detail="that's the last active admin -- add another first")
         await cur.execute("UPDATE users SET status = 'disabled' WHERE id = %s AND role = 'admin'", (admin_id,))
+    await audit(pool, admin, "admin", admin_id, "update", f"Removed dashboard access for admin {admin_id}")
     return {"id": admin_id, "status": "disabled"}
 
 
@@ -388,6 +453,10 @@ async def upsert_schedule(body: ScheduleIn, request: Request, admin=Depends(get_
                 (body.warehouse_id, body.slot_no, body.label, body.window_start, body.window_end,
                  body.grace_minutes, 1 if body.is_active else 0),
             )
+    await audit(pool, admin, "schedule", f"slot{body.slot_no}", "update" if existing else "create",
+                f"Set '{body.label}' window to {body.window_start}-{body.window_end}"
+                + (f" for outlet {body.warehouse_id}" if body.warehouse_id else " for every outlet"),
+                after=body.model_dump())
     return {"slot_no": body.slot_no, "warehouse_id": body.warehouse_id}
 
 
@@ -402,8 +471,8 @@ async def delete_schedule(schedule_id: int, request: Request, admin=Depends(get_
         row = await cur.fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail="that window doesn't exist")
-    if row["warehouse_id"] is None:
-        raise HTTPException(status_code=409, detail="a global window can be edited but not removed")
     async with pool.acquire() as conn, conn.cursor() as cur:
         await cur.execute("DELETE FROM trip_schedule WHERE id = %s", (schedule_id,))
+    await audit(pool, admin, "schedule", schedule_id, "delete",
+                "Removed a delivery window" + ("" if row["warehouse_id"] else " (the every-outlet one)"))
     return {"deleted": schedule_id}

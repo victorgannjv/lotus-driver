@@ -23,6 +23,7 @@ const CONFIG_ITEMS = [
   { to: "/admin/config/reasons", label: "Delay reasons" },
   { to: "/admin/config/roster", label: "Shift roster" },
   { to: "/admin/config/driver-app", label: "Driver app" },
+  { to: "/admin/config/activity", label: "Activity log" },
 ];
 
 export default function Gate() {
