@@ -53,13 +53,16 @@ SLOT_START = {1: (9, 30), 2: (13, 0), 3: (15, 0)}
 # but smaller share. Weights, not uniform choice -- a flat distribution would
 # make the "top reasons" panel meaningless.
 LOTUS_REASONS = [
-    ("LOT_NOT_STAGED", 34), ("LOT_NO_BAY", 22), ("LOT_STAFF", 14),
-    ("LOT_DOC", 11), ("LOT_SHORT_GOODS", 8), ("LOT_SYSTEM", 6),
-    ("LOT_GATE", 5),
+    ("LOT_NOT_STAGED", 30), ("LOT_NO_BAY", 20), ("LOT_STAFF", 13),
+    ("LOT_DOC", 10), ("LOT_SHORT_GOODS", 7), ("LOT_SYSTEM", 6),
+    ("LOT_GATE", 5), ("NJV_VEHICLE", 6), ("NJV_CAPACITY", 3),
 ]
+# Ours is a shorter list than Lotus's, and honestly so: on this contract they
+# provide the vehicle and the handheld, so the only things left on our side are
+# our people, our planning and our paperwork.
 NJV_REASONS = [
-    ("NJV_LATE", 30), ("NJV_VEHICLE", 20), ("NJV_LOADPLAN", 18),
-    ("NJV_CAPACITY", 14), ("NJV_SHORTHANDED", 10), ("NJV_APP", 8),
+    ("NJV_LATE", 32), ("NJV_LOADPLAN", 22), ("NJV_SHORTHANDED", 16),
+    ("NJV_BREAK", 12), ("NJV_PAPERWORK", 10), ("NJV_RELIEF", 8),
 ]
 EXT_REASONS = [("EXT_TRAFFIC", 55), ("EXT_ROAD", 25), ("EXT_WEATHER", 20)]
 
