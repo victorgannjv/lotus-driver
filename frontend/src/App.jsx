@@ -16,13 +16,20 @@ import Signup from "./pages/driver/Signup";
 // no reason to make every driver download that just to sign in or check history.
 const AdminGate = lazy(() => import("./pages/admin/Gate"));
 const AdminDashboard = lazy(() => import("./pages/admin/Dashboard"));
-const AdminDrivers = lazy(() => import("./pages/admin/Drivers"));
-const AdminAdmins = lazy(() => import("./pages/admin/Admins"));
 const AdminWarehouses = lazy(() => import("./pages/admin/Warehouses"));
 const AdminJobs = lazy(() => import("./pages/admin/Jobs"));
 const AdminEvidence = lazy(() => import("./pages/admin/Evidence"));
 const ConfigLayout = lazy(() =>
   import("./pages/admin/Configuration").then((m) => ({ default: m.ConfigurationLayout }))
+);
+const ConfigWindows = lazy(() =>
+  import("./pages/admin/Configuration").then((m) => ({ default: m.TripWindows }))
+);
+const ConfigDrivers = lazy(() =>
+  import("./pages/admin/Configuration").then((m) => ({ default: m.DriversConfig }))
+);
+const ConfigAdmins = lazy(() =>
+  import("./pages/admin/Configuration").then((m) => ({ default: m.AdminsConfig }))
 );
 const ConfigReasons = lazy(() =>
   import("./pages/admin/Configuration").then((m) => ({ default: m.ReasonCodes }))
@@ -114,9 +121,10 @@ export default function App() {
             {/* Setup, grouped under one menu rather than sitting in the work row. */}
             <Route path="config" element={<ConfigLayout />}>
               <Route index element={<Navigate to="/admin/config/drivers" replace />} />
-              <Route path="drivers" element={<AdminDrivers />} />
-              <Route path="admins" element={<AdminAdmins />} />
+              <Route path="drivers" element={<ConfigDrivers />} />
+              <Route path="admins" element={<ConfigAdmins />} />
               <Route path="outlets" element={<AdminWarehouses />} />
+              <Route path="windows" element={<ConfigWindows />} />
               <Route path="reasons" element={<ConfigReasons />} />
               <Route path="targets" element={<ConfigTargets />} />
               <Route path="roster" element={<ConfigRoster />} />

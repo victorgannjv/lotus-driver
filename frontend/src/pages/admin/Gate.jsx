@@ -18,8 +18,9 @@ const CONFIG_ITEMS = [
   { to: "/admin/config/drivers", label: "Drivers" },
   { to: "/admin/config/admins", label: "Admins" },
   { to: "/admin/config/outlets", label: "Outlets" },
-  { to: "/admin/config/reasons", label: "Reason codes" },
-  { to: "/admin/config/targets", label: "Targets" },
+  { to: "/admin/config/windows", label: "Delivery windows" },
+  { to: "/admin/config/targets", label: "Time allowances" },
+  { to: "/admin/config/reasons", label: "Delay reasons" },
   { to: "/admin/config/roster", label: "Shift roster" },
   { to: "/admin/config/driver-app", label: "Driver app" },
 ];
@@ -74,7 +75,7 @@ export default function Gate() {
                   : "border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100"
               }`}
             >
-              Configuration
+              Settings
               <Icon name="chevron" className={`h-3 w-3 ${menuOpen ? "-rotate-90" : "rotate-90"}`} />
             </button>
             {menuOpen && (

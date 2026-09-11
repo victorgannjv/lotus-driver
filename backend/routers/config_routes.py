@@ -262,3 +262,148 @@ async def delete_roster(roster_id: int, request: Request, admin=Depends(get_curr
     async with pool.acquire() as conn, conn.cursor() as cur:
         await cur.execute("DELETE FROM shift_roster WHERE id = %s", (roster_id,))
     return {"deleted": roster_id}
+
+
+# ------------------------------------------------------------------- drivers
+class DriverUpdate(BaseModel):
+    warehouse_id: int | None = None
+    status: str | None = None
+    name: str | None = None
+    phone: str | None = None
+
+
+@router.put("/drivers/{driver_id}")
+async def update_driver(driver_id: int, body: DriverUpdate, request: Request, admin=Depends(get_current_admin)):
+    """Reassigning a driver's outlet matters beyond tidiness: gap targets and
+    contracted windows can be set per outlet, so the outlet on the driver is
+    what decides which bar their trips are scored against."""
+    if body.status is not None and body.status not in ("active", "disabled"):
+        raise HTTPException(status_code=422, detail="status must be active or disabled")
+    fields, params = [], []
+    if body.warehouse_id is not None:
+        fields.append("warehouse_id = %s")
+        params.append(body.warehouse_id)
+    for name in ("status", "name", "phone"):
+        val = getattr(body, name)
+        if val is not None:
+            fields.append(f"{name} = %s")
+            params.append(val)
+    if not fields:
+        raise HTTPException(status_code=422, detail="nothing to update")
+    pool = get_pool(request)
+    async with pool.acquire() as conn, conn.cursor() as cur:
+        await cur.execute("SELECT 1 FROM users WHERE id = %s AND role = 'driver'", (driver_id,))
+        if await cur.fetchone() is None:
+            raise HTTPException(status_code=404, detail="driver not found")
+        await cur.execute(f"UPDATE users SET {', '.join(fields)} WHERE id = %s", tuple(params + [driver_id]))
+    return {"id": driver_id}
+
+
+@router.delete("/drivers/{driver_id}")
+async def disable_driver(driver_id: int, request: Request, admin=Depends(get_current_admin)):
+    """Disabled, never deleted -- their trips are dispute evidence and the rows
+    point back at this user."""
+    pool = get_pool(request)
+    async with pool.acquire() as conn, conn.cursor() as cur:
+        await cur.execute("UPDATE users SET status = 'disabled' WHERE id = %s AND role = 'driver'", (driver_id,))
+    return {"id": driver_id, "status": "disabled"}
+
+
+@router.delete("/admins/{admin_id}")
+async def disable_admin(admin_id: int, request: Request, admin=Depends(get_current_admin)):
+    """Removing the last active admin would lock everyone out of the dashboard,
+    so the count is checked before the change rather than after."""
+    pool = get_pool(request)
+    async with pool.acquire() as conn, conn.cursor() as cur:
+        await cur.execute("SELECT COUNT(*) FROM users WHERE role = 'admin' AND status = 'active'")
+        (active,) = await cur.fetchone()
+        if active <= 1:
+            raise HTTPException(status_code=409, detail="that's the last active admin -- add another first")
+        await cur.execute("UPDATE users SET status = 'disabled' WHERE id = %s AND role = 'admin'", (admin_id,))
+    return {"id": admin_id, "status": "disabled"}
+
+
+# ------------------------------------------------------ contracted windows
+class ScheduleIn(BaseModel):
+    warehouse_id: int | None = None
+    slot_no: int
+    label: str
+    window_start: str
+    window_end: str
+    grace_minutes: int = 0
+    is_active: bool = True
+
+
+@router.get("/schedule")
+async def list_schedule(request: Request, admin=Depends(get_current_admin)):
+    pool = get_pool(request)
+    async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
+        await cur.execute(
+            "SELECT s.id, s.warehouse_id, w.name AS warehouse_name, s.slot_no, s.label, "
+            "s.window_start, s.window_end, s.grace_minutes, s.is_active "
+            "FROM trip_schedule s LEFT JOIN warehouses w ON w.id = s.warehouse_id "
+            "ORDER BY s.warehouse_id IS NOT NULL, w.name, s.slot_no"
+        )
+        rows = await cur.fetchall()
+    return {
+        "schedule": [
+            {**r, "is_active": bool(r["is_active"]),
+             "window_start": str(r["window_start"]), "window_end": str(r["window_end"])}
+            for r in rows
+        ]
+    }
+
+
+@router.post("/schedule", status_code=201)
+async def upsert_schedule(body: ScheduleIn, request: Request, admin=Depends(get_current_admin)):
+    """One row per slot per outlet. Outlet rows win wholesale over the global
+    set, so an outlet with its own contract is described in one place rather
+    than inherited piecemeal."""
+    if body.slot_no < 1 or body.slot_no > 12:
+        raise HTTPException(status_code=422, detail="slot must be between 1 and 12")
+    if body.window_end <= body.window_start:
+        raise HTTPException(status_code=422, detail="the window has to end after it starts")
+    pool = get_pool(request)
+    async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
+        if body.warehouse_id is None:
+            await cur.execute("SELECT id FROM trip_schedule WHERE slot_no = %s AND warehouse_id IS NULL", (body.slot_no,))
+        else:
+            await cur.execute(
+                "SELECT id FROM trip_schedule WHERE slot_no = %s AND warehouse_id = %s",
+                (body.slot_no, body.warehouse_id),
+            )
+        existing = await cur.fetchone()
+    async with pool.acquire() as conn, conn.cursor() as cur:
+        if existing:
+            await cur.execute(
+                "UPDATE trip_schedule SET label = %s, window_start = %s, window_end = %s, "
+                "grace_minutes = %s, is_active = %s WHERE id = %s",
+                (body.label, body.window_start, body.window_end, body.grace_minutes,
+                 1 if body.is_active else 0, existing["id"]),
+            )
+        else:
+            await cur.execute(
+                "INSERT INTO trip_schedule (warehouse_id, slot_no, label, window_start, window_end, "
+                "grace_minutes, is_active) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                (body.warehouse_id, body.slot_no, body.label, body.window_start, body.window_end,
+                 body.grace_minutes, 1 if body.is_active else 0),
+            )
+    return {"slot_no": body.slot_no, "warehouse_id": body.warehouse_id}
+
+
+@router.delete("/schedule/{schedule_id}")
+async def delete_schedule(schedule_id: int, request: Request, admin=Depends(get_current_admin)):
+    """Only an outlet override can be removed. Deleting a global slot would
+    leave trips in that slot with no commitment to score against, which reads
+    as "on time" and silently empties the claim."""
+    pool = get_pool(request)
+    async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
+        await cur.execute("SELECT warehouse_id FROM trip_schedule WHERE id = %s", (schedule_id,))
+        row = await cur.fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="that window doesn't exist")
+    if row["warehouse_id"] is None:
+        raise HTTPException(status_code=409, detail="a global window can be edited but not removed")
+    async with pool.acquire() as conn, conn.cursor() as cur:
+        await cur.execute("DELETE FROM trip_schedule WHERE id = %s", (schedule_id,))
+    return {"deleted": schedule_id}
