@@ -476,3 +476,79 @@ async def delete_schedule(schedule_id: int, request: Request, admin=Depends(get_
     await audit(pool, admin, "schedule", schedule_id, "delete",
                 "Removed a delivery window" + ("" if row["warehouse_id"] else " (the every-outlet one)"))
     return {"deleted": schedule_id}
+
+
+class RosterBulkIn(BaseModel):
+    entries: list[RosterIn] = []
+    remove_ids: list[int] = []
+
+
+@router.post("/roster/bulk")
+async def bulk_roster(body: RosterBulkIn, request: Request, admin=Depends(get_current_admin)):
+    """Whole-week edits in one call.
+
+    A roster is built a week at a time, not a person-day at a time: eight
+    drivers over seven days is fifty-six decisions, and making each one a
+    round-trip turns planning into data entry.
+    """
+    pool = get_pool(request)
+    added = 0
+    async with pool.acquire() as conn, conn.cursor() as cur:
+        for rid in body.remove_ids:
+            await cur.execute("DELETE FROM shift_roster WHERE id = %s", (rid,))
+        for e in body.entries:
+            await cur.execute(
+                "SELECT 1 FROM shift_roster WHERE work_date = %s AND driver_id = %s", (e.work_date, e.driver_id)
+            )
+            if await cur.fetchone():
+                continue
+            await cur.execute(
+                "INSERT INTO shift_roster (work_date, warehouse_id, driver_id, shift) VALUES (%s, %s, %s, %s)",
+                (e.work_date, e.warehouse_id, e.driver_id, e.shift),
+            )
+            added += 1
+    if added or body.remove_ids:
+        await audit(pool, admin, "roster", None, "update",
+                    f"Updated the roster: {added} added, {len(body.remove_ids)} removed")
+    return {"added": added, "removed": len(body.remove_ids)}
+
+
+@router.post("/roster/copy-week")
+async def copy_week(
+    request: Request,
+    from_monday: str,
+    to_monday: str,
+    admin=Depends(get_current_admin),
+):
+    """Most weeks look like the last one, so copying beats re-entering."""
+    from datetime import date as _date, timedelta as _td
+    src = _date.fromisoformat(from_monday)
+    dst = _date.fromisoformat(to_monday)
+    shift_days = (dst - src).days
+
+    pool = get_pool(request)
+    async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
+        await cur.execute(
+            "SELECT work_date, warehouse_id, driver_id, shift FROM shift_roster "
+            "WHERE work_date BETWEEN %s AND %s",
+            (src.isoformat(), (src + _td(days=6)).isoformat()),
+        )
+        rows = await cur.fetchall()
+
+    added = 0
+    async with pool.acquire() as conn, conn.cursor() as cur:
+        for r in rows:
+            target = r["work_date"] + _td(days=shift_days)
+            await cur.execute(
+                "SELECT 1 FROM shift_roster WHERE work_date = %s AND driver_id = %s", (target, r["driver_id"])
+            )
+            if await cur.fetchone():
+                continue
+            await cur.execute(
+                "INSERT INTO shift_roster (work_date, warehouse_id, driver_id, shift) VALUES (%s, %s, %s, %s)",
+                (target, r["warehouse_id"], r["driver_id"], r["shift"]),
+            )
+            added += 1
+    await audit(pool, admin, "roster", None, "create",
+                f"Copied the roster from week of {from_monday} to week of {to_monday} ({added} shifts)")
+    return {"added": added}

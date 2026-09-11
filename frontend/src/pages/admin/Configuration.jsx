@@ -662,69 +662,194 @@ export function AdminsConfig() {
 
 /* --------------------------------------------------------------------- roster */
 
+// A roster is built a week at a time: pick the week, tick who is on.
+//
+// The previous version asked for one driver-day per submit -- fifty-six
+// decisions for eight drivers over a week. That is data entry, not planning,
+// and it is why the page sat empty. Drivers are listed for you, grouped by the
+// outlet they belong to, so the only question left is who works which day.
+function mondayOf(d) {
+  const x = new Date(d);
+  x.setHours(12, 0, 0, 0);
+  x.setDate(x.getDate() - ((x.getDay() + 6) % 7));
+  return x;
+}
+const isoDay = (d) => {
+  const x = new Date(d);
+  return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
+};
+const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+const DOW = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
 export function Roster() {
-  const { rows, error, busy, run } = useList("/admin/config/roster", "roster");
-  const [drivers, setDrivers] = useState([]);
-  const [outlets, setOutlets] = useState([]);
-  const [form, setForm] = useState({ work_date: "", warehouse_id: "", driver_id: "" });
+  const [week, setWeek] = useState(() => mondayOf(new Date()));
+  const [drivers, setDrivers] = useState(null);
+  const [rows, setRows] = useState(null);
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const days = [...Array(7)].map((_, i) => addDays(week, i));
+  const from = isoDay(days[0]);
+  const to = isoDay(days[6]);
+
+  const load = useCallback(() => {
+    setRows(null);
+    api.get(`/admin/config/roster?date_from=${from}&date_to=${to}`)
+      .then((d) => setRows(d.roster))
+      .catch((e) => setError(e.detail || "Could not load the roster."));
+  }, [from, to]);
 
   useEffect(() => {
-    api.get("/admin/drivers").then((d) => setDrivers(d.drivers)).catch(() => {});
-    api.get("/admin/warehouses").then((d) => setOutlets(d.warehouses)).catch(() => {});
+    api.get("/admin/drivers")
+      .then((d) => setDrivers(d.drivers.filter((x) => x.status === "active")))
+      .catch(() => setDrivers([]));
   }, []);
+  useEffect(load, [load]);
+
+  async function run(fn) {
+    setBusy(true); setError(null);
+    try { await fn(); load(); }
+    catch (e) { setError(e.detail || "Could not save that change."); }
+    finally { setBusy(false); }
+  }
+
+  // rostered[driverId][date] -> the row, so a tick knows what it would remove
+  const rostered = {};
+  (rows || []).forEach((r) => {
+    rostered[r.driver_id] = rostered[r.driver_id] || {};
+    rostered[r.driver_id][r.work_date] = r;
+  });
+
+  const needsOutlet = (d) => {
+    setError(`${d.name} has no outlet yet — set one on the Drivers tab first, since the outlet decides which delivery windows their trips are measured against.`);
+  };
+
+  const toggle = (driver, date) => {
+    const existing = rostered[driver.id]?.[date];
+    if (existing) return run(() => api.del(`/admin/config/roster/${existing.id}`));
+    if (!driver.warehouse_id) return needsOutlet(driver);
+    return run(() => api.post("/admin/config/roster", {
+      work_date: date, warehouse_id: driver.warehouse_id, driver_id: driver.id, shift: "full",
+    }));
+  };
+
+  const setWholeRow = (driver, on) => {
+    if (on && !driver.warehouse_id) return needsOutlet(driver);
+    const entries = [], remove_ids = [];
+    days.forEach((d) => {
+      const date = isoDay(d);
+      const ex = rostered[driver.id]?.[date];
+      if (on && !ex) {
+        entries.push({ work_date: date, warehouse_id: driver.warehouse_id, driver_id: driver.id, shift: "full" });
+      }
+      if (!on && ex) remove_ids.push(ex.id);
+    });
+    if (!entries.length && !remove_ids.length) return;
+    return run(() => api.post("/admin/config/roster/bulk", { entries, remove_ids }));
+  };
+
+  const byOutlet = {};
+  (drivers || []).forEach((d) => {
+    const key = d.warehouse_name || "No outlet set";
+    (byOutlet[key] = byOutlet[key] || []).push(d);
+  });
+
+  const total = (rows || []).length;
 
   return (
     <Panel
       title="Shift roster"
-      blurb="Who is scheduled to work, per outlet per day."
+      blurb="Who is scheduled to work each day. Tick a driver on for a day."
+      action={
+        <div className="flex items-center gap-2">
+          <button type="button" className={btn} onClick={() => setWeek(addDays(week, -7))}>← Previous</button>
+          <span className="min-w-[9rem] text-center text-sm font-medium text-brand-black">
+            {days[0].toLocaleDateString(undefined, { day: "2-digit", month: "short" })} – {days[6].toLocaleDateString(undefined, { day: "2-digit", month: "short" })}
+          </span>
+          <button type="button" className={btn} onClick={() => setWeek(addDays(week, 7))}>Next →</button>
+        </div>
+      }
       footer="The dashboard already counts who actually drove; this is the only way it can know who was meant to. Owning up to a short-handed day is what keeps a claim against Lotus credible."
     >
       <Err>{error}</Err>
-      <div className="mb-5 flex flex-wrap items-end gap-4 rounded-xl bg-slate-50 p-4">
-        <label className="flex flex-col gap-1.5">
-          <span className="text-xs font-medium text-slate-600">Day</span>
-          <input type="date" className={input} value={form.work_date}
-                 onChange={(e) => setForm((f) => ({ ...f, work_date: e.target.value }))} />
-        </label>
-        <label className="flex flex-col gap-1.5">
-          <span className="text-xs font-medium text-slate-600">Outlet</span>
-          <select className={input} value={form.warehouse_id}
-                  onChange={(e) => setForm((f) => ({ ...f, warehouse_id: e.target.value }))}>
-            <option value="">Choose…</option>
-            {outlets.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1.5">
-          <span className="text-xs font-medium text-slate-600">Driver</span>
-          <select className={input} value={form.driver_id}
-                  onChange={(e) => setForm((f) => ({ ...f, driver_id: e.target.value }))}>
-            <option value="">Choose…</option>
-            {drivers.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-          </select>
-        </label>
-        <button type="button" className={btnPrimary}
-                disabled={busy || !form.work_date || !form.warehouse_id || !form.driver_id}
-                onClick={async () => {
-                  const ok = await run(() => api.post("/admin/config/roster", {
-                    work_date: form.work_date, warehouse_id: Number(form.warehouse_id),
-                    driver_id: Number(form.driver_id), shift: "full",
-                  }));
-                  if (ok) setForm((f) => ({ ...f, driver_id: "" }));
-                }}>Add to roster</button>
+
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <button type="button" className={btn} disabled={busy}
+                onClick={() => run(() => api.post(
+                  `/admin/config/roster/copy-week?from_monday=${isoDay(addDays(week, -7))}&to_monday=${from}`))}>
+          Copy last week
+        </button>
+        <button type="button" className={btn} onClick={() => setWeek(mondayOf(new Date()))}>This week</button>
+        <span className="text-sm text-slate-500">{total} shift{total === 1 ? "" : "s"} scheduled</span>
       </div>
 
-      {!rows ? <p className="text-sm text-slate-500">Loading…</p> : rows.length === 0 ? (
-        <p className="text-sm text-slate-500">Nothing rostered yet.</p>
-      ) : rows.map((r) => (
-        <Row key={r.id}>
-          <span className="min-w-[7rem] font-mono text-sm text-slate-500">{r.work_date}</span>
-          <span className="text-sm font-medium text-brand-black">{r.driver_name}</span>
-          <span className="text-sm text-slate-500">{r.warehouse_name}</span>
-          <span className="flex-1" />
-          <button type="button" className={btnDanger} disabled={busy}
-                  onClick={() => run(() => api.del(`/admin/config/roster/${r.id}`))}>Remove</button>
-        </Row>
-      ))}
+      {!drivers || !rows ? (
+        <p className="text-sm text-slate-500">Loading…</p>
+      ) : drivers.length === 0 ? (
+        <p className="text-sm text-slate-500">No active drivers yet — they appear here once they sign up.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-xs uppercase tracking-wide text-slate-400">
+                <th className="py-2 pr-4 text-left">Driver</th>
+                {days.map((d, i) => (
+                  <th key={i} className="px-2 py-2 text-center font-semibold">
+                    <span className="block">{DOW[i]}</span>
+                    <span className="block font-mono text-[10px] font-normal text-slate-300">{d.getDate()}</span>
+                  </th>
+                ))}
+                <th className="py-2 pl-2 text-right">All week</th>
+              </tr>
+            </thead>
+            {Object.entries(byOutlet).map(([outlet, list]) => (
+              <tbody key={outlet}>
+                <tr>
+                  <td colSpan={9} className="pb-1 pt-4 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    {outlet}
+                  </td>
+                </tr>
+                {list.map((d) => {
+                  const onCount = days.filter((x) => rostered[d.id]?.[isoDay(x)]).length;
+                  return (
+                    <tr key={d.id} className="border-t border-slate-100">
+                      <td className="py-2 pr-4">
+                        <span className="block font-medium text-brand-black">{d.name}</span>
+                        {!d.warehouse_id && <span className="block text-xs text-amber-700">No outlet set</span>}
+                      </td>
+                      {days.map((x, i) => {
+                        const date = isoDay(x);
+                        const on = !!rostered[d.id]?.[date];
+                        return (
+                          <td key={i} className="px-2 py-2 text-center">
+                            <button
+                              type="button" disabled={busy} onClick={() => toggle(d, date)}
+                              aria-pressed={on} aria-label={`${d.name}, ${DOW[i]}`}
+                              className={`h-8 w-8 rounded-lg border text-sm font-semibold transition ${
+                                on
+                                  ? "border-emerald-600 bg-emerald-600 text-white"
+                                  : "border-slate-200 bg-white text-slate-300 hover:border-slate-400"
+                              } disabled:opacity-50`}
+                            >
+                              {on ? "✓" : ""}
+                            </button>
+                          </td>
+                        );
+                      })}
+                      <td className="py-2 pl-2 text-right">
+                        <button type="button" className={btn} disabled={busy}
+                                onClick={() => setWholeRow(d, onCount < 7)}>
+                          {onCount === 7 ? "Clear" : "All 7"}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            ))}
+          </table>
+        </div>
+      )}
     </Panel>
   );
 }
