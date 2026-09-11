@@ -391,3 +391,130 @@ async def close_day(work_date: str, request: Request, driver=Depends(get_current
             (driver["id"], work_date),
         )
     return {"work_date": work_date, "closed": True, "trips": n}
+
+
+@router.get("/my-days")
+async def my_days(
+    request: Request,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    limit: int = 30,
+    driver=Depends(get_current_driver),
+):
+    """The driver's own history, grouped day -> trip -> checkpoints.
+
+    Deliberately the same computation the admin surface runs, just scoped to one
+    driver: if a driver's week and ops' week ever disagreed, neither number would
+    be worth taking into a dispute.
+    """
+    pool = get_pool(request)
+    where = ["m.driver_id = %s"]
+    params: list = [driver["id"]]
+    if date_from:
+        where.append("m.work_date >= %s")
+        params.append(date_from)
+    if date_to:
+        where.append("m.work_date <= %s")
+        params.append(date_to)
+
+    async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
+        await cur.execute(
+            "SELECT m.id, m.work_date, m.cancelled_at, m.day_closed_at, m.expected_job_count, u.warehouse_id "
+            "FROM manifests m JOIN users u ON u.id = m.driver_id "
+            f"WHERE {' AND '.join(where)} ORDER BY m.work_date DESC, m.id DESC LIMIT %s",
+            tuple(params + [max(1, min(limit, 200))]),
+        )
+        trips = await cur.fetchall()
+
+    if not trips:
+        return {"days": [], "rollup": {"trips": 0, "jobs": 0, "orders": 0, "over_target": 0}}
+
+    ids = [t["id"] for t in trips]
+    placeholders = ",".join(["%s"] * len(ids))
+    cps_by_trip = await fetch_checkpoints(pool, ids)
+    targets = await load_targets(pool)
+
+    async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
+        await cur.execute(
+            f"SELECT manifest_id, COUNT(*) AS n, SUM(status <> 'pending') AS done, SUM(status = 'failed') AS failed "
+            f"FROM trip_job WHERE manifest_id IN ({placeholders}) GROUP BY manifest_id",
+            tuple(ids),
+        )
+        job_rows = {r["manifest_id"]: r for r in await cur.fetchall()}
+        await cur.execute(
+            f"SELECT manifest_id, COUNT(*) AS n, SUM(status_code = 'failed') AS failed "
+            f"FROM delivery_jobs WHERE manifest_id IN ({placeholders}) GROUP BY manifest_id",
+            tuple(ids),
+        )
+        order_rows = {r["manifest_id"]: r for r in await cur.fetchall()}
+
+    days: dict[str, dict] = {}
+    roll = {"trips": 0, "jobs": 0, "orders": 0, "over_target": 0}
+
+    for t in trips:
+        cps = cps_by_trip.get(t["id"], {})
+        stamps = stamps_from(cps)
+        gaps = compute_gaps(stamps, targets, t["warehouse_id"])
+        tao = compute_time_at_outlet(stamps, targets, t["warehouse_id"])
+        jr = job_rows.get(t["id"], {})
+        orr = order_rows.get(t["id"], {})
+
+        trip_out = {
+            "id": t["id"],
+            "cancelled": t["cancelled_at"] is not None,
+            "jobs": int(jr.get("n") or 0),
+            "jobs_done": int(jr.get("done") or 0),
+            "orders": int(orr.get("n") or 0),
+            "failed_orders": int(orr.get("failed") or 0),
+            "started_at": str(stamps["arrived"]) if "arrived" in stamps else None,
+            "ended_at": str(stamps["returned"]) if "returned" in stamps else None,
+            "time_at_outlet": tao,
+            "checkpoints": [serialize_checkpoint(cps[c]) for c in CHECKPOINT_ORDER if c in cps],
+            "gaps": gaps,
+        }
+
+        key = str(t["work_date"])
+        day = days.setdefault(key, {
+            "work_date": key, "day_closed_at": None,
+            "trips": [], "totals": {"trips": 0, "jobs": 0, "orders": 0, "failed_orders": 0, "over_target": 0},
+        })
+        if t["day_closed_at"]:
+            day["day_closed_at"] = str(t["day_closed_at"])
+        day["trips"].append(trip_out)
+        if t["cancelled_at"] is None:
+            day["totals"]["trips"] += 1
+            day["totals"]["jobs"] += trip_out["jobs"]
+            day["totals"]["orders"] += trip_out["orders"]
+            day["totals"]["failed_orders"] += trip_out["failed_orders"]
+            roll["trips"] += 1
+            roll["jobs"] += trip_out["jobs"]
+            roll["orders"] += trip_out["orders"]
+            if tao and tao["over_target"]:
+                day["totals"]["over_target"] += 1
+                roll["over_target"] += 1
+
+    ordered = sorted(days.values(), key=lambda d: d["work_date"], reverse=True)
+    for d in ordered:
+        d["trips"].sort(key=lambda x: (x["started_at"] or ""))
+    return {"days": ordered, "rollup": roll}
+
+
+@router.get("/my-open-trip")
+async def my_open_trip(request: Request, driver=Depends(get_current_driver)):
+    """Today's trip that still has steps left, so the app can open straight on
+    the work in hand rather than making the driver find it."""
+    pool = get_pool(request)
+    today = date.today().isoformat()
+    async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
+        await cur.execute(
+            "SELECT m.id, m.driver_id, m.work_date, m.cancelled_at, m.day_closed_at, m.expected_job_count, "
+            "u.warehouse_id FROM manifests m JOIN users u ON u.id = m.driver_id "
+            "WHERE m.driver_id = %s AND m.work_date = %s AND m.cancelled_at IS NULL "
+            "ORDER BY m.id DESC LIMIT 1",
+            (driver["id"], today),
+        )
+        trip = await cur.fetchone()
+    if trip is None:
+        return {"trip": None}
+    state = await _trip_state(pool, trip)
+    return state
