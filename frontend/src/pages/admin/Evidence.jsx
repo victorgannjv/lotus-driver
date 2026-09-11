@@ -36,11 +36,27 @@ function OwnerChip({ owner }) {
   return <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${o.chip}`}>{o.label}</span>;
 }
 
-function Metric({ label, value, tone }) {
+// One column template, used by the header strip AND every row. Before this the
+// header was a wrapping flex of variable-width children, so "Jobs" started
+// wherever the driver's name happened to end -- "JC" and "Victor Test 3" pushed
+// the same column to two different places and nothing lined up down the page.
+//
+// Stacks below lg rather than md: nine columns need about 900px before they
+// stop being a table and start being a squeeze.
+const TRIP_COLS =
+  "lg:grid lg:grid-cols-[6.5rem_minmax(9rem,1.4fr)_6.5rem_5rem_5rem_6rem_4rem_4.5rem_6.5rem] lg:items-center lg:gap-x-4";
+
+const TRIP_HEADS = ["Trip", "Driver", "Date", "Arrived", "Returned", "At outlet", "Jobs", "Orders", "Owner"];
+
+// Below lg the label rides with the value, because a stacked row has no header
+// strip to sit under.
+function Cell({ label, children, tone }) {
   return (
-    <span className="flex flex-col leading-tight">
-      <span className="text-[9.5px] font-bold uppercase tracking-widest text-slate-400">{label}</span>
-      <span className={`text-xs tabular-nums ${tone || "text-brand-black"}`}>{value}</span>
+    <span className="flex min-w-0 items-baseline gap-2 lg:block">
+      <span className="w-[5.5rem] shrink-0 text-[10px] font-bold uppercase tracking-widest text-slate-400 lg:hidden">
+        {label}
+      </span>
+      <span className={`min-w-0 truncate text-sm ${tone || "text-brand-black"}`}>{children}</span>
     </span>
   );
 }
@@ -58,40 +74,51 @@ function TripCard({ trip, open, onToggle }) {
   const gapFor = (cp) => (trip.gaps || []).find((g) => g.to_checkpoint === cp);
 
   return (
-    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+    <div className={`overflow-hidden rounded-xl border border-slate-200 border-l-4 bg-white ${
+      trip.over_target ? "border-l-brand-red" : "border-l-emerald-600"
+    }`}>
       <button
         type="button"
         onClick={onToggle}
         aria-expanded={open}
-        className="flex w-full flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 text-left hover:bg-slate-50"
+        className={`w-full space-y-1.5 px-4 py-3.5 text-left hover:bg-slate-50 lg:space-y-0 ${TRIP_COLS}`}
       >
-        <span className={`h-8 w-1 shrink-0 rounded ${trip.over_target ? "bg-brand-red" : "bg-emerald-600"}`} />
-        <Icon name="chevron" className={`h-3.5 w-3.5 text-slate-400 ${open ? "rotate-90" : ""}`} />
-        <span className="font-semibold text-brand-black">T-{trip.id}</span>
         <span className="flex items-center gap-2">
-          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-100 text-[10px] font-bold text-slate-600">
+          <Icon name="chevron" className={`h-3.5 w-3.5 shrink-0 text-slate-400 ${open ? "rotate-90" : ""}`} />
+          <span className="text-sm font-semibold text-brand-black">T-{trip.id}</span>
+        </span>
+
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10px] font-bold text-slate-600">
             {(trip.driver_name || "?").split(" ").map((w) => w[0]).slice(0, 2).join("")}
           </span>
-          <span className="flex flex-col leading-tight">
-            <span className="text-sm font-semibold text-brand-black">{trip.driver_name}</span>
-            <span className="text-[10px] text-slate-400">{trip.warehouse_name}</span>
+          <span className="flex min-w-0 flex-col leading-tight">
+            <span className="truncate text-sm font-semibold text-brand-black">{trip.driver_name}</span>
+            <span className="truncate text-[11px] text-slate-400">{trip.warehouse_name}</span>
           </span>
         </span>
-        <span className="flex flex-1 flex-wrap gap-x-5 gap-y-1.5">
-          <Metric label="Date" value={trip.work_date} />
-          <Metric
-            label="Window"
-            value={`${formatTime(trip.started_at) || "—"}–${formatTime(trip.ended_at) || "…"}`}
-          />
-          <Metric
-            label="At outlet"
-            value={tao ? formatDuration(tao.minutes) : "—"}
-            tone={tao?.over_target ? "font-semibold text-brand-red" : "text-emerald-700"}
-          />
-          <Metric label="Jobs" value={trip.jobs} />
-          <Metric label="Orders" value={trip.orders} />
+
+        <Cell label="Date">{trip.work_date}</Cell>
+        <Cell label="Arrived">{formatTime(trip.started_at) || "—"}</Cell>
+        {/* An open trip says so. The old row rendered "05:01–…", which reads
+            like a value that got cut off rather than one that does not exist
+            yet. */}
+        <Cell label="Returned" tone={trip.ended_at ? undefined : "text-slate-400"}>
+          {formatTime(trip.ended_at) || "open"}
+        </Cell>
+        <Cell label="At outlet"
+              tone={tao?.over_target ? "font-semibold text-brand-red" : "text-emerald-700"}>
+          {tao ? formatDuration(tao.minutes) : "—"}
+        </Cell>
+        <Cell label="Jobs">{trip.jobs}</Cell>
+        <Cell label="Orders">{trip.orders}</Cell>
+
+        <span className="flex items-baseline gap-2 lg:block lg:text-right">
+          <span className="w-[5.5rem] shrink-0 text-[10px] font-bold uppercase tracking-widest text-slate-400 lg:hidden">
+            Owner
+          </span>
+          <OwnerChip owner={trip.owner} />
         </span>
-        <OwnerChip owner={trip.owner} />
       </button>
 
       {open && (
@@ -252,6 +279,19 @@ export default function Evidence() {
 
       {data && (
         <>
+          {/* Said once, at the top, instead of on all 25 cards. The labels were
+              the loudest thing on a row that exists to show values. */}
+          <div className={`hidden px-4 pb-2 ${TRIP_COLS}`} aria-hidden="true">
+            {TRIP_HEADS.map((h, i) => (
+              <span key={h}
+                    className={`text-[10px] font-bold uppercase tracking-widest text-slate-400 ${
+                      i === TRIP_HEADS.length - 1 ? "text-right" : ""
+                    }`}>
+                {h}
+              </span>
+            ))}
+          </div>
+
           <div className="space-y-2">
             {data.trips.map((trip) => (
               <TripCard

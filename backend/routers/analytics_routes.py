@@ -137,8 +137,8 @@ async def _scored(pool, rows: list[dict]) -> list[dict]:
             "over_target": bool(tao and tao["over_target"]),
             "owner": party,
             "reason": reason,
-            "started_at": str(stamps["arrived"]) if "arrived" in stamps else None,
-            "ended_at": str(stamps["returned"]) if "returned" in stamps else None,
+            "started_at": fmt(stamps["arrived"]) if "arrived" in stamps else None,
+            "ended_at": fmt(stamps["returned"]) if "returned" in stamps else None,
         })
     return out
 
