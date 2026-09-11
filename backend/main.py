@@ -8,7 +8,7 @@ lives in Flyway migrations under resources/db/migration/ -- never in code.
 from fastapi import FastAPI
 
 from db import lifespan
-from routers import admin_routes, auth_routes, common_routes, driver_routes
+from routers import admin_routes, auth_routes, checkpoint_routes, common_routes, driver_routes
 
 app = FastAPI(title="Lotus Driver Tracking System", lifespan=lifespan)
 
@@ -20,5 +20,6 @@ def health() -> dict:
 
 app.include_router(auth_routes.router, prefix="/api/auth", tags=["auth"])
 app.include_router(driver_routes.router, prefix="/api", tags=["driver"])
+app.include_router(checkpoint_routes.router, prefix="/api", tags=["checkpoints"])
 app.include_router(admin_routes.router, prefix="/api/admin", tags=["admin"])
 app.include_router(common_routes.router, prefix="/api", tags=["common"])

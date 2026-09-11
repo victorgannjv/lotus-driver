@@ -1,0 +1,191 @@
+"""Trip checkpoint domain logic, shared by the driver and admin surfaces.
+
+A trip (a `manifests` row) is stamped at five points: arrived, goods_ready,
+loaded, departed, returned -- plus deliveries_done, which the app fires by itself
+once every job in the trip is resolved rather than making a driver confirm what
+the system can already see.
+
+The time BETWEEN two checkpoints is a "gap", and a gap that runs past its target
+is what Ninja Van disputes with. Gaps are always COMPUTED, never stored: a stored
+gap becomes a second source of truth the moment someone corrects a timestamp, and
+targets are still being negotiated with Lotus, so changing one has to re-score
+history rather than only future trips.
+
+One roll-up, two audiences: the driver's week and ops' week come from the same
+query with the same targets (see summarise_trips), so they can never disagree.
+"""
+from datetime import datetime
+
+from asyncmy.cursors import DictCursor
+
+# gap_code -> (from checkpoint, to checkpoint, default fault party or None)
+# None means "ask the driver" -- loading time can be Lotus's manpower or ours.
+GAP_DEFS: list[tuple[str, str, str, str | None]] = [
+    ("waiting_for_lotus", "arrived", "goods_ready", "lotus"),
+    ("loading", "goods_ready", "loaded", None),
+    ("departure_lag", "loaded", "departed", "njv"),
+    ("delivery_round", "departed", "deliveries_done", "njv"),
+    ("return_leg", "deliveries_done", "returned", "njv"),
+]
+
+# The headline dispute number: how long Lotus kept the truck on site.
+HEADLINE_GAP = ("time_at_outlet", "arrived", "departed")
+
+GAP_LABELS = {
+    "waiting_for_lotus": "Waiting for Lotus",
+    "loading": "Loading",
+    "departure_lag": "Departure lag",
+    "delivery_round": "Delivery round",
+    "return_leg": "Return leg",
+    "time_at_outlet": "Time at outlet",
+}
+
+CHECKPOINT_ORDER = ["arrived", "goods_ready", "loaded", "departed", "deliveries_done", "returned"]
+
+CHECKPOINT_LABELS = {
+    "arrived": "Arrived at Lotus",
+    "goods_ready": "Lotus goods ready",
+    "loaded": "Loaded to truck",
+    "departed": "Departed outlet",
+    "deliveries_done": "Deliveries done",
+    "returned": "Returned to Lotus",
+}
+
+# The gap whose breach a given checkpoint has to explain, so the app knows which
+# reason prompt to raise when the driver stamps it.
+CHECKPOINT_GAP = {to_cp: code for code, _from, to_cp, _party in GAP_DEFS}
+
+
+async def load_targets(pool) -> dict:
+    """All gap targets, keyed (gap_code, warehouse_id). warehouse_id None is the
+    global default; an outlet row overrides it for that outlet only."""
+    async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
+        await cur.execute("SELECT gap_code, warehouse_id, target_minutes FROM gap_target")
+        rows = await cur.fetchall()
+    return {(r["gap_code"], r["warehouse_id"]): r["target_minutes"] for r in rows}
+
+
+def resolve_target(targets: dict, gap_code: str, warehouse_id: int | None) -> int | None:
+    """Outlet-specific target wins; otherwise the global default; otherwise None
+    (an unconfigured gap is never 'over target' -- silence beats a made-up bar)."""
+    if warehouse_id is not None and (gap_code, warehouse_id) in targets:
+        return targets[(gap_code, warehouse_id)]
+    return targets.get((gap_code, None))
+
+
+def _minutes(a: datetime, b: datetime) -> int:
+    return int(round((b - a).total_seconds() / 60))
+
+
+def compute_gaps(stamps: dict, targets: dict, warehouse_id: int | None) -> list[dict]:
+    """Gaps for one trip. `stamps` maps checkpoint -> datetime; a gap whose two
+    ends are not both stamped is simply absent rather than guessed at."""
+    out: list[dict] = []
+    for code, from_cp, to_cp, party in GAP_DEFS:
+        start, end = stamps.get(from_cp), stamps.get(to_cp)
+        if start is None or end is None:
+            continue
+        mins = _minutes(start, end)
+        target = resolve_target(targets, code, warehouse_id)
+        out.append({
+            "gap_code": code,
+            "label": GAP_LABELS[code],
+            "from_checkpoint": from_cp,
+            "to_checkpoint": to_cp,
+            "minutes": mins,
+            "target_minutes": target,
+            "over_target": target is not None and mins > target,
+            "over_by_minutes": max(0, mins - target) if target is not None else None,
+            "default_fault_party": party,
+        })
+    return out
+
+
+def compute_time_at_outlet(stamps: dict, targets: dict, warehouse_id: int | None) -> dict | None:
+    code, from_cp, to_cp = HEADLINE_GAP
+    start, end = stamps.get(from_cp), stamps.get(to_cp)
+    if start is None or end is None:
+        return None
+    mins = _minutes(start, end)
+    target = resolve_target(targets, code, warehouse_id)
+    return {
+        "gap_code": code,
+        "label": GAP_LABELS[code],
+        "minutes": mins,
+        "target_minutes": target,
+        "over_target": target is not None and mins > target,
+        "over_by_minutes": max(0, mins - target) if target is not None else None,
+    }
+
+
+async def fetch_checkpoints(pool, manifest_ids: list[int]) -> dict[int, dict]:
+    """checkpoint rows grouped by manifest id."""
+    if not manifest_ids:
+        return {}
+    placeholders = ",".join(["%s"] * len(manifest_ids))
+    async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
+        await cur.execute(
+            "SELECT tc.id, tc.manifest_id, tc.checkpoint, tc.occurred_at, tc.lat, tc.lng, tc.photo_id, "
+            "tc.reason_code, tc.reason_note, tc.original_reason_code, tc.recoded_at, "
+            "rc.label AS reason_label, rc.fault_party "
+            "FROM trip_checkpoint tc LEFT JOIN reason_code rc ON rc.code = tc.reason_code "
+            f"WHERE tc.manifest_id IN ({placeholders}) ORDER BY tc.occurred_at",
+            tuple(manifest_ids),
+        )
+        rows = await cur.fetchall()
+    grouped: dict[int, dict] = {mid: {} for mid in manifest_ids}
+    for r in rows:
+        grouped[r["manifest_id"]][r["checkpoint"]] = r
+    return grouped
+
+
+def serialize_checkpoint(row: dict) -> dict:
+    return {
+        "checkpoint": row["checkpoint"],
+        "label": CHECKPOINT_LABELS.get(row["checkpoint"], row["checkpoint"]),
+        "occurred_at": str(row["occurred_at"]),
+        "lat": float(row["lat"]) if row["lat"] is not None else None,
+        "lng": float(row["lng"]) if row["lng"] is not None else None,
+        "photo_id": row["photo_id"],
+        "reason_code": row["reason_code"],
+        "reason_label": row.get("reason_label"),
+        "fault_party": row.get("fault_party"),
+        "reason_note": row["reason_note"],
+        "original_reason_code": row.get("original_reason_code"),
+        "recoded": row.get("recoded_at") is not None,
+    }
+
+
+def stamps_from(checkpoint_rows: dict) -> dict:
+    return {cp: row["occurred_at"] for cp, row in checkpoint_rows.items()}
+
+
+def owning_party(checkpoint_rows: dict, gaps: list[dict]) -> str | None:
+    """Which party owns the biggest breach on this trip -- what the register shows
+    in its Owner column. A trip with no breach has no owner, deliberately: that is
+    the difference between 'nothing to claim' and 'nobody logged it'."""
+    worst_party, worst_over = None, 0
+    for gap in gaps:
+        if not gap["over_target"]:
+            continue
+        row = checkpoint_rows.get(gap["to_checkpoint"])
+        party = (row or {}).get("fault_party") or gap["default_fault_party"]
+        if party and gap["over_by_minutes"] > worst_over:
+            worst_party, worst_over = party, gap["over_by_minutes"]
+    return worst_party
+
+
+async def load_settings(pool) -> dict:
+    async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
+        await cur.execute("SELECT setting_key, value FROM app_setting")
+        rows = await cur.fetchall()
+    return {r["setting_key"]: r["value"] for r in rows}
+
+
+def setting_bool(settings: dict, key: str, default: bool = False) -> bool:
+    return str(settings.get(key, str(default))).strip().lower() in ("1", "true", "yes", "on")
+
+
+def setting_list(settings: dict, key: str) -> list[str]:
+    raw = settings.get(key, "")
+    return [p.strip() for p in raw.split(",") if p.strip()]

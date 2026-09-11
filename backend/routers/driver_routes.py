@@ -222,6 +222,17 @@ async def start_manifest(
         )
         manifest_id = cur.lastrowid
 
+    # Also record it as the trip's first checkpoint. The manifests columns above
+    # are still written and still read by everything that already used them --
+    # this is the same moment expressed in the checkpoint spine, so the new
+    # timeline and the old fields never disagree.
+    async with pool.acquire() as conn, conn.cursor() as cur:
+        await cur.execute(
+            "INSERT INTO trip_checkpoint (manifest_id, checkpoint, occurred_at, lat, lng, photo_id, created_by) "
+            "VALUES (%s, 'arrived', %s, %s, %s, %s, %s)",
+            (manifest_id, occurred_dt, lat, lng, photo_id, driver["id"]),
+        )
+
     async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
         await cur.execute(f"SELECT {_MANIFEST_COLUMNS} FROM manifests WHERE id = %s", (manifest_id,))
         manifest = await cur.fetchone()
