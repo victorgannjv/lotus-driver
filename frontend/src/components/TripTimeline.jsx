@@ -23,7 +23,20 @@ function gapFor(state, checkpoint) {
   return (state.gaps || []).find((g) => g.to_checkpoint === checkpoint) || null;
 }
 
-export default function TripTimeline({ manifestId, settings, onChanged }) {
+// Shown before the first trip of the day exists, so the driver sees the shape of
+// the run from the first screen rather than a bare button. Tapping the first
+// step starts the trip for real.
+const EMPTY_STATE = {
+  trip: null,
+  checkpoints: [],
+  gaps: [],
+  jobs: [],
+  jobs_done: 0,
+  time_at_outlet: null,
+  next_checkpoint: "arrived",
+};
+
+export default function TripTimeline({ manifestId, settings, onChanged, onStart, starting }) {
   const { t } = useLanguage();
   const [state, setState] = useState(null);
   const [error, setError] = useState(null);
@@ -34,6 +47,10 @@ export default function TripTimeline({ manifestId, settings, onChanged }) {
   const [reasons, setReasons] = useState([]);
 
   const load = useCallback(() => {
+    if (!manifestId) {
+      setState(EMPTY_STATE);
+      return;
+    }
     api
       .get(`/trips/${manifestId}`)
       .then(setState)
@@ -56,6 +73,13 @@ export default function TripTimeline({ manifestId, settings, onChanged }) {
   }
 
   async function stampCheckpoint(checkpoint, photo) {
+    // No trip yet: "Arrived at Lotus" is what creates one, so hand the photo to
+    // the caller's start flow rather than posting a checkpoint into nothing.
+    if (!manifestId) {
+      setPendingPhoto(null);
+      if (onStart) onStart(photo);
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -184,10 +208,10 @@ export default function TripTimeline({ manifestId, settings, onChanged }) {
           <button
             type="button"
             onClick={action.run}
-            disabled={busy}
+            disabled={busy || starting}
             className="block w-full rounded-2xl bg-brand-red px-6 py-5 text-center text-base font-semibold text-white shadow-sm hover:bg-brand-red-dark disabled:opacity-50"
           >
-            {action.label}
+            {starting ? t("home.oneSec") : action.label}
           </button>
           <p className="mt-2 text-center text-xs text-slate-400">{t("trip.ctaHint")}</p>
         </>

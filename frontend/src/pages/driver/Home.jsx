@@ -2,8 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../../api";
 import { useDriverAuth } from "../../auth/DriverAuthContext";
-import ArrivalPhotoModal from "../../components/ArrivalPhotoModal";
 import AppHeader from "../../components/AppHeader";
+import Icon from "../../components/Icon";
 import LanguageSwitcher from "../../components/LanguageSwitcher";
 import MyDay from "../../components/MyDay";
 import TripTimeline from "../../components/TripTimeline";
@@ -16,52 +16,53 @@ function todayIso() {
 
 // Two surfaces, one screen: the trip in hand, and the day behind it.
 //
-// The trip view is deliberately single-action -- whatever comes next is the only
-// button on it -- because this gets used one-handed in a loading bay. The day
-// view is where a driver looks back, and what they open if anyone disputes how
-// long a run took.
+// The trip view shows the whole run from the first screen -- all six
+// checkpoints, with the next one as the only button -- rather than hiding the
+// shape of the work behind a bare start button. A driver makes two or three
+// runs a day, so today's trips sit as tabs above it.
 export default function Home() {
   const { driver, logout } = useDriverAuth();
   const { t } = useLanguage();
   const [tab, setTab] = useState("trip");
-  const [trip, setTrip] = useState(undefined); // undefined = loading, null = none open
+  const [today, setToday] = useState(null); // today's trips, oldest first
+  const [selected, setSelected] = useState(null); // manifest id, or null = not started
   const [settings, setSettings] = useState(null);
   const [error, setError] = useState(null);
   const [starting, setStarting] = useState(false);
-  const [showArrivalPhoto, setShowArrivalPhoto] = useState(false);
-  const [arrivalAttempt, setArrivalAttempt] = useState(0);
   const [refreshKey, setRefreshKey] = useState(0);
 
-  const loadTrip = useCallback(() => {
-    api
-      .get("/my-open-trip")
-      .then((d) => setTrip(d.trip === null ? null : d))
-      .catch((err) => {
-        setTrip(null);
-        setError(err.detail || t("home.errorLoading"));
-      });
+  const loadToday = useCallback(
+    (selectLast = true) => {
+      const d = todayIso();
+      api
+        .get(`/my-days?date_from=${d}&date_to=${d}`)
+        .then((res) => {
+          const trips = res.days[0]?.trips || [];
+          setToday(trips);
+          if (selectLast) setSelected(trips.length ? trips[trips.length - 1].id : null);
+        })
+        .catch((err) => {
+          setToday([]);
+          setError(err.detail || t("home.errorLoading"));
+        });
+    },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    []
+  );
 
   useEffect(() => {
-    loadTrip();
+    loadToday();
     api
       .get("/driver/app-settings")
       .then(setSettings)
       .catch(() => setSettings(null));
-  }, [loadTrip]);
+  }, [loadToday]);
 
-  // "Arrived at Lotus" always starts a brand-new trip -- a driver makes more than
-  // one warehouse run a day, and every order scanned afterwards groups into
-  // whichever trip was started most recently.
-  function handleArrivedClick() {
-    setError(null);
-    setArrivalAttempt((n) => n + 1); // remounts the modal with a clean photo
-    setShowArrivalPhoto(true);
-  }
-
-  async function handleArrivalConfirm(photo) {
+  // "Arrived at Lotus" always creates a NEW trip -- a driver makes more than one
+  // run a day, and every order scanned afterwards groups into the newest one.
+  async function startTrip(photo) {
     setStarting(true);
+    setError(null);
     try {
       const formData = new FormData();
       try {
@@ -74,15 +75,13 @@ export default function Home() {
       }
       formData.append("occurred_at", new Date().toISOString());
       formData.append("photo", photo);
-      await api.postForm("/manifests/start", formData);
-      setShowArrivalPhoto(false);
-      setStarting(false);
-      setTab("trip");
-      loadTrip();
+      const res = await api.postForm("/manifests/start", formData);
+      setSelected(res.manifest.id);
+      loadToday(false);
       setRefreshKey((n) => n + 1);
     } catch (err) {
       setError(err.detail || t("home.errorStarting"));
-      setShowArrivalPhoto(false);
+    } finally {
       setStarting(false);
     }
   }
@@ -92,7 +91,10 @@ export default function Home() {
       tab === key ? "bg-white text-brand-black shadow-sm" : "text-slate-500"
     }`;
 
-  const tripFinished = trip && trip.trip && trip.next_checkpoint === null;
+  const tripTabClass = (active) =>
+    `flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold ${
+      active ? "border-brand-black bg-brand-black text-white" : "border-slate-300 bg-white text-slate-600"
+    }`;
 
   return (
     <main className="min-h-screen bg-slate-50">
@@ -124,7 +126,38 @@ export default function Home() {
 
         {tab === "trip" && (
           <>
-            <p className="mb-3 text-sm text-slate-500">{todayIso()}</p>
+            {/* Today's runs. A driver does two or three, and needs to be able to
+                look back at the earlier one without leaving the screen. */}
+            {today && today.length > 0 && (
+              <div className="mb-4 flex flex-wrap gap-2">
+                {today.map((trip, i) => {
+                  const finished = !!trip.ended_at;
+                  return (
+                    <button
+                      key={trip.id}
+                      type="button"
+                      onClick={() => setSelected(trip.id)}
+                      aria-pressed={selected === trip.id}
+                      className={tripTabClass(selected === trip.id)}
+                    >
+                      {t("myDay.trip", { n: i + 1 })}
+                      {finished && <Icon name="check" className="h-3 w-3" />}
+                    </button>
+                  );
+                })}
+                <button
+                  type="button"
+                  onClick={() => setSelected(null)}
+                  aria-pressed={selected === null}
+                  className={`rounded-full border border-dashed px-3 py-1.5 text-xs font-semibold ${
+                    selected === null ? "border-brand-black text-brand-black" : "border-slate-300 text-slate-400"
+                  }`}
+                >
+                  {t("home.addTrip")}
+                </button>
+              </div>
+            )}
+
             {!driver?.warehouse_name && (
               <p className="mb-3 text-sm text-slate-500">
                 {t("home.outlet")}{" "}
@@ -135,57 +168,35 @@ export default function Home() {
             )}
             {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
 
-            {trip === undefined && <p className="text-sm text-slate-500">{t("common.loading")}</p>}
-
-            {trip === null && (
-              <>
-                <button
-                  onClick={handleArrivedClick}
-                  disabled={starting}
-                  className="block w-full rounded-2xl bg-brand-red px-6 py-5 text-center text-base font-semibold text-white shadow-sm hover:bg-brand-red-dark disabled:opacity-50"
-                >
-                  {starting ? t("home.oneSec") : t("checkpoint.arrived")}
-                </button>
-                <p className="mt-2 text-center text-xs text-slate-400">{t("trip.ctaHint")}</p>
-                <Link
-                  to="/driver/scans/complete"
-                  className="mt-3 block rounded-2xl bg-white px-6 py-4 text-center text-sm font-medium text-brand-black shadow-sm ring-1 ring-slate-200"
-                >
-                  {t("home.scanToComplete")}
-                </Link>
-              </>
-            )}
-
-            {trip && trip.trip && (
+            {today === null ? (
+              <p className="text-sm text-slate-500">{t("common.loading")}</p>
+            ) : (
               <TripTimeline
-                manifestId={trip.trip.id}
+                key={selected || "new"}
+                manifestId={selected}
                 settings={settings}
-                onChanged={() => setRefreshKey((n) => n + 1)}
+                starting={starting}
+                onStart={startTrip}
+                onChanged={() => {
+                  loadToday(false);
+                  setRefreshKey((n) => n + 1);
+                }}
               />
             )}
 
-            {tripFinished && (
-              <button
-                onClick={handleArrivedClick}
-                disabled={starting}
-                className="mt-4 block w-full rounded-2xl bg-brand-red px-6 py-4 text-center text-base font-semibold text-white shadow-sm hover:bg-brand-red-dark disabled:opacity-50"
-              >
-                {starting ? t("home.oneSec") : t("home.startNextTrip")}
-              </button>
-            )}
+            <Link
+              to="/driver/scans/complete"
+              className="mt-4 flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-medium text-brand-black shadow-sm ring-1 ring-slate-200"
+            >
+              <Icon name="camera" className="h-4 w-4" />
+              {t("home.scanToComplete")}
+            </Link>
           </>
         )}
 
         {tab === "day" && <MyDay refreshKey={refreshKey} />}
       </div>
 
-      <ArrivalPhotoModal
-        key={arrivalAttempt}
-        open={showArrivalPhoto}
-        busy={starting}
-        onSubmit={handleArrivalConfirm}
-        onCancel={() => setShowArrivalPhoto(false)}
-      />
     </main>
   );
 }
