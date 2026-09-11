@@ -42,9 +42,6 @@ const ConfigReasons = lazy(() =>
 const ConfigTargets = lazy(() =>
   import("./pages/admin/Configuration").then((m) => ({ default: m.Targets }))
 );
-const ConfigRoster = lazy(() =>
-  import("./pages/admin/Configuration").then((m) => ({ default: m.Roster }))
-);
 const ConfigDriverApp = lazy(() =>
   import("./pages/admin/Configuration").then((m) => ({ default: m.DriverApp }))
 );
@@ -132,7 +129,6 @@ export default function App() {
               <Route path="windows" element={<ConfigWindows />} />
               <Route path="reasons" element={<ConfigReasons />} />
               <Route path="targets" element={<ConfigTargets />} />
-              <Route path="roster" element={<ConfigRoster />} />
               <Route path="driver-app" element={<ConfigDriverApp />} />
               <Route path="activity" element={<ConfigActivity />} />
             </Route>

@@ -238,22 +238,14 @@ export default function Dashboard() {
             <h2 className="text-base font-semibold text-brand-black">Manpower</h2>
             <p className="mt-0.5 text-xs text-slate-500">
               Before blaming Lotus, rule us out — if we ran short-handed our own trips stretch, and Lotus will say so
-              first. On duty is counted from trips actually run; rostered comes from Configuration → Shift roster.
+              first. Drivers on duty is counted from the trips actually run.
             </p>
-            {!data.roster_configured && (
-              <p className="mt-3 flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                <Icon name="alert" className="mt-0.5 h-3.5 w-3.5" />
-                No shift roster set up yet, so “rostered” is blank and short-handed days can’t be detected. Add one
-                under Configuration → Shift roster.
-              </p>
-            )}
             <div className="mt-3 overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-xs uppercase tracking-wide text-slate-400">
                     <th className="py-2 pr-4">Day</th>
                     <th className="py-2 pr-4">On duty</th>
-                    <th className="py-2 pr-4">Rostered</th>
                     <th className="py-2 pr-4">Trips</th>
                     <th className="py-2 pr-4">Trips / driver</th>
                     <th className="py-2 pr-4">Orders</th>
@@ -265,10 +257,7 @@ export default function Dashboard() {
                   {data.manpower.map((d) => (
                     <tr key={d.work_date} className="border-t border-slate-100">
                       <td className="py-2 pr-4 font-medium">{d.work_date}</td>
-                      <td className={`py-2 pr-4 font-mono ${d.short_handed ? "font-semibold text-brand-red" : ""}`}>
-                        {d.on_duty}
-                      </td>
-                      <td className="py-2 pr-4 font-mono text-slate-500">{d.rostered ?? "—"}</td>
+                      <td className="py-2 pr-4 font-mono">{d.on_duty}</td>
                       <td className="py-2 pr-4 font-mono">{d.trips}</td>
                       <td className="py-2 pr-4 font-mono">{d.trips_per_driver}</td>
                       <td className="py-2 pr-4 font-mono">{d.orders}</td>
@@ -279,14 +268,13 @@ export default function Dashboard() {
                     </tr>
                   ))}
                   {data.manpower.length === 0 && (
-                    <tr><td colSpan="8" className="py-3 text-sm text-slate-400">No trips in this period.</td></tr>
+                    <tr><td colSpan="7" className="py-3 text-sm text-slate-400">No trips in this period.</td></tr>
                   )}
                 </tbody>
               </table>
             </div>
             <Legend items={[
-              { label: "Red figure", note: "short-handed, or over the 55m target", dot: "bg-brand-red" },
-              { label: "Short-handed time", note: "counts as Ninja Van-owned", dot: PARTY.njv.dot },
+              { label: "Red figure", note: "over the 55m target", dot: "bg-brand-red" },
             ]} />
           </section>
 

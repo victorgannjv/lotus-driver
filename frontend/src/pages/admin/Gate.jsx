@@ -21,7 +21,6 @@ const CONFIG_ITEMS = [
   { to: "/admin/config/windows", label: "Delivery windows" },
   { to: "/admin/config/targets", label: "Time allowances" },
   { to: "/admin/config/reasons", label: "Delay reasons" },
-  { to: "/admin/config/roster", label: "Shift roster" },
   { to: "/admin/config/driver-app", label: "Driver app" },
   { to: "/admin/config/activity", label: "Activity log" },
 ];

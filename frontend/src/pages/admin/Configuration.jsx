@@ -20,7 +20,6 @@ const TABS = [
   ["/admin/config/windows", "Delivery windows"],
   ["/admin/config/targets", "Time allowances"],
   ["/admin/config/reasons", "Delay reasons"],
-  ["/admin/config/roster", "Shift roster"],
   ["/admin/config/driver-app", "Driver app"],
   ["/admin/config/activity", "Activity log"],
 ];
@@ -662,6 +661,12 @@ export function AdminsConfig() {
 
 /* --------------------------------------------------------------------- roster */
 
+// PARKED -- not routed or linked anywhere as of Sep 2026. The roster only makes
+// sense alongside the manpower story on the dashboard, and on its own it read as
+// an unexplained chore, so it is out of the way until that lands. The table,
+// endpoints and this component all stay, so bringing it back is a route and a
+// tab, not a rewrite.
+//
 // A roster is built a week at a time: pick the week, tick who is on.
 //
 // The previous version asked for one driver-day per submit -- fifty-six
