@@ -46,9 +46,13 @@ async def audit(pool, actor, entity: str, entity_id, action: str, summary: str,
 async def list_activity(
     request: Request,
     entity: str | None = None,
-    limit: int = Query(100, ge=1, le=500),
+    limit: int = Query(25, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     admin=Depends(get_current_admin),
 ):
+    """One page of the log, newest first, plus the total so the caller can show
+    'x-y of n' rather than an endless scroll. The log only ever grows, so a page
+    that is never paged is a page that eventually stops being read."""
     pool = get_pool(request)
     where, params = [], []
     if entity:
@@ -56,13 +60,20 @@ async def list_activity(
         params.append(entity)
     clause = f"WHERE {' AND '.join(where)}" if where else ""
     async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
+        await cur.execute(f"SELECT COUNT(*) AS n FROM config_audit {clause}", tuple(params))
+        total = (await cur.fetchone())["n"]
         await cur.execute(
             "SELECT id, entity, entity_id, action, summary, actor_email, created_at "
-            f"FROM config_audit {clause} ORDER BY id DESC LIMIT %s",
-            tuple(params + [limit]),
+            f"FROM config_audit {clause} ORDER BY id DESC LIMIT %s OFFSET %s",
+            tuple(params + [limit, offset]),
         )
         rows = await cur.fetchall()
-    return {"activity": [{**r, "created_at": str(r["created_at"])} for r in rows]}
+    return {
+        "activity": [{**r, "created_at": str(r["created_at"])} for r in rows],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }
 
 
 class ReasonCodeIn(BaseModel):

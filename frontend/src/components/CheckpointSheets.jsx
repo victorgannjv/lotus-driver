@@ -155,9 +155,14 @@ export function ReasonSheet({ open, gap, reasons, busy, onSubmit }) {
     >
       {grouped.map((g) => (
         <div key={g.party} className="mb-4">
-          <p className={`mb-2 text-xs font-bold uppercase tracking-wider ${PARTY_STYLE[g.party]}`}>
+          <p className={`text-xs font-bold uppercase tracking-wider ${PARTY_STYLE[g.party]}`}>
             {t(`reason.party.${g.party}`)}
           </p>
+          {/* Says what the group MEANS, not who is at fault. A driver who reads
+              "Ninja Van caused" over his own options picks the vaguest reason he
+              can find, and a reason nobody picks honestly is worth nothing in a
+              dispute. */}
+          <p className="mb-2 mt-0.5 text-xs text-slate-500">{t(`reason.partyNote.${g.party}`)}</p>
           {g.items.map((r) => (
             <button
               key={r.code}

@@ -129,7 +129,12 @@ export const translations = {
     reason: {
       title: "Why the delay?",
       subtitle: "{gap} took {over} against a target of {target}. Pick the closest reason.",
-      party: { lotus: "Lotus caused", njv: "Ninja Van caused", external: "Outside both" },
+      party: { lotus: "Lotus side", njv: "Our side", external: "Outside both sides" },
+      partyNote: {
+        lotus: "Something at the outlet held you up.",
+        njv: "Something on our side held you up.",
+        external: "Neither side could have prevented it.",
+      },
     },
     myDay: {
       today: "Today · {date}",
@@ -366,7 +371,12 @@ export const translations = {
     reason: {
       title: "Kenapa lewat?",
       subtitle: "{gap} mengambil {over} berbanding sasaran {target}. Pilih sebab yang paling hampir.",
-      party: { lotus: "Punca Lotus", njv: "Punca Ninja Van", external: "Di luar kawalan" },
+      party: { lotus: "Pihak Lotus", njv: "Pihak kami", external: "Di luar kawalan" },
+      partyNote: {
+        lotus: "Sesuatu di outlet melambatkan anda.",
+        njv: "Sesuatu di pihak kami melambatkan anda.",
+        external: "Kedua-dua pihak tidak dapat mengelakkannya.",
+      },
     },
     myDay: {
       today: "Hari ini · {date}",

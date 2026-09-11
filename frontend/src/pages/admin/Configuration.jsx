@@ -68,6 +68,23 @@ function Panel({ title, blurb, action, children, footer }) {
   );
 }
 
+// A labelled block inside a panel. A tab with nine unrelated switches on it is
+// a list to be scanned; the same nine under three headings is three decisions.
+function Section({ title, blurb, action, children }) {
+  return (
+    <section className="border-b border-slate-200 pb-2 last:border-0">
+      <header className="flex flex-wrap items-end justify-between gap-3 pb-1 pt-5 first:pt-1">
+        <div>
+          <h3 className="text-sm font-semibold text-brand-black">{title}</h3>
+          {blurb && <p className="mt-0.5 text-xs text-slate-500">{blurb}</p>}
+        </div>
+        {action}
+      </header>
+      {children}
+    </section>
+  );
+}
+
 function Row({ children }) {
   return <div className="flex flex-wrap items-center gap-4 border-b border-slate-100 py-4 last:border-0">{children}</div>;
 }
@@ -105,12 +122,6 @@ function Toggle({ on, onChange, disabled, label }) {
     </button>
   );
 }
-
-const PARTY = {
-  lotus: { label: "Lotus", chip: "bg-amber-100 text-amber-800" },
-  njv: { label: "Ninja Van", chip: "bg-blue-100 text-blue-800" },
-  external: { label: "Outside both", chip: "bg-emerald-100 text-emerald-800" },
-};
 
 function useList(path, key) {
   const [rows, setRows] = useState(null);
@@ -159,7 +170,7 @@ function ReasonFields({ draft, set }) {
         <select className={input} value={draft.fault_party} onChange={(e) => set({ ...draft, fault_party: e.target.value })}>
           <option value="lotus">Lotus</option>
           <option value="njv">Ninja Van</option>
-          <option value="external">Outside both</option>
+          <option value="external">Outside anyone's control</option>
         </select>
       </label>
       <label className="flex flex-col gap-1.5">
@@ -172,76 +183,107 @@ function ReasonFields({ draft, set }) {
   );
 }
 
+// Split by who pays for the delay, because that is the only distinction that
+// changes what a reason is worth -- and with two dozen of them, one flat list
+// is a wall. Each section says what marking a reason that way costs or earns.
+const PARTY_SECTIONS = [
+  { party: "lotus", title: "Lotus caused the delay",
+    blurb: "Time we can put in a claim. This is the list a dispute is built from." },
+  { party: "njv", title: "Our side (Ninja Van)",
+    blurb: "Time we own and concede up front. Conceding it honestly is what makes the Lotus column credible." },
+  { party: "external", title: "Outside anyone's control",
+    blurb: "Left out of both columns — neither claimed nor conceded." },
+];
+
 export function ReasonCodes() {
   const { rows, error, busy, run } = useList("/admin/config/reason-codes", "reason_codes");
   const [edit, setEdit] = useState({});
   const [adding, setAdding] = useState(null);
 
+  const save = async (r, d) => {
+    if (await run(() => api.put(`/admin/config/reason-codes/${r.code}`, d))) {
+      setEdit((v) => ({ ...v, [r.code]: undefined }));
+    }
+  };
 
   return (
     <Panel
       title="Delay reasons"
-      blurb="What a driver picks from when a step runs late."
-      action={!adding && (
-        <button type="button" className={btnPrimary}
-                onClick={() => setAdding({ label: "", fault_party: "lotus", applies_to_gap: "any" })}>
-          Add a reason
-        </button>
-      )}
-      footer="Who you mark responsible decides whether the lost time goes into a claim against Lotus or comes out of it."
+      blurb="What a driver picks from when a step runs late. Add a reason to the section that will pay for it."
+      footer="Who you mark responsible decides whether the lost time goes into a claim against Lotus or comes out of it. Retired reasons stop being offered but stay readable on the trips that already used them."
     >
       <Err>{error}</Err>
 
-      {adding && (
-        <div className="mb-5 flex flex-wrap items-end gap-4 rounded-xl bg-slate-50 p-4">
-          <ReasonFields draft={adding} set={setAdding} />
-          <button type="button" className={btnPrimary} disabled={busy || !adding.label.trim()}
-                  onClick={async () => {
-                    const code = adding.label.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "_").slice(0, 40);
-                    if (await run(() => api.post("/admin/config/reason-codes", { ...adding, code }))) setAdding(null);
-                  }}>Add</button>
-          <button type="button" className={btn} onClick={() => setAdding(null)}>Cancel</button>
-        </div>
-      )}
+      {!rows ? <p className="text-sm text-slate-500">Loading…</p> : PARTY_SECTIONS.map((sec) => {
+        // Active first inside a section: a retired reason is history, not a choice.
+        const items = rows
+          .filter((r) => r.fault_party === sec.party)
+          .sort((a, b) => (b.is_active ? 1 : 0) - (a.is_active ? 1 : 0) || a.sort_order - b.sort_order);
+        const live = items.filter((r) => r.is_active).length;
 
-      {!rows ? <p className="text-sm text-slate-500">Loading…</p> : rows.map((r) => {
-        const d = edit[r.code];
-        return d ? (
-          <div key={r.code} className="mb-3 flex flex-wrap items-end gap-4 rounded-xl bg-slate-50 p-4">
-            <ReasonFields draft={d} set={(next) => setEdit((v) => ({ ...v, [r.code]: next }))} />
-            <button type="button" className={btnPrimary} disabled={busy}
-                    onClick={async () => {
-                      if (await run(() => api.put(`/admin/config/reason-codes/${r.code}`, d))) {
-                        setEdit((v) => ({ ...v, [r.code]: undefined }));
-                      }
-                    }}>Save</button>
-            <button type="button" className={btn} onClick={() => setEdit((v) => ({ ...v, [r.code]: undefined }))}>Cancel</button>
-          </div>
-        ) : (
-          <GridRow key={r.code} cols="md:grid-cols-[minmax(0,1fr)_7rem_10rem_auto]">
-            <span className={`text-sm ${r.is_active ? "text-brand-black" : "text-slate-400 line-through"}`}>
-              {r.label}
-            </span>
-            <span>
-              <span className={`inline-block rounded-full px-2.5 py-1 text-xs font-medium ${PARTY[r.fault_party].chip}`}>
-                {PARTY[r.fault_party].label}
-              </span>
-            </span>
-            <span className="text-xs text-slate-400">{gapName(r.applies_to_gap.split(",")[0])}</span>
-            <span className={actionsCell}>
-            <button type="button" className={btn}
-                    onClick={() => setEdit((v) => ({ ...v, [r.code]: {
-                      label: r.label, fault_party: r.fault_party, applies_to_gap: r.applies_to_gap } }))}>
-              Edit
-            </button>
-            <button type="button" className={r.is_active ? btnDanger : btn} disabled={busy}
-                    onClick={() => run(() => r.is_active
-                      ? api.del(`/admin/config/reason-codes/${r.code}`)
-                      : api.put(`/admin/config/reason-codes/${r.code}`, { is_active: true }))}>
-              {r.is_active ? "Stop offering" : "Offer again"}
-            </button>
-            </span>
-          </GridRow>
+        return (
+          <Section
+            key={sec.party}
+            title={sec.title}
+            blurb={sec.blurb}
+            action={
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-slate-400">{live} offered</span>
+                <button type="button" className={btn}
+                        onClick={() => setAdding({ label: "", fault_party: sec.party, applies_to_gap: "any" })}>
+                  Add a reason
+                </button>
+              </div>
+            }
+          >
+            {adding && adding.fault_party === sec.party && (
+              <div className="mb-3 mt-3 flex flex-wrap items-end gap-4 rounded-xl bg-slate-50 p-4">
+                <ReasonFields draft={adding} set={setAdding} />
+                <button type="button" className={btnPrimary} disabled={busy || !adding.label.trim()}
+                        onClick={async () => {
+                          const code = adding.label.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "_").slice(0, 40);
+                          if (await run(() => api.post("/admin/config/reason-codes", { ...adding, code }))) setAdding(null);
+                        }}>Add</button>
+                <button type="button" className={btn} onClick={() => setAdding(null)}>Cancel</button>
+              </div>
+            )}
+
+            {items.length === 0 && !adding && (
+              <p className="py-3 text-sm text-slate-400">Nothing here yet.</p>
+            )}
+
+            {items.map((r) => {
+              const d = edit[r.code];
+              return d ? (
+                <div key={r.code} className="mb-3 mt-3 flex flex-wrap items-end gap-4 rounded-xl bg-slate-50 p-4">
+                  <ReasonFields draft={d} set={(next) => setEdit((v) => ({ ...v, [r.code]: next }))} />
+                  <button type="button" className={btnPrimary} disabled={busy} onClick={() => save(r, d)}>Save</button>
+                  <button type="button" className={btn}
+                          onClick={() => setEdit((v) => ({ ...v, [r.code]: undefined }))}>Cancel</button>
+                </div>
+              ) : (
+                <GridRow key={r.code} cols="md:grid-cols-[minmax(0,1fr)_10rem_auto]">
+                  <span className={`text-sm ${r.is_active ? "text-brand-black" : "text-slate-400 line-through"}`}>
+                    {r.label}
+                  </span>
+                  <span className="text-xs text-slate-400">{gapName(r.applies_to_gap.split(",")[0])}</span>
+                  <span className={actionsCell}>
+                    <button type="button" className={btn}
+                            onClick={() => setEdit((v) => ({ ...v, [r.code]: {
+                              label: r.label, fault_party: r.fault_party, applies_to_gap: r.applies_to_gap } }))}>
+                      Edit
+                    </button>
+                    <button type="button" className={r.is_active ? btnDanger : btn} disabled={busy}
+                            onClick={() => run(() => r.is_active
+                              ? api.del(`/admin/config/reason-codes/${r.code}`)
+                              : api.put(`/admin/config/reason-codes/${r.code}`, { is_active: true }))}>
+                      {r.is_active ? "Stop offering" : "Offer again"}
+                    </button>
+                  </span>
+                </GridRow>
+              );
+            })}
+          </Section>
         );
       })}
     </Panel>
@@ -456,101 +498,141 @@ const SETTING_UI = {
   default_language: { label: "Language the app opens in", help: "Drivers can still switch it themselves.", type: "choice",
     options: [["en", "English"], ["ms", "Bahasa Malaysia"]] },
 };
-const ORDER = Object.keys(SETTING_UI);
+
+// Grouped by the question each block answers, so you can find the one setting
+// you came to change instead of reading all nine. A key not listed here simply
+// does not appear -- and a key the backend does not return is skipped, so this
+// list can name a setting before the migration that creates it lands.
+const SETTING_GROUPS = [
+  {
+    title: "Counting the jobs",
+    blurb: "What the app accepts when a driver says how many drops a trip carries.",
+    keys: ["job_count_quick_picks", "job_count_manual_max", "allow_add_job_mid_trip"],
+  },
+  {
+    title: "Photo evidence",
+    blurb: "What a photo has to carry for it to hold up when Lotus disputes a time.",
+    keys: ["photo_required_checkpoints", "photo_burn_timestamp", "photo_timestamp_source", "photo_capture_gps"],
+  },
+  {
+    title: "Prompts and language",
+    blurb: "What the app asks the driver, and the words it asks in.",
+    keys: ["reason_prompt_on_breach", "default_language"],
+  },
+];
+
+// Module scope on purpose -- see the note on ReasonFields. Declared inside
+// DriverApp this would remount the number box on every keystroke.
+function SettingRow({ s, ui, v, dirty, busy, set, commit }) {
+  const k = s.setting_key;
+  const isOn = (x) => String(x).toLowerCase() === "true";
+
+  return (
+    <Row>
+      <span className="min-w-[18rem] flex-1">
+        <span className="block text-sm font-medium text-brand-black">{ui.label}</span>
+        <span className="mt-0.5 block text-xs text-slate-500">{ui.help}</span>
+      </span>
+
+      {ui.type === "bool" && (
+        <Toggle on={isOn(v)} disabled={busy} label={ui.label}
+                onChange={(next) => { set(k, String(next)); commit(k, next); }} />
+      )}
+
+      {ui.type === "choice" && (
+        <select className={input} value={v} disabled={busy}
+                onChange={(e) => { set(k, e.target.value); commit(k, e.target.value); }}>
+          {ui.options.map(([val, label]) => <option key={val} value={val}>{label}</option>)}
+        </select>
+      )}
+
+      {ui.type === "number" && (
+        <>
+          <input type="number" min={ui.min} max={ui.max} className={`${input} w-24`} value={v}
+                 onChange={(e) => set(k, e.target.value)} />
+          <button type="button" className={btnPrimary} disabled={busy || !dirty}
+                  onClick={() => commit(k, v)}>Save</button>
+        </>
+      )}
+
+      {ui.type === "numbers" && (
+        <>
+          <span className="flex flex-wrap items-center gap-2">
+            {String(v).split(",").filter(Boolean).map((n, i, arr) => (
+              <span key={i} className="flex items-center gap-1.5 rounded-lg bg-slate-100 px-2.5 py-1.5 text-sm">
+                {n.trim()}
+                <button type="button" aria-label={`Remove ${n}`} className="text-slate-400 hover:text-rose-600"
+                        onClick={() => set(k, arr.filter((_, j) => j !== i).join(","))}>×</button>
+              </span>
+            ))}
+            <button type="button" className={btn}
+                    onClick={() => {
+                      const n = parseInt(window.prompt("Add a number"), 10);
+                      if (!Number.isNaN(n) && n > 0) {
+                        set(k, [...String(v).split(",").filter(Boolean), String(n)].join(","));
+                      }
+                    }}>Add</button>
+          </span>
+          <button type="button" className={btnPrimary} disabled={busy || !dirty}
+                  onClick={() => commit(k, v)}>Save</button>
+        </>
+      )}
+
+      {ui.type === "checkpoints" && (
+        <>
+          <span className="flex flex-wrap gap-2">
+            {CHECKPOINTS.map(([code, label]) => {
+              const list = String(v).split(",").map((x) => x.trim()).filter(Boolean);
+              const on = list.includes(code);
+              return (
+                <label key={code}
+                       className={`flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm ${on ? "bg-emerald-50 text-emerald-900" : "bg-slate-100 text-slate-500"}`}>
+                  <input type="checkbox" checked={on}
+                         onChange={() => set(k, (on ? list.filter((x) => x !== code) : [...list, code]).join(","))} />
+                  {label}
+                </label>
+              );
+            })}
+          </span>
+          <button type="button" className={btnPrimary} disabled={busy || !dirty}
+                  onClick={() => commit(k, v)}>Save</button>
+        </>
+      )}
+    </Row>
+  );
+}
 
 export function DriverApp() {
   const { rows, error, busy, run } = useList("/admin/config/settings", "settings");
   const [draft, setDraft] = useState({});
 
-  const value = (s) => (draft[s.setting_key] !== undefined ? draft[s.setting_key] : s.value);
   const set = (k, v) => setDraft((d) => ({ ...d, [k]: v }));
   const commit = async (k, v) => {
     const ok = await run(() => api.put(`/admin/config/settings/${k}`, { value: String(v) }));
     if (ok) setDraft((d) => ({ ...d, [k]: undefined }));
   };
-  const isOn = (v) => String(v).toLowerCase() === "true";
-  const sorted = rows ? [...rows].sort((a, b) => ORDER.indexOf(a.setting_key) - ORDER.indexOf(b.setting_key)) : null;
+
+  const byKey = {};
+  (rows || []).forEach((s) => { byKey[s.setting_key] = s; });
 
   return (
     <Panel title="Driver app" blurb="What the app asks drivers for." footer="Changes reach drivers on their next screen — nobody needs to update anything.">
       <Err>{error}</Err>
-      {!sorted ? <p className="text-sm text-slate-500">Loading…</p> : sorted.map((s) => {
-        const ui = SETTING_UI[s.setting_key];
-        if (!ui) return null;
-        const v = value(s);
-        const dirty = draft[s.setting_key] !== undefined && String(draft[s.setting_key]) !== s.value;
+      {!rows ? <p className="text-sm text-slate-500">Loading…</p> : SETTING_GROUPS.map((g) => {
+        const items = g.keys.map((k) => byKey[k]).filter((s) => s && SETTING_UI[s.setting_key]);
+        if (items.length === 0) return null;
         return (
-          <Row key={s.setting_key}>
-            <span className="min-w-[18rem] flex-1">
-              <span className="block text-sm font-medium text-brand-black">{ui.label}</span>
-              <span className="mt-0.5 block text-xs text-slate-500">{ui.help}</span>
-            </span>
-
-            {ui.type === "bool" && (
-              <Toggle on={isOn(v)} disabled={busy} label={ui.label}
-                      onChange={(next) => { set(s.setting_key, String(next)); commit(s.setting_key, next); }} />
-            )}
-
-            {ui.type === "choice" && (
-              <select className={input} value={v} disabled={busy}
-                      onChange={(e) => { set(s.setting_key, e.target.value); commit(s.setting_key, e.target.value); }}>
-                {ui.options.map(([val, label]) => <option key={val} value={val}>{label}</option>)}
-              </select>
-            )}
-
-            {ui.type === "number" && (
-              <>
-                <input type="number" min={ui.min} max={ui.max} className={`${input} w-24`} value={v}
-                       onChange={(e) => set(s.setting_key, e.target.value)} />
-                <button type="button" className={btnPrimary} disabled={busy || !dirty}
-                        onClick={() => commit(s.setting_key, v)}>Save</button>
-              </>
-            )}
-
-            {ui.type === "numbers" && (
-              <>
-                <span className="flex flex-wrap items-center gap-2">
-                  {String(v).split(",").filter(Boolean).map((n, i, arr) => (
-                    <span key={i} className="flex items-center gap-1.5 rounded-lg bg-slate-100 px-2.5 py-1.5 text-sm">
-                      {n.trim()}
-                      <button type="button" aria-label={`Remove ${n}`} className="text-slate-400 hover:text-rose-600"
-                              onClick={() => set(s.setting_key, arr.filter((_, j) => j !== i).join(","))}>×</button>
-                    </span>
-                  ))}
-                  <button type="button" className={btn}
-                          onClick={() => {
-                            const n = parseInt(window.prompt("Add a number"), 10);
-                            if (!Number.isNaN(n) && n > 0) {
-                              set(s.setting_key, [...String(v).split(",").filter(Boolean), String(n)].join(","));
-                            }
-                          }}>Add</button>
-                </span>
-                <button type="button" className={btnPrimary} disabled={busy || !dirty}
-                        onClick={() => commit(s.setting_key, v)}>Save</button>
-              </>
-            )}
-
-            {ui.type === "checkpoints" && (
-              <>
-                <span className="flex flex-wrap gap-2">
-                  {CHECKPOINTS.map(([code, label]) => {
-                    const list = String(v).split(",").map((x) => x.trim()).filter(Boolean);
-                    const on = list.includes(code);
-                    return (
-                      <label key={code}
-                             className={`flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm ${on ? "bg-emerald-50 text-emerald-900" : "bg-slate-100 text-slate-500"}`}>
-                        <input type="checkbox" checked={on}
-                               onChange={() => set(s.setting_key, (on ? list.filter((x) => x !== code) : [...list, code]).join(","))} />
-                        {label}
-                      </label>
-                    );
-                  })}
-                </span>
-                <button type="button" className={btnPrimary} disabled={busy || !dirty}
-                        onClick={() => commit(s.setting_key, v)}>Save</button>
-              </>
-            )}
-          </Row>
+          <Section key={g.title} title={g.title} blurb={g.blurb}>
+            {items.map((s) => {
+              const k = s.setting_key;
+              const v = draft[k] !== undefined ? draft[k] : s.value;
+              return (
+                <SettingRow key={k} s={s} ui={SETTING_UI[k]} v={v} busy={busy}
+                            dirty={draft[k] !== undefined && String(draft[k]) !== s.value}
+                            set={set} commit={commit} />
+              );
+            })}
+          </Section>
         );
       })}
     </Panel>
@@ -898,25 +980,39 @@ const ACTION_CHIP = {
   delete: "bg-rose-100 text-rose-800",
 };
 
+const PAGE_SIZE = 25;
+
 export function ActivityLog() {
   const [entity, setEntity] = useState("");
-  const [rows, setRows] = useState(null);
+  const [page, setPage] = useState(1);
+  const [data, setData] = useState(null);
   const [error, setError] = useState(null);
 
+  // Changing the filter has to reset the page: staying on page 4 of a filter
+  // with two entries shows an empty table and looks like a bug.
+  const pick = (v) => { setEntity(v); setPage(1); };
+
   useEffect(() => {
-    setRows(null);
-    const qs = entity ? `?entity=${entity}` : "";
-    api.get(`/admin/config/activity${qs}`)
-      .then((d) => setRows(d.activity))
+    setData(null);
+    const qs = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String((page - 1) * PAGE_SIZE) });
+    if (entity) qs.set("entity", entity);
+    api.get(`/admin/config/activity?${qs}`)
+      .then(setData)
       .catch((e) => setError(e.detail || "Could not load the activity log."));
-  }, [entity]);
+  }, [entity, page]);
+
+  const rows = data?.activity;
+  const total = data?.total || 0;
+  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const first = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const last = Math.min(page * PAGE_SIZE, total);
 
   return (
     <Panel
       title="Activity log"
       blurb="Every settings change, who made it and when."
       action={
-        <select className={input} value={entity} onChange={(e) => setEntity(e.target.value)}>
+        <select className={input} value={entity} onChange={(e) => pick(e.target.value)}>
           <option value="">Everything</option>
           {Object.entries(ENTITY_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </select>
@@ -924,6 +1020,13 @@ export function ActivityLog() {
       footer="Changing a window or an allowance re-scores past trips, so this is how you answer “why does last month read differently now?” — and how a claim survives Lotus asking whether the bar moved after the fact."
     >
       <Err>{error}</Err>
+
+      {rows && total > 0 && (
+        <p className="pb-2 text-xs text-slate-500">
+          Showing {first}–{last} of {total} change{total === 1 ? "" : "s"}
+        </p>
+      )}
+
       {!rows ? <p className="text-sm text-slate-500">Loading…</p> : rows.length === 0 ? (
         <p className="text-sm text-slate-500">Nothing changed yet.</p>
       ) : rows.map((a) => (
@@ -941,6 +1044,18 @@ export function ActivityLog() {
           <span className="font-mono text-xs text-slate-400">{a.created_at}</span>
         </GridRow>
       ))}
+
+      {pages > 1 && (
+        <div className="flex items-center justify-between gap-3 pt-4">
+          <button type="button" className={btn} disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
+            ← Previous
+          </button>
+          <span className="font-mono text-xs text-slate-500">Page {page} of {pages}</span>
+          <button type="button" className={btn} disabled={page >= pages} onClick={() => setPage((p) => p + 1)}>
+            Next →
+          </button>
+        </div>
+      )}
     </Panel>
   );
 }
