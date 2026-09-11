@@ -338,8 +338,10 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
                 <button
                   type="button"
                   onClick={() => openReason(cp)}
-                  className={`mt-1 flex items-center gap-1 text-xs font-semibold underline ${
-                    over && !done.reason_code ? "text-brand-red" : "text-slate-500"
+                  className={`mt-1 flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-semibold ${
+                    over && !done.reason_code
+                      ? "border-brand-red bg-brand-red text-white"
+                      : "border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
                   }`}
                 >
                   {over && !done.reason_code && <Icon name="alert" className="h-3.5 w-3.5" />}
@@ -351,7 +353,7 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
                 <button
                   type="button"
                   onClick={() => setPendingCount(true)}
-                  className="mt-1 text-xs font-semibold text-slate-500 underline"
+                  className="mt-1 rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50"
                 >
                   {t("trip.editJobCount", { n: state.jobs.length })}
                 </button>

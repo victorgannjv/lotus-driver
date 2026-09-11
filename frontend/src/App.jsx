@@ -16,11 +16,13 @@ import Signup from "./pages/driver/Signup";
 // no reason to make every driver download that just to sign in or check history.
 const AdminGate = lazy(() => import("./pages/admin/Gate"));
 const AdminDashboard = lazy(() => import("./pages/admin/Dashboard"));
-const AdminWarehouses = lazy(() => import("./pages/admin/Warehouses"));
 const AdminJobs = lazy(() => import("./pages/admin/Jobs"));
 const AdminEvidence = lazy(() => import("./pages/admin/Evidence"));
 const ConfigLayout = lazy(() =>
   import("./pages/admin/Configuration").then((m) => ({ default: m.ConfigurationLayout }))
+);
+const ConfigOutlets = lazy(() =>
+  import("./pages/admin/Configuration").then((m) => ({ default: m.OutletsConfig }))
 );
 const ConfigActivity = lazy(() =>
   import("./pages/admin/Configuration").then((m) => ({ default: m.ActivityLog }))
@@ -126,7 +128,7 @@ export default function App() {
               <Route index element={<Navigate to="/admin/config/drivers" replace />} />
               <Route path="drivers" element={<ConfigDrivers />} />
               <Route path="admins" element={<ConfigAdmins />} />
-              <Route path="outlets" element={<AdminWarehouses />} />
+              <Route path="outlets" element={<ConfigOutlets />} />
               <Route path="windows" element={<ConfigWindows />} />
               <Route path="reasons" element={<ConfigReasons />} />
               <Route path="targets" element={<ConfigTargets />} />

@@ -606,9 +606,10 @@ export function DriversConfig() {
 }
 
 export function AdminsConfig() {
-  const { rows, error, busy, run } = useList("/admin/users", "users");
+  // The endpoint answers with { admins: [...] } and already filters to admins --
+  // reading it as "users" left the list undefined and the panel on "Loading…".
+  const { rows: admins, error, busy, run } = useList("/admin/users", "admins");
   const [adding, setAdding] = useState(null);
-  const admins = (rows || []).filter((u) => u.role === "admin");
 
   return (
     <Panel
@@ -638,7 +639,7 @@ export function AdminsConfig() {
           <button type="button" className={btn} onClick={() => setAdding(null)}>Cancel</button>
         </div>
       )}
-      {!rows ? <p className="text-sm text-slate-500">Loading…</p> : admins.map((u) => (
+      {!admins ? <p className="text-sm text-slate-500">Loading…</p> : admins.map((u) => (
         <Row key={u.id}>
           <span className="min-w-[14rem] flex-1">
             <span className="block text-sm font-medium text-brand-black">{u.name}</span>
@@ -781,6 +782,106 @@ export function ActivityLog() {
           <span className="font-mono text-xs text-slate-400">{a.created_at}</span>
         </Row>
       ))}
+    </Panel>
+  );
+}
+
+/* -------------------------------------------------------------------- outlets */
+
+export function OutletsConfig() {
+  const { rows, error, busy, run } = useList("/admin/warehouses", "warehouses");
+  const [edit, setEdit] = useState({});
+  const [adding, setAdding] = useState(null);
+
+  return (
+    <Panel
+      title="Outlets"
+      blurb="The Lotus sites drivers collect from."
+      action={!adding && (
+        <button type="button" className={btnPrimary} onClick={() => setAdding({ name: "", address: "" })}>
+          Add an outlet
+        </button>
+      )}
+      footer="Removing an outlet keeps its history and any trips already recorded against it — it just stops appearing when a driver picks where they work."
+    >
+      <Err>{error}</Err>
+
+      {adding && (
+        <div className="mb-5 flex flex-wrap items-end gap-4 rounded-xl bg-slate-50 p-4">
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs font-medium text-slate-600">Name</span>
+            <input className={input} value={adding.name} placeholder="e.g. Puchong"
+                   onChange={(e) => setAdding((a) => ({ ...a, name: e.target.value }))} />
+          </label>
+          <label className="flex min-w-[16rem] flex-1 flex-col gap-1.5">
+            <span className="text-xs font-medium text-slate-600">Address (optional)</span>
+            <input className={input} value={adding.address}
+                   onChange={(e) => setAdding((a) => ({ ...a, address: e.target.value }))} />
+          </label>
+          <button type="button" className={btnPrimary} disabled={busy || !adding.name.trim()}
+                  onClick={async () => {
+                    const ok = await run(() => api.post("/admin/warehouses", {
+                      name: adding.name.trim(), address: adding.address.trim() || null,
+                    }));
+                    if (ok) setAdding(null);
+                  }}>Add</button>
+          <button type="button" className={btn} onClick={() => setAdding(null)}>Cancel</button>
+        </div>
+      )}
+
+      {!rows ? <p className="text-sm text-slate-500">Loading…</p> : rows.map((o) => {
+        const d = edit[o.id];
+        return d ? (
+          <div key={o.id} className="mb-3 flex flex-wrap items-end gap-4 rounded-xl bg-slate-50 p-4">
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs font-medium text-slate-600">Name</span>
+              <input className={input} value={d.name}
+                     onChange={(e) => setEdit((v) => ({ ...v, [o.id]: { ...d, name: e.target.value } }))} />
+            </label>
+            <label className="flex min-w-[16rem] flex-1 flex-col gap-1.5">
+              <span className="text-xs font-medium text-slate-600">Address</span>
+              <input className={input} value={d.address}
+                     onChange={(e) => setEdit((v) => ({ ...v, [o.id]: { ...d, address: e.target.value } }))} />
+            </label>
+            <button type="button" className={btnPrimary} disabled={busy || !d.name.trim()}
+                    onClick={async () => {
+                      const ok = await run(() => api.put(`/admin/warehouses/${o.id}`, {
+                        name: d.name.trim(), address: d.address.trim() || null,
+                      }));
+                      if (ok) setEdit((v) => ({ ...v, [o.id]: undefined }));
+                    }}>Save</button>
+            <button type="button" className={btn} onClick={() => setEdit((v) => ({ ...v, [o.id]: undefined }))}>Cancel</button>
+          </div>
+        ) : (
+          <Row key={o.id}>
+            <span className="min-w-[14rem] flex-1">
+              <span className={`block text-sm font-medium ${o.is_active ? "text-brand-black" : "text-slate-400"}`}>
+                {o.name}
+                {!o.is_active && (
+                  <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">
+                    removed
+                  </span>
+                )}
+              </span>
+              <span className="block text-xs text-slate-400">{o.address || "No address set"}</span>
+            </span>
+            <span className="flex-1" />
+            {o.is_active && (
+              <>
+                <button type="button" className={btn}
+                        onClick={() => setEdit((v) => ({ ...v, [o.id]: { name: o.name, address: o.address || "" } }))}>
+                  Edit
+                </button>
+                <button type="button" className={btnDanger} disabled={busy}
+                        onClick={() => confirmed(`Remove ${o.name}? Drivers will no longer be able to pick it.`)
+                          && run(() => api.del(`/admin/warehouses/${o.id}`))}>
+                  Remove
+                </button>
+              </>
+            )}
+          </Row>
+        );
+      })}
     </Panel>
   );
 }

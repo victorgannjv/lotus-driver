@@ -12,6 +12,8 @@ from auth import get_current_admin
 from db import get_pool
 from schemas import AddAdminRequest, WarehouseRequest
 
+from routers.config_routes import audit
+
 router = APIRouter()
 
 
@@ -135,6 +137,8 @@ async def create_warehouse(body: WarehouseRequest, request: Request, admin=Depen
     async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
         await cur.execute("SELECT id, name, address, is_active, created_at FROM warehouses WHERE id = %s", (new_id,))
         row = await cur.fetchone()
+    await audit(pool, admin, "outlet", new_id, "create", f"Added outlet '{name}'",
+                after={"name": name, "address": body.address})
     return {"warehouse": _serialize_warehouse(row)}
 
 
@@ -158,6 +162,8 @@ async def update_warehouse(
             "SELECT id, name, address, is_active, created_at FROM warehouses WHERE id = %s", (warehouse_id,)
         )
         row = await cur.fetchone()
+    await audit(pool, admin, "outlet", warehouse_id, "update", f"Renamed or re-addressed outlet '{name}'",
+                after={"name": name, "address": body.address})
     return {"warehouse": _serialize_warehouse(row)}
 
 
@@ -173,6 +179,7 @@ async def remove_warehouse(warehouse_id: int, request: Request, admin=Depends(ge
         if await cur.fetchone() is None:
             raise HTTPException(status_code=404, detail="outlet not found")
         await cur.execute("UPDATE warehouses SET is_active = 0 WHERE id = %s", (warehouse_id,))
+    await audit(pool, admin, "outlet", warehouse_id, "delete", f"Removed outlet {warehouse_id}")
     return {"ok": True}
 
 
