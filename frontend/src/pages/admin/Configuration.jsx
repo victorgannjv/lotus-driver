@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import { api } from "../../api";
 import Icon from "../../components/Icon";
+import { CONFIG_TABS } from "./configTabs";
 
 // Settings, written for an ops coordinator rather than a developer.
 //
@@ -13,17 +14,6 @@ import Icon from "../../components/Icon";
 const subLink = ({ isActive }) =>
   `rounded-lg px-3 py-2 text-sm font-medium ${isActive ? "bg-brand-red text-white" : "text-slate-600 hover:bg-slate-100"}`;
 
-const TABS = [
-  ["/admin/config/drivers", "Drivers"],
-  ["/admin/config/admins", "Admins"],
-  ["/admin/config/outlets", "Outlets"],
-  ["/admin/config/windows", "Delivery windows"],
-  ["/admin/config/targets", "Time allowances"],
-  ["/admin/config/reasons", "Delay reasons"],
-  ["/admin/config/driver-app", "Driver app"],
-  ["/admin/config/activity", "Activity log"],
-  ["/admin/config/sample", "Sample data"],
-];
 
 export function ConfigurationLayout() {
   return (
@@ -33,7 +23,7 @@ export function ConfigurationLayout() {
         Changes save straight away and are recorded in the activity log.
       </p>
       <nav className="mt-4 flex flex-wrap gap-2 border-b border-slate-200 pb-3">
-        {TABS.map(([to, label]) => (
+        {CONFIG_TABS.map(({ to, label }) => (
           <NavLink key={to} to={to} className={subLink}>{label}</NavLink>
         ))}
       </nav>
