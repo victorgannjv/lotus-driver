@@ -131,12 +131,11 @@ const GAP_CHOICES = [
 ];
 const gapName = (v) => (GAP_CHOICES.find((c) => c[0] === v.trim()) || [null, v.trim()])[1];
 
-export function ReasonCodes() {
-  const { rows, error, busy, run } = useList("/admin/config/reason-codes", "reason_codes");
-  const [edit, setEdit] = useState({});
-  const [adding, setAdding] = useState(null);
-
-  const Fields = ({ draft, set }) => (
+// Module scope on purpose. Declared inside ReasonCodes this is a NEW component
+// type on every render, so React unmounts the old subtree and mounts a fresh
+// one after each keystroke -- which throws focus out of the input mid-word.
+function ReasonFields({ draft, set }) {
+  return (
     <>
       <label className="flex min-w-[15rem] flex-1 flex-col gap-1.5">
         <span className="text-xs font-medium text-slate-600">What the driver sees</span>
@@ -159,6 +158,13 @@ export function ReasonCodes() {
       </label>
     </>
   );
+}
+
+export function ReasonCodes() {
+  const { rows, error, busy, run } = useList("/admin/config/reason-codes", "reason_codes");
+  const [edit, setEdit] = useState({});
+  const [adding, setAdding] = useState(null);
+
 
   return (
     <Panel
@@ -176,7 +182,7 @@ export function ReasonCodes() {
 
       {adding && (
         <div className="mb-5 flex flex-wrap items-end gap-4 rounded-xl bg-slate-50 p-4">
-          <Fields draft={adding} set={setAdding} />
+          <ReasonFields draft={adding} set={setAdding} />
           <button type="button" className={btnPrimary} disabled={busy || !adding.label.trim()}
                   onClick={async () => {
                     const code = adding.label.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "_").slice(0, 40);
@@ -190,7 +196,7 @@ export function ReasonCodes() {
         const d = edit[r.code];
         return d ? (
           <div key={r.code} className="mb-3 flex flex-wrap items-end gap-4 rounded-xl bg-slate-50 p-4">
-            <Fields draft={d} set={(next) => setEdit((v) => ({ ...v, [r.code]: next }))} />
+            <ReasonFields draft={d} set={(next) => setEdit((v) => ({ ...v, [r.code]: next }))} />
             <button type="button" className={btnPrimary} disabled={busy}
                     onClick={async () => {
                       if (await run(() => api.put(`/admin/config/reason-codes/${r.code}`, d))) {
