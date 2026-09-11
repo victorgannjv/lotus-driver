@@ -61,7 +61,8 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-slate-50">
       <AppHeader
-        title={t("home.title")}
+        greeting={driver?.name ? t("home.greeting", { name: driver.name }) : t("home.title")}
+        place={driver?.warehouse_name}
         right={
           <>
             <LanguageSwitcher />
@@ -75,11 +76,13 @@ export default function Home() {
         }
       />
       <div className="mx-auto max-w-md px-4 py-6">
-        <h2 className="text-lg font-semibold text-brand-black">{t("home.greeting", { name: driver?.name })}</h2>
         <p className="text-sm text-slate-500">{todayIso()}</p>
-        <p className="text-sm text-slate-500">
-          {t("home.outlet")} {driver?.warehouse_name || <Link to="/driver/profile" className="text-brand-red underline">{t("home.setOutlet")}</Link>}
-        </p>
+        {!driver?.warehouse_name && (
+          <p className="mt-1 text-sm text-slate-500">
+            {t("home.outlet")}{" "}
+            <Link to="/driver/profile" className="text-brand-red underline">{t("home.setOutlet")}</Link>
+          </p>
+        )}
 
         {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
 
