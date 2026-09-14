@@ -247,13 +247,12 @@ export default function Evidence() {
     <div>
       <div className="mb-4 rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
         <h2 className="text-base font-semibold text-brand-black">Evidence</h2>
-        <p className="mt-0.5 max-w-3xl text-xs text-slate-500">
-          Every trip your drivers ran, one row each. The app works out the timings itself from the checkpoints
-          the driver stamped — nobody types these in. A trip is flagged when a step took longer than the time
-          allowed for it, like waiting more than 15 minutes for Lotus to have the goods ready. The
-          <b> Owner</b> column says whose time was lost, and only fills in when a step actually ran late.
-          Narrow the list with the filters, then open a trip to see its full timeline, photos and the reason
-          the driver gave.
+        {/* One line. Six lines of explanation above a table is six lines
+            nobody reads -- the legend at the foot of the page already says
+            what each colour means, and the table itself says the rest. */}
+        <p className="mt-0.5 text-xs text-slate-500">
+          Every trip, and where the time went. A step that ran over its allowed time is flagged, and
+          <b> Owner</b> says whose time it was.
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <input
