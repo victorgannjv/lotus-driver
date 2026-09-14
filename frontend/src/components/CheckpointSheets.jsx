@@ -1,12 +1,67 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Icon from "./Icon";
 import PhotoCapture from "./PhotoCapture";
 import { useLanguage } from "../i18n/LanguageContext";
 import { formatDuration } from "../lib/duration";
 
-// Bottom sheets the trip timeline raises, in the order a checkpoint needs them:
+// The screens the trip timeline raises, in the order a checkpoint needs them:
 // photo -> (job count, at loading only) -> reason, if the gap ran over target.
-// Kept in one file because they share a frame and are never used apart.
+// Kept in one file because they are never used apart.
+//
+// Two frames, chosen by how much work the step is. The job count and the delay
+// reason are one tap on a short list, so they stay bottom sheets with the trip
+// still visible behind them. The photo step is not: it is a camera, a strip of
+// thumbnails, a location to check and a confirm, and as a sheet it arrived as a
+// 90%-tall box that scrolled inside its own scroll and cropped the buttons. It
+// gets the whole screen.
+
+function FullPage({ title, subtitle, children, onCancel, cancelLabel, action }) {
+  // The trip list behind this is a long scroll. Left live, a phone scrolls IT
+  // instead of the page on top -- the photo strip moves, the background moves
+  // with it, and the driver loses the confirm button.
+  useEffect(() => {
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, []);
+
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col bg-white">
+      <header className="flex items-center gap-1 border-b border-slate-200 px-3 py-2.5">
+        {onCancel ? (
+          <button
+            type="button"
+            onClick={onCancel}
+            aria-label={cancelLabel}
+            className="-ml-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100"
+          >
+            <Icon name="chevron" className="h-5 w-5 rotate-180" />
+          </button>
+        ) : (
+          <span className="h-10 w-2 shrink-0" />
+        )}
+        <h1 className="min-w-0 flex-1 truncate text-base font-semibold text-brand-black">{title}</h1>
+      </header>
+
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+        <div className="mx-auto max-w-md">
+          {subtitle && <p className="mb-4 text-sm text-slate-500">{subtitle}</p>}
+          {children}
+        </div>
+      </div>
+
+      {/* Confirm sits on the frame, not at the end of the content, so it is
+          reachable with a thumb however many photos are in the strip. */}
+      {action && (
+        <div className="border-t border-slate-200 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3">
+          <div className="mx-auto max-w-md">{action}</div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function Sheet({ title, subtitle, children, onCancel, cancelLabel }) {
   return (
@@ -37,11 +92,21 @@ export function PhotoSheet({ open, title, busy, onSubmit, onCancel, maxPhotos = 
   const [photos, setPhotos] = useState([]);
   if (!open) return null;
   return (
-    <Sheet
+    <FullPage
       title={title}
       subtitle={t("checkpoint.photoSubtitle")}
       onCancel={busy ? null : onCancel}
       cancelLabel={t("common.cancel")}
+      action={
+        <button
+          type="button"
+          disabled={busy || photos.length === 0}
+          onClick={() => onSubmit(photos)}
+          className="w-full rounded-xl bg-brand-red px-4 py-3.5 text-base font-semibold text-white hover:bg-brand-red-dark disabled:opacity-50"
+        >
+          {busy ? t("checkpoint.saving") : t("checkpoint.confirm")}
+        </button>
+      }
     >
       <PhotoCapture
         label={t("checkpoint.photoLabel")}
@@ -49,19 +114,7 @@ export function PhotoSheet({ open, title, busy, onSubmit, onCancel, maxPhotos = 
         max={maxPhotos}
         required
       />
-      <p className="mt-2 flex items-center gap-1.5 text-xs text-slate-400">
-        <Icon name="clock" className="h-3.5 w-3.5" />
-        {t("checkpoint.stampNote")}
-      </p>
-      <button
-        type="button"
-        disabled={busy || photos.length === 0}
-        onClick={() => onSubmit(photos)}
-        className="mt-4 w-full rounded-xl bg-brand-red px-4 py-3.5 text-base font-semibold text-white hover:bg-brand-red-dark disabled:opacity-50"
-      >
-        {busy ? t("checkpoint.saving") : t("checkpoint.confirm")}
-      </button>
-    </Sheet>
+    </FullPage>
   );
 }
 

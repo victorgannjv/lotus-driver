@@ -5,6 +5,7 @@ import { useDriverAuth } from "../../auth/DriverAuthContext";
 import AppHeader from "../../components/AppHeader";
 import Icon from "../../components/Icon";
 import LanguageSwitcher from "../../components/LanguageSwitcher";
+import LocationBanner from "../../components/LocationBanner";
 import MyDay from "../../components/MyDay";
 import TripTimeline from "../../components/TripTimeline";
 import { useLanguage } from "../../i18n/LanguageContext";
@@ -129,6 +130,11 @@ export default function Home() {
 
         {tab === "trip" && (
           <>
+            {/* Asked here, where a tap can still raise the browser's dialog --
+                not from inside a submit, half a second after the camera app
+                handed the screen back. */}
+            <LocationBanner />
+
             {/* Today's runs. A driver does two or three, and needs to be able to
                 look back at the earlier one without leaving the screen. */}
             {today && today.length > 0 && (

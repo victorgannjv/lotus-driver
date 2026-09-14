@@ -1,8 +1,15 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Icon from "./Icon";
 import { useLanguage } from "../i18n/LanguageContext";
 import { resizeImage } from "../lib/imageResize";
-import { getPosition } from "../lib/geolocation";
+import {
+  GEO_DENIED,
+  GEO_UNAVAILABLE,
+  GEO_UNSUPPORTED,
+  getPosition,
+  onPermissionChange,
+  permissionState,
+} from "../lib/geolocation";
 
 // Two explicit ways in, rather than one "Choose File" control.
 //
@@ -33,6 +40,8 @@ export default function PhotoCapture({ label, onChange, required = false, max = 
   // driver actually wants to check: that the coordinates were found, and that
   // the step and the time are the ones he thinks he is recording.
   const [fix, setFix] = useState(null);
+  const [perm, setPerm] = useState(null); // granted | prompt | denied | unsupported | unknown
+  const [locating, setLocating] = useState(false);
   const cameraRef = useRef(null);
   const fileRef = useRef(null);
 
@@ -43,21 +52,60 @@ export default function PhotoCapture({ label, onChange, required = false, max = 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const locate = useCallback(async () => {
+    setLocating(true);
+    try {
+      const p = await getPosition();
+      setFix(p);
+      setPerm(await permissionState());
+      return p;
+    } finally {
+      setLocating(false);
+    }
+  }, []);
+
+  // Find out where we stand before asking for anything.
+  //
+  // Already granted: fetch straight away, so the fix is warm by the time the
+  // driver comes back from the camera app -- the browser will not raise a
+  // prompt while another app is in the foreground, which is exactly the moment
+  // the old code chose to ask. Not granted: do NOT fire a silent request. A
+  // prompt nobody expected gets dismissed, and on Chrome a dismissed prompt is
+  // half-way to a permanent block. It waits for the driver to tap instead.
+  useEffect(() => {
+    let live = true;
+    permissionState().then((state) => {
+      if (!live) return;
+      setPerm(state);
+      // "unknown" is an older browser with no Permissions API to ask: trying is
+      // the only way to find out, and it is the case that used to work.
+      if (state === "granted" || state === "unknown") locate();
+    });
+    const off = onPermissionChange((state) => {
+      setPerm(state);
+      if (state === "granted") locate();
+    });
+    return () => {
+      live = false;
+      off();
+    };
+  }, [locate]);
+
   function publish(next) {
     setShots(next);
     onChange(max === 1 ? next[0]?.file || null : next.map((s) => s.file));
   }
 
-  // Asked for once, when the first photo is taken: the same fix the checkpoint
-  // itself will send a moment later.
+  // A photo is about to become evidence, so this is the moment a missing fix
+  // matters most. Retried when the first shot lands -- but only where the
+  // browser can actually answer without raising a dialog. On "prompt" the
+  // button below is the way in, deliberately: that is the tap the browser
+  // wants to see before it will show the driver anything.
   useEffect(() => {
-    if (shots.length === 0 || fix) return;
-    let live = true;
-    getPosition().then((p) => live && setFix(p));
-    return () => {
-      live = false;
-    };
-  }, [shots.length, fix]);
+    if (shots.length === 0 || fix || locating) return;
+    if (perm !== "granted" && perm !== "unknown") return;
+    locate();
+  }, [shots.length, fix, locating, perm, locate]);
 
   async function handleFiles(e) {
     const picked = Array.from(e.target.files || []).slice(0, max - shots.length);
@@ -85,6 +133,25 @@ export default function PhotoCapture({ label, onChange, required = false, max = 
   const full = shots.length >= max;
   const btn =
     "flex flex-1 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm font-semibold text-brand-black hover:bg-slate-50 disabled:opacity-40";
+
+  // Which of the four location stories this is. Only one of them is "tap the
+  // button and it will work", and the other three used to look identical.
+  const hasFix = fix?.lat != null;
+  const blocked = perm === "denied" || (!hasFix && fix?.code === GEO_DENIED);
+  const off = !hasFix && fix?.code === GEO_UNAVAILABLE;
+  const unsupported = perm === "unsupported" || fix?.code === GEO_UNSUPPORTED;
+
+  let whereText;
+  let whereTone = "text-amber-700";
+  if (locating) whereText = t("photoCapture.stampLocating");
+  else if (hasFix) {
+    whereText = `${fix.lat.toFixed(5)}, ${fix.lng.toFixed(5)}`;
+    whereTone = "text-slate-700";
+  } else if (unsupported) whereText = t("photoCapture.stampUnsupported");
+  else if (blocked) whereText = t("photoCapture.stampBlocked");
+  else if (off) whereText = t("photoCapture.stampOff");
+  else if (fix) whereText = t("photoCapture.stampNoFix");
+  else whereText = t("photoCapture.stampNotYet");
 
   return (
     <div>
@@ -130,15 +197,69 @@ export default function PhotoCapture({ label, onChange, required = false, max = 
         </button>
       </div>
 
-      {/* Says up front what the server is going to do to the picture. A driver
-          who does not know the stamp is coming frames the shot for himself, not
-          for a dispute -- and wonders later who wrote on his photo. */}
-      <p className="mt-2 flex items-start gap-1.5 text-xs text-slate-500">
-        <Icon name="clock" className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-        {t("photoCapture.stampNote")}
-      </p>
-
       {busy && <p className="mt-2 text-xs text-slate-500">{t("photoCapture.compressing")}</p>}
+
+      {/* Shown from the moment the sheet opens, not after the first photo.
+          Says what the server is about to write -- a driver who does not know
+          the stamp is coming frames the shot for himself, not for a dispute --
+          and, when the coordinates are missing, says so while there is still
+          time to do something about it. */}
+      <div className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-xs ring-1 ring-slate-200">
+        <p className="mb-1 flex items-center gap-1.5 font-semibold text-slate-600">
+          <Icon name="clock" className="h-3.5 w-3.5 shrink-0" />
+          {t("photoCapture.willBeStamped")}
+        </p>
+        <div className="flex justify-between gap-3">
+          <span className="text-slate-500">{t("photoCapture.stampWhen")}</span>
+          <span className="text-slate-700">{new Date().toLocaleString()}</span>
+        </div>
+        <div className="flex justify-between gap-3">
+          <span className="text-slate-500">{t("photoCapture.stampWhere")}</span>
+          <span className={whereTone}>{whereText}</span>
+        </div>
+
+        {/* The button exists so the browser's own dialog is raised by a real
+            tap. A permission prompt fired from a background promise is one the
+            browser is entitled to ignore -- and Chrome does. */}
+        {!hasFix && !unsupported && !blocked && (
+          <button
+            type="button"
+            onClick={locate}
+            disabled={locating}
+            className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-brand-black disabled:opacity-50"
+          >
+            <Icon name="pin" className="h-3.5 w-3.5" />
+            {locating
+              ? t("photoCapture.stampLocating")
+              : fix
+                ? t("photoCapture.locationRetry")
+                : t("photoCapture.locationAllow")}
+          </button>
+        )}
+
+        {/* Nothing this app does can undo a block -- only the driver can, in
+            the browser's own settings -- so it says where they are instead of
+            offering a button that would do nothing. */}
+        {blocked && (
+          <p className="mt-2 rounded-lg bg-amber-50 px-2.5 py-2 leading-snug text-amber-800 ring-1 ring-amber-200">
+            {t("photoCapture.locationBlockedHow")}
+          </p>
+        )}
+        {off && !blocked && (
+          <p className="mt-2 rounded-lg bg-amber-50 px-2.5 py-2 leading-snug text-amber-800 ring-1 ring-amber-200">
+            {t("photoCapture.locationOffHow")}
+          </p>
+        )}
+
+        {/* Only says something when there is something to say. The panel
+            already shows the time and the place; explaining whose clock it came
+            from is a paragraph the driver reads once and never again. */}
+        {!hasFix && !locating && (
+          <p className="mt-1.5 text-[11px] leading-snug text-slate-400">
+            {t("photoCapture.stampOptionalNote")}
+          </p>
+        )}
+      </div>
 
       {shots.length > 0 && (
         <>
@@ -170,27 +291,6 @@ export default function PhotoCapture({ label, onChange, required = false, max = 
             ))}
           </div>
           <p className="mt-1.5 text-xs text-slate-500">{t("photoCapture.tapToCheck")}</p>
-
-          <div className="mt-2 rounded-xl bg-slate-50 px-3 py-2 text-xs ring-1 ring-slate-200">
-            <p className="mb-1 font-semibold text-slate-600">{t("photoCapture.willBeStamped")}</p>
-            <div className="flex justify-between gap-3">
-              <span className="text-slate-500">{t("photoCapture.stampWhen")}</span>
-              <span className="text-slate-700">{new Date().toLocaleString()}</span>
-            </div>
-            <div className="flex justify-between gap-3">
-              <span className="text-slate-500">{t("photoCapture.stampWhere")}</span>
-              <span className={fix?.lat != null ? "text-slate-700" : "text-amber-700"}>
-                {fix == null
-                  ? t("photoCapture.stampLocating")
-                  : fix.lat != null
-                    ? `${fix.lat.toFixed(5)}, ${fix.lng.toFixed(5)}`
-                    : t("photoCapture.stampNoFix")}
-              </span>
-            </div>
-            <p className="mt-1 text-[11px] leading-snug text-slate-400">
-              {t("photoCapture.stampServerNote")}
-            </p>
-          </div>
         </>
       )}
 
