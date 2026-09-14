@@ -60,7 +60,8 @@ export default function Home() {
 
   // "Arrived at Lotus" always creates a NEW trip -- a driver makes more than one
   // run a day, and every order scanned afterwards groups into the newest one.
-  async function startTrip(photo) {
+  async function startTrip(photos) {
+    const shots = Array.isArray(photos) ? photos : photos ? [photos] : [];
     setStarting(true);
     setError(null);
     try {
@@ -74,7 +75,9 @@ export default function Home() {
         // the photo are the evidence, GPS only corroborates them.
       }
       formData.append("occurred_at", new Date().toISOString());
-      formData.append("photo", photo);
+      // The start endpoint takes a single photo; the arrival sheet is capped at
+      // one to match, so this is the only shot there is.
+      if (shots[0]) formData.append("photo", shots[0]);
       const res = await api.postForm("/manifests/start", formData);
       setSelected(res.manifest.id);
       loadToday(false);

@@ -57,10 +57,12 @@ function CheckpointTrail({ trip }) {
                 version of events lands on first, so he gets to see the same
                 stamped photo ops would attach -- not just a note saying one
                 exists. */}
-            {c.photo_id && (
-              <div className="mt-2 flex items-center gap-2">
-                <PhotoThumb photoId={c.photo_id} size="h-14 w-14"
-                            caption={`${t(`checkpoint.${c.checkpoint}`)} · ${formatTime(c.occurred_at)}`} />
+            {(c.photo_ids?.length ? c.photo_ids : c.photo_id ? [c.photo_id] : []).length > 0 && (
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                {(c.photo_ids?.length ? c.photo_ids : [c.photo_id]).map((pid) => (
+                  <PhotoThumb key={pid} photoId={pid} size="h-14 w-14"
+                              caption={`${t(`checkpoint.${c.checkpoint}`)} · ${formatTime(c.occurred_at)}`} />
+                ))}
                 <span className="flex items-center gap-1 text-[10px] text-slate-400">
                   <Icon name="camera" className="h-3 w-3" />
                   {t("myDay.photoStamped")}
@@ -115,6 +117,15 @@ export default function MyDay({ refreshKey }) {
       {data.days.map((day) => {
         const isOpen = openDay === day.work_date;
         const isToday = day.work_date === today;
+        // A finished trip and a closed DAY are not the same thing, and the chip
+        // only knew the second one — so a driver who had stamped "Returned to
+        // Lotus" and seen "Trip complete" still read "Day open" here, with
+        // nothing saying what was left to do. Auto-closing today would be
+        // wrong: a second trip this afternoon is normal. So the chip now says
+        // the truth in three states, and names the one action outstanding.
+        const live = (day.trips || []).filter((tr) => !tr.cancelled);
+        const allBack = live.length > 0 && live.every((tr) => tr.ended_at);
+        const readyToClose = !day.day_closed_at && allBack;
         return (
           <div key={day.work_date} className="mb-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
             <button
@@ -133,10 +144,18 @@ export default function MyDay({ refreshKey }) {
               <span className="flex-1" />
               <span
                 className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                  day.day_closed_at ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"
+                  day.day_closed_at
+                    ? "bg-emerald-100 text-emerald-800"
+                    : readyToClose
+                      ? "bg-amber-100 text-amber-800"
+                      : "bg-rose-100 text-rose-800"
                 }`}
               >
-                {day.day_closed_at ? t("myDay.closedAt", { time: formatTime(day.day_closed_at) }) : t("myDay.open")}
+                {day.day_closed_at
+                  ? t("myDay.closedAt", { time: formatTime(day.day_closed_at) })
+                  : readyToClose
+                    ? t("myDay.readyToClose")
+                    : t("myDay.open")}
               </span>
             </button>
 
@@ -199,6 +218,11 @@ export default function MyDay({ refreshKey }) {
                     the ones that did not. */}
                 {!day.day_closed_at && (
                   <>
+                    {readyToClose && (
+                      <p className="mt-4 rounded-xl bg-amber-50 px-3 py-2 text-center text-xs font-medium text-amber-900 ring-1 ring-amber-200">
+                        {t("myDay.readyToCloseHint")}
+                      </p>
+                    )}
                     <button
                       type="button"
                       disabled={closing}

@@ -32,9 +32,9 @@ function Sheet({ title, subtitle, children, onCancel, cancelLabel }) {
 // A photo is the evidence a claim rests on, so the step will not stamp without
 // one. The stamp itself comes from the server clock, not the handset -- a phone
 // with the wrong time would hand Lotus an argument against every photo.
-export function PhotoSheet({ open, title, busy, onSubmit, onCancel }) {
+export function PhotoSheet({ open, title, busy, onSubmit, onCancel, maxPhotos = 4 }) {
   const { t } = useLanguage();
-  const [photo, setPhoto] = useState(null);
+  const [photos, setPhotos] = useState([]);
   if (!open) return null;
   return (
     <Sheet
@@ -43,15 +43,20 @@ export function PhotoSheet({ open, title, busy, onSubmit, onCancel }) {
       onCancel={busy ? null : onCancel}
       cancelLabel={t("common.cancel")}
     >
-      <PhotoCapture label={t("checkpoint.photoLabel")} onChange={setPhoto} required />
+      <PhotoCapture
+        label={t("checkpoint.photoLabel")}
+        onChange={(v) => setPhotos(Array.isArray(v) ? v : v ? [v] : [])}
+        max={maxPhotos}
+        required
+      />
       <p className="mt-2 flex items-center gap-1.5 text-xs text-slate-400">
         <Icon name="clock" className="h-3.5 w-3.5" />
         {t("checkpoint.stampNote")}
       </p>
       <button
         type="button"
-        disabled={busy || !photo}
-        onClick={() => onSubmit(photo)}
+        disabled={busy || photos.length === 0}
+        onClick={() => onSubmit(photos)}
         className="mt-4 w-full rounded-xl bg-brand-red px-4 py-3.5 text-base font-semibold text-white hover:bg-brand-red-dark disabled:opacity-50"
       >
         {busy ? t("checkpoint.saving") : t("checkpoint.confirm")}

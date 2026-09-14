@@ -22,6 +22,7 @@ from fastapi import APIRouter, Depends, Query, Request
 
 from auth import get_current_admin
 from db import get_pool
+from photos import trip_photo_map
 from trips import (
     CHECKPOINT_ORDER,
     load_schedules,
@@ -103,6 +104,7 @@ async def _scored(pool, rows: list[dict]) -> list[dict]:
     targets = await load_targets(pool)
     schedules = await load_schedules(pool)
     jobs, orders = await _counts(pool, ids)
+    photo_sets = await trip_photo_map(pool, ids)
 
     out = []
     for r in rows:
@@ -131,7 +133,12 @@ async def _scored(pool, rows: list[dict]) -> list[dict]:
             "jobs": int((jobs.get(r["id"]) or {}).get("n") or 0),
             "orders": int((orders.get(r["id"]) or {}).get("n") or 0),
             "failed_orders": int((orders.get(r["id"]) or {}).get("failed") or 0),
-            "checkpoints": [serialize_checkpoint(cps[c]) for c in CHECKPOINT_ORDER if c in cps],
+            "checkpoints": [
+                {**serialize_checkpoint(cps[c]),
+                 "photo_ids": photo_sets.get((r["id"], c))
+                 or ([cps[c]["photo_id"]] if cps[c]["photo_id"] else [])}
+                for c in CHECKPOINT_ORDER if c in cps
+            ],
             "gaps": gaps,
             "time_at_outlet": tao,
             "over_target": bool(tao and tao["over_target"]),

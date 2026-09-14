@@ -164,9 +164,13 @@ function TripCard({ trip, open, onToggle }) {
                     {c.reason_label ? ` · ${c.reason_label}` : ""}
                   </span>
                   <span className="flex justify-end">
-                    {c.photo_id ? (
-                      <PhotoThumb photoId={c.photo_id} size="h-10 w-10"
-                                  caption={`T-${trip.id} · ${CHECKPOINT_LABEL[c.checkpoint]} · ${formatTime(c.occurred_at)}`} />
+                    {(c.photo_ids?.length ? c.photo_ids : c.photo_id ? [c.photo_id] : []).length > 0 ? (
+                      <span className="flex flex-wrap justify-end gap-1">
+                        {(c.photo_ids?.length ? c.photo_ids : [c.photo_id]).map((pid) => (
+                          <PhotoThumb key={pid} photoId={pid} size="h-10 w-10"
+                                      caption={`T-${trip.id} · ${CHECKPOINT_LABEL[c.checkpoint]} · ${formatTime(c.occurred_at)}`} />
+                        ))}
+                      </span>
                     ) : (
                       <span className="text-[10px] text-slate-300">no photo</span>
                     )}

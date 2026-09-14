@@ -96,7 +96,7 @@ export default function DeliveryOutcomeModal({ code, busy, onSubmit }) {
               {outcome === "delivered" ? t("deliveryOutcome.proofOfDelivery") : t("deliveryOutcome.proofOfFailure")}
             </p>
             <div className="mt-3">
-              <PhotoCapture label={t("deliveryOutcome.proofPhotoLabel")} onChange={setPhoto} required />
+              <PhotoCapture label={t("deliveryOutcome.proofPhotoLabel")} onChange={setPhoto} max={1} required />
             </div>
             <button
               type="submit"

@@ -142,6 +142,45 @@ async def store_photo(pool, raw: bytes, content_type: str, uploaded_by: int | No
         return cur.lastrowid
 
 
+async def link_trip_photos(pool, photo_ids: list[int], *, manifest_id: int | None = None,
+                           checkpoint: str | None = None, trip_job_id: int | None = None) -> None:
+    """Record every photo taken for one step, in the order it was taken.
+
+    The first one is also written to the step's own `photo_id` column by the
+    caller, so every screen that reads a single photo keeps working. This table
+    is what the screens that want the whole set read."""
+    if not photo_ids:
+        return
+    async with pool.acquire() as conn, conn.cursor() as cur:
+        for i, pid in enumerate(photo_ids, start=1):
+            await cur.execute(
+                "INSERT INTO trip_photo (manifest_id, checkpoint, trip_job_id, photo_id, seq) "
+                "VALUES (%s, %s, %s, %s, %s)",
+                (manifest_id, checkpoint, trip_job_id, pid, i),
+            )
+
+
+async def trip_photo_map(pool, manifest_ids: list[int]) -> dict:
+    """{(manifest_id, checkpoint): [photo_id, ...]} plus {("job", job_id): [...]},
+    in capture order."""
+    if not manifest_ids:
+        return {}
+    ph = ",".join(["%s"] * len(manifest_ids))
+    out: dict = {}
+    async with pool.acquire() as conn, conn.cursor() as cur:
+        await cur.execute(
+            f"SELECT manifest_id, checkpoint, trip_job_id, photo_id FROM trip_photo "
+            f"WHERE manifest_id IN ({ph}) OR trip_job_id IN ("
+            f"  SELECT id FROM trip_job WHERE manifest_id IN ({ph})) "
+            f"ORDER BY seq, id",
+            tuple(manifest_ids) * 2,
+        )
+        for mid, cp, job_id, pid in await cur.fetchall():
+            key = ("job", job_id) if job_id else (mid, cp)
+            out.setdefault(key, []).append(pid)
+    return out
+
+
 async def fetch_photo(pool, photo_id: int) -> tuple[bytes, str, int | None] | None:
     async with pool.acquire() as conn, conn.cursor() as cur:
         await cur.execute("SELECT data, content_type, uploaded_by FROM photos WHERE id = %s", (photo_id,))

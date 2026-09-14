@@ -25,7 +25,7 @@ export default function ArrivalPhotoModal({ open, busy, onSubmit, onCancel }) {
         <p className="mt-1 text-center text-sm text-slate-500">{t("arrivalPhoto.instructions")}</p>
         <form onSubmit={handleSubmit}>
           <div className="mt-3">
-            <PhotoCapture label={t("arrivalPhoto.photoLabel")} onChange={setPhoto} required />
+            <PhotoCapture label={t("arrivalPhoto.photoLabel")} onChange={setPhoto} max={1} required />
           </div>
           <button
             type="submit"

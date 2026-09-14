@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 
 from auth import get_current_driver
 from db import get_pool
-from photos import evidence_caption, store_photo
+from photos import evidence_caption, link_trip_photos, store_photo, trip_photo_map
 from clocks import fmt, local_today, stamp as clock_stamp
 from trips import (
     CHECKPOINT_GAP,
@@ -108,6 +108,7 @@ async def _trip_state(pool, trip: dict) -> dict:
         next_cp = cp
         break
 
+    photo_sets = await trip_photo_map(pool, [mid])
     slots = slots_for(await load_schedules(pool), trip["warehouse_id"])
     window = schedule_variance(
         slots.get(trip.get("schedule_slot_no")), stamps.get("arrived"), stamps.get("departed")
@@ -122,7 +123,11 @@ async def _trip_state(pool, trip: dict) -> dict:
             "schedule_slot_no": trip.get("schedule_slot_no"),
         },
         "window": window,
-        "checkpoints": [serialize_checkpoint(cps[c]) for c in CHECKPOINT_ORDER if c in cps],
+        "checkpoints": [
+            {**serialize_checkpoint(cps[c]),
+             "photo_ids": photo_sets.get((mid, c)) or ([cps[c]["photo_id"]] if cps[c]["photo_id"] else [])}
+            for c in CHECKPOINT_ORDER if c in cps
+        ],
         "gaps": gaps,
         "time_at_outlet": compute_time_at_outlet(stamps, targets, trip["warehouse_id"]),
         "jobs": [
@@ -131,6 +136,8 @@ async def _trip_state(pool, trip: dict) -> dict:
                 "started_at": fmt(j["started_at"]),
                 "completed_at": fmt(j["completed_at"]),
                 "photo_id": j["photo_id"], "orders": counts.get(j["seq"], 0),
+                "photo_ids": photo_sets.get(("job", j["id"]))
+                or ([j["photo_id"]] if j["photo_id"] else []),
             }
             for j in jobs
         ],
@@ -195,6 +202,7 @@ async def stamp_checkpoint(
     reason_code: str | None = Form(None),
     reason_note: str | None = Form(None),
     photo: UploadFile | None = File(None),
+    photos: list[UploadFile] | None = File(None),
     driver=Depends(get_current_driver),
 ):
     """Stamps one checkpoint. Refuses without a photo where the settings demand
@@ -227,8 +235,11 @@ async def stamp_checkpoint(
         else datetime.now(timezone.utc).replace(tzinfo=None)
     )
 
-    photo_id = None
-    if photo is not None:
+    # One step, several frames: the seal, the pallet, the invoice. Every one gets
+    # the same burned caption, because they are all evidence of the same instant.
+    incoming = [f for f in ([photo] if photo is not None else []) + list(photos or []) if f is not None]
+    photo_ids: list[int] = []
+    if incoming:
         place = " - ".join(x for x in (trip.get("warehouse_name"), trip.get("warehouse_address")) if x)
         caption = evidence_caption(
             ref=f"T-{manifest_id}",
@@ -236,10 +247,14 @@ async def stamp_checkpoint(
             who=driver.get("name"),
             lat=lat, lng=lng, place=place, when=clock_stamp(occurred_dt),
         )
-        photo_id = await store_photo(
-            pool, await photo.read(), photo.content_type or "image/jpeg", driver["id"], caption)
+        for f in incoming:
+            photo_ids.append(await store_photo(
+                pool, await f.read(), f.content_type or "image/jpeg", driver["id"], caption))
     elif checkpoint in setting_list(settings, "photo_required_checkpoints"):
         raise HTTPException(status_code=422, detail="a photo is required for this checkpoint")
+
+    # The first stays on the row itself, so every existing reader is untouched.
+    photo_id = photo_ids[0] if photo_ids else None
 
     async with pool.acquire() as conn, conn.cursor() as cur:
         await cur.execute(
@@ -248,6 +263,7 @@ async def stamp_checkpoint(
             (manifest_id, checkpoint, occurred_dt, lat, lng, photo_id,
              reason_code or None, (reason_note or "").strip() or None, driver["id"]),
         )
+    await link_trip_photos(pool, photo_ids, manifest_id=manifest_id, checkpoint=checkpoint)
 
     state = await _trip_state(pool, trip)
 
@@ -392,6 +408,7 @@ async def complete_job(
     lng: float | None = Form(None),
     failed: bool = Form(False),
     photo: UploadFile | None = File(None),
+    photos: list[UploadFile] | None = File(None),
     driver=Depends(get_current_driver),
 ):
     """Closes one drop. When the last open job resolves, the server stamps
@@ -414,16 +431,19 @@ async def complete_job(
     trip = await _owned_trip(pool, driver["id"], job["manifest_id"])
     now = datetime.now(timezone.utc).replace(tzinfo=None)
 
-    photo_id = None
-    if photo is not None:
+    incoming = [f for f in ([photo] if photo is not None else []) + list(photos or []) if f is not None]
+    photo_ids: list[int] = []
+    if incoming:
         caption = evidence_caption(
             ref=f"T-{job['manifest_id']}",
             what=f"Drop {job['seq']} - {'not delivered' if failed else 'delivered'}",
             who=driver.get("name"),
             lat=lat, lng=lng, when=clock_stamp(now),
         )
-        photo_id = await store_photo(
-            pool, await photo.read(), photo.content_type or "image/jpeg", driver["id"], caption)
+        for f in incoming:
+            photo_ids.append(await store_photo(
+                pool, await f.read(), f.content_type or "image/jpeg", driver["id"], caption))
+    photo_id = photo_ids[0] if photo_ids else None
 
     async with pool.acquire() as conn, conn.cursor() as cur:
         await cur.execute(
@@ -434,6 +454,7 @@ async def complete_job(
             "SELECT COUNT(*) FROM trip_job WHERE manifest_id = %s AND status = 'pending'", (job["manifest_id"],)
         )
         (still_open,) = await cur.fetchone()
+    await link_trip_photos(pool, photo_ids, trip_job_id=trip_job_id)
 
     if still_open == 0:
         existing = (await fetch_checkpoints(pool, [job["manifest_id"]])).get(job["manifest_id"], {})
@@ -541,6 +562,8 @@ async def my_days(
     ids = [t["id"] for t in trips]
     placeholders = ",".join(["%s"] * len(ids))
     cps_by_trip = await fetch_checkpoints(pool, ids)
+    # One query for the whole payload rather than one per trip.
+    day_photo_sets = await trip_photo_map(pool, ids)
     targets = await load_targets(pool)
     schedules = await load_schedules(pool)
 
@@ -566,6 +589,7 @@ async def my_days(
         stamps = stamps_from(cps)
         gaps = compute_gaps(stamps, targets, t["warehouse_id"])
         tao = compute_time_at_outlet(stamps, targets, t["warehouse_id"])
+        sets = day_photo_sets
         jr = job_rows.get(t["id"], {})
         orr = order_rows.get(t["id"], {})
 
@@ -584,7 +608,12 @@ async def my_days(
             "started_at": fmt(stamps["arrived"]) if "arrived" in stamps else None,
             "ended_at": fmt(stamps["returned"]) if "returned" in stamps else None,
             "time_at_outlet": tao,
-            "checkpoints": [serialize_checkpoint(cps[c]) for c in CHECKPOINT_ORDER if c in cps],
+            "checkpoints": [
+                {**serialize_checkpoint(cps[c]),
+                 "photo_ids": sets.get((t["id"], c))
+                 or ([cps[c]["photo_id"]] if cps[c]["photo_id"] else [])}
+                for c in CHECKPOINT_ORDER if c in cps
+            ],
             "gaps": gaps,
         }
 

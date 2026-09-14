@@ -72,12 +72,13 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
     return formData;
   }
 
-  async function stampCheckpoint(checkpoint, photo) {
-    // No trip yet: "Arrived at Lotus" is what creates one, so hand the photo to
+  async function stampCheckpoint(checkpoint, photos) {
+    const shots = Array.isArray(photos) ? photos : photos ? [photos] : [];
+    // No trip yet: "Arrived at Lotus" is what creates one, so hand the photos to
     // the caller's start flow rather than posting a checkpoint into nothing.
     if (!manifestId) {
       setPendingPhoto(null);
-      if (onStart) onStart(photo);
+      if (onStart) onStart(shots);
       return;
     }
     setBusy(true);
@@ -85,7 +86,9 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
     try {
       const fd = await withPosition(new FormData());
       fd.append("checkpoint", checkpoint);
-      if (photo) fd.append("photo", photo);
+      // One field name, repeated. The server reads them in order and burns the
+      // same caption onto every one, because they evidence the same instant.
+      shots.forEach((f) => fd.append("photos", f));
       const next = await api.postForm(`/trips/${manifestId}/checkpoints`, fd);
       setState(next);
       setPendingPhoto(null);
@@ -103,12 +106,13 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
     }
   }
 
-  async function completeJob(jobId, photo) {
+  async function completeJob(jobId, photos) {
+    const shots = Array.isArray(photos) ? photos : photos ? [photos] : [];
     setBusy(true);
     setError(null);
     try {
       const fd = await withPosition(new FormData());
-      if (photo) fd.append("photo", photo);
+      shots.forEach((f) => fd.append("photos", f));
       const next = await api.postForm(`/trip-jobs/${jobId}/complete`, fd);
       setState(next);
       setPendingPhoto(null);
@@ -193,6 +197,11 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
     };
   }
 
+  // The job count can be set or changed for as long as the trip is open. It
+  // is not a one-shot question asked at the loading bay.
+  const canSetJobs = stamped.has("loaded") && !stamped.has("returned");
+  const jobsMissing = canSetJobs && state.jobs.length === 0;
+
   const win = state.window;
 
   return (
@@ -274,6 +283,17 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
         </>
       )}
 
+      {jobsMissing && (
+        <button
+          type="button"
+          onClick={() => setPendingCount(true)}
+          className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900"
+        >
+          <Icon name="alert" className="h-4 w-4" />
+          {t("trip.jobCountMissing")}
+        </button>
+      )}
+
       {!action && state.next_checkpoint === null && (
         <div className="rounded-2xl bg-emerald-50 px-5 py-4 text-center ring-1 ring-emerald-200">
           <p className="text-sm font-semibold text-emerald-800">{t("trip.complete")}</p>
@@ -349,13 +369,20 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
                 </button>
               )}
 
-              {cp === "deliveries_done" && state.jobs.length > 0 && (
+              {/* Always reachable while the trip is open. This button used to
+                  be gated on `jobs.length > 0` — the one state cancelling the
+                  sheet guarantees — so a cancel, or a tap of Back mid-answer,
+                  locked the driver out of setting a job count for the rest of
+                  the run, and with no jobs there is nothing to deliver against. */}
+              {cp === "deliveries_done" && canSetJobs && (
                 <button
                   type="button"
                   onClick={() => setPendingCount(true)}
                   className="mt-1 rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50"
                 >
-                  {t("trip.editJobCount", { n: state.jobs.length })}
+                  {state.jobs.length > 0
+                    ? t("trip.editJobCount", { n: state.jobs.length })
+                    : t("trip.setJobCount")}
                 </button>
               )}
               {cp === "deliveries_done" && state.jobs.length > 0 && (
@@ -406,6 +433,10 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
         open={!!pendingPhoto}
         title={pendingPhoto?.title || ""}
         busy={busy}
+        // "Arrived at Lotus" creates the trip through an endpoint that takes one
+        // photo, so the sheet offers one. Letting the driver take three and
+        // silently keeping the first would be worse than the old behaviour.
+        maxPhotos={manifestId ? 4 : 1}
         onCancel={() => setPendingPhoto(null)}
         onSubmit={(photo) =>
           pendingPhoto.kind === "job"
