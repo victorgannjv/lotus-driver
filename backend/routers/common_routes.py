@@ -2,7 +2,7 @@
 from asyncmy.cursors import DictCursor
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
-from auth import get_current_user_any
+from auth import get_current_admin, get_current_user_any
 from db import get_pool
 from photos import fetch_photo
 
@@ -61,5 +61,14 @@ async def get_photo(photo_id: int, request: Request, user=Depends(get_current_us
         raise HTTPException(status_code=404, detail="photo not found")
     data, content_type, uploaded_by = result
     if user["role"] != "admin" and uploaded_by != user["id"]:
-        raise HTTPException(status_code=403, detail="not your photo")
+        # A browser used for both surfaces sends the driver's Bearer token on
+        # the admin screens too, and the presence of that header is what decides
+        # the identity -- so one stale or foreign driver token turned every
+        # proof photo in the evidence view into a refusal. Give the SSO proxy a
+        # chance to identify an admin before saying no. This grants nothing new:
+        # it is the same check that would have run had no token been sent.
+        try:
+            await get_current_admin(request)
+        except HTTPException:
+            raise HTTPException(status_code=403, detail="not your photo")
     return Response(content=data, media_type=content_type, headers={"Cache-Control": "private, max-age=86400"})

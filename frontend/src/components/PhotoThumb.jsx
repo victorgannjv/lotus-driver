@@ -7,32 +7,63 @@ import Icon from "./Icon";
 // admin surface gets away with it because the platform's SSO proxy attaches
 // identity to every request via cookies), so this always fetches the photo
 // itself and renders it as a blob URL -- works for both driver JWT and admin SSO.
-function usePhoto(photoId) {
+function usePhoto(photoId, attempt) {
   const [src, setSrc] = useState(null);
-  const [failed, setFailed] = useState(false);
+  const [error, setError] = useState(null); // { status } once a fetch has failed
 
   useEffect(() => {
     if (!photoId) return undefined;
     let objectUrl;
     let cancelled = false;
     setSrc(null);
-    setFailed(false);
-    const token = getToken();
-    fetch(`/api/photos/${photoId}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
-      .then((r) => (r.ok ? r.blob() : Promise.reject(r)))
+    setError(null);
+
+    // Two attempts, and the second one matters.
+    //
+    // `get_current_user_any` authenticates as a DRIVER whenever an
+    // Authorization header is present, and only falls back to the admin's SSO
+    // identity when there is none. So one stale or foreign driver token in this
+    // browser's localStorage turned every proof photo on the admin screens into
+    // a 401/403 — the photos were stored and linked the whole time, the request
+    // for them was simply being signed as the wrong person. Dropping the header
+    // and retrying lets the proxy identify the admin, which is what should have
+    // happened first.
+    async function load() {
+      const token = getToken();
+      const tries = token ? [{ Authorization: `Bearer ${token}` }, {}] : [{}];
+      let last = null;
+      for (const headers of tries) {
+        let res;
+        try {
+          res = await fetch(`/api/photos/${photoId}`, { headers });
+        } catch {
+          last = { status: 0 };
+          continue;
+        }
+        if (res.ok) return res.blob();
+        last = { status: res.status };
+        if (res.status !== 401 && res.status !== 403) break;
+      }
+      throw last || { status: 0 };
+    }
+
+    load()
       .then((blob) => {
         if (cancelled) return;
         objectUrl = URL.createObjectURL(blob);
         setSrc(objectUrl);
       })
-      .catch(() => { if (!cancelled) setFailed(true); });
+      .catch((e) => {
+        if (!cancelled) setError({ status: e?.status ?? 0 });
+      });
+
     return () => {
       cancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [photoId]);
+  }, [photoId, attempt]);
 
-  return { src, failed };
+  return { src, error };
 }
 
 // Full-bleed viewer. The evidence caption is burned into the pixels by the
@@ -78,15 +109,32 @@ function Lightbox({ src, caption, onClose }) {
 // `caption` is only the viewer's title bar -- the lat/long, address and
 // timestamp a dispute needs are burned into the image itself, server-side.
 export default function PhotoThumb({ photoId, size = "h-16 w-16", caption }) {
-  const { src, failed } = usePhoto(photoId);
+  const [attempt, setAttempt] = useState(0);
+  const { src, error } = usePhoto(photoId, attempt);
   const [open, setOpen] = useState(false);
 
   if (!photoId) return null;
-  if (failed) {
+  if (error) {
+    // "no photo" was a lie, and an expensive one: it read as "the driver never
+    // took one" when the truth was "this request could not fetch it". A photo
+    // that exists and a photo that failed to load are different problems with
+    // different fixes, so they no longer look identical. Tapping retries.
+    const what =
+      error.status === 404
+        ? { line: "missing", why: "This photo is no longer stored." }
+        : error.status === 401 || error.status === 403
+          ? { line: "no access", why: "Signed in as someone who cannot open this photo. Tap to retry." }
+          : { line: "failed", why: "Could not load the photo. Tap to retry." };
     return (
-      <span className={`${size} flex items-center justify-center rounded-lg bg-slate-100 text-[10px] text-slate-400`}>
-        no photo
-      </span>
+      <button
+        type="button"
+        onClick={() => setAttempt((n) => n + 1)}
+        title={`${what.why} (${error.status || "network"})`}
+        className={`${size} flex flex-col items-center justify-center rounded-lg bg-amber-50 text-[9px] leading-tight text-amber-700 ring-1 ring-amber-200`}
+      >
+        <Icon name="alert" className="h-3 w-3" />
+        {what.line}
+      </button>
     );
   }
   if (!src) return <div className={`${size} animate-pulse rounded-lg bg-slate-200`} />;

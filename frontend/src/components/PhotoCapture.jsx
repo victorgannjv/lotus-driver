@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import Icon from "./Icon";
 import { useLanguage } from "../i18n/LanguageContext";
 import { resizeImage } from "../lib/imageResize";
+import { getPosition } from "../lib/geolocation";
 
 // Two explicit ways in, rather than one "Choose File" control.
 //
@@ -24,6 +25,14 @@ export default function PhotoCapture({ label, onChange, required = false, max = 
   const [shots, setShots] = useState([]); // { id, file, url }
   const [busy, setBusy] = useState(false);
   const [viewing, setViewing] = useState(null);
+  // What the server is going to write on the picture.
+  //
+  // The caption is burned server-side on purpose -- a stamp drawn by the
+  // handset is a stamp the handset could be made to lie about -- so the preview
+  // cannot show the finished pixels. It can show the VALUES, which is what a
+  // driver actually wants to check: that the coordinates were found, and that
+  // the step and the time are the ones he thinks he is recording.
+  const [fix, setFix] = useState(null);
   const cameraRef = useRef(null);
   const fileRef = useRef(null);
 
@@ -38,6 +47,17 @@ export default function PhotoCapture({ label, onChange, required = false, max = 
     setShots(next);
     onChange(max === 1 ? next[0]?.file || null : next.map((s) => s.file));
   }
+
+  // Asked for once, when the first photo is taken: the same fix the checkpoint
+  // itself will send a moment later.
+  useEffect(() => {
+    if (shots.length === 0 || fix) return;
+    let live = true;
+    getPosition().then((p) => live && setFix(p));
+    return () => {
+      live = false;
+    };
+  }, [shots.length, fix]);
 
   async function handleFiles(e) {
     const picked = Array.from(e.target.files || []).slice(0, max - shots.length);
@@ -150,6 +170,27 @@ export default function PhotoCapture({ label, onChange, required = false, max = 
             ))}
           </div>
           <p className="mt-1.5 text-xs text-slate-500">{t("photoCapture.tapToCheck")}</p>
+
+          <div className="mt-2 rounded-xl bg-slate-50 px-3 py-2 text-xs ring-1 ring-slate-200">
+            <p className="mb-1 font-semibold text-slate-600">{t("photoCapture.willBeStamped")}</p>
+            <div className="flex justify-between gap-3">
+              <span className="text-slate-500">{t("photoCapture.stampWhen")}</span>
+              <span className="text-slate-700">{new Date().toLocaleString()}</span>
+            </div>
+            <div className="flex justify-between gap-3">
+              <span className="text-slate-500">{t("photoCapture.stampWhere")}</span>
+              <span className={fix?.lat != null ? "text-slate-700" : "text-amber-700"}>
+                {fix == null
+                  ? t("photoCapture.stampLocating")
+                  : fix.lat != null
+                    ? `${fix.lat.toFixed(5)}, ${fix.lng.toFixed(5)}`
+                    : t("photoCapture.stampNoFix")}
+              </span>
+            </div>
+            <p className="mt-1 text-[11px] leading-snug text-slate-400">
+              {t("photoCapture.stampServerNote")}
+            </p>
+          </div>
         </>
       )}
 
