@@ -557,7 +557,7 @@ const SETTING_UI = {
   job_count_quick_picks: { label: "Quick buttons for number of jobs", help: "Shown when the driver is asked how many drops the trip carries.", type: "numbers" },
   job_count_manual_max: { label: "Most jobs a driver can type", help: "A safety limit on the typed box.", type: "number", min: 1, max: 200 },
   allow_add_job_mid_trip: { label: "Let drivers add a job after loading", help: "For when the load changes on the road.", type: "bool" },
-  photo_required_checkpoints: { label: "Steps that need a photo", help: "A step without a photo cannot be recorded.", type: "checkpoints" },
+  photo_required_checkpoints: { label: "Steps that need a photo", help: "Ticked: the step will not record without one. Unticked: the driver records it now and can add the photo later, while the trip is still open. Delivery proof photos are always required and are not affected by this.", type: "checkpoints" },
   photo_burn_timestamp: { label: "Print the date and time onto the photo", help: "Written into the picture, so it cannot be argued with.", type: "bool" },
   photo_timestamp_source: { label: "Where the photo's time comes from", help: "A phone with the wrong clock would weaken every photo.", type: "choice",
     options: [["server", "Our server's clock (recommended)"], ["handset", "The driver's phone"]] },
@@ -648,7 +648,14 @@ function SettingRow({ s, ui, v, dirty, busy, set, commit }) {
 
       {ui.type === "checkpoints" && (
         <>
-          <span className="flex flex-wrap gap-2">
+          <span className="flex flex-wrap items-center gap-2">
+            {/* An empty row of boxes looks like a control that failed to load.
+                Say what none of them ticked actually means. */}
+            {String(v).split(",").filter(Boolean).length === 0 && (
+              <span className="text-xs text-slate-400">
+                None — every step can be recorded without a photo
+              </span>
+            )}
             {CHECKPOINTS.map(([code, label]) => {
               const list = String(v).split(",").map((x) => x.trim()).filter(Boolean);
               const on = list.includes(code);

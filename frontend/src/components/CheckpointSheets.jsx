@@ -113,7 +113,7 @@ function Sheet({ title, subtitle, children, onCancel, cancelLabel }) {
 // one. The stamp itself comes from the server clock, not the handset -- a phone
 // with the wrong time would hand Lotus an argument against every photo.
 export function PhotoSheet({ open, title, busy, onSubmit, onCancel, maxPhotos = 4, reasons = [],
-                            scanTo = null, photoRequired = true }) {
+                            scanTo = null, photoRequired = true, confirmLabel = null }) {
   const { t } = useLanguage();
   const [photos, setPhotos] = useState([]);
   const [reason, setReason] = useState("");
@@ -140,11 +140,7 @@ export function PhotoSheet({ open, title, busy, onSubmit, onCancel, maxPhotos = 
           onClick={() => onSubmit(photos, reason || null)}
           className="w-full rounded-xl bg-brand-red px-4 py-3.5 text-base font-semibold text-white hover:bg-brand-red-dark disabled:opacity-50"
         >
-          {busy
-            ? t("checkpoint.saving")
-            : photos.length === 0 && !photoRequired
-              ? t("checkpoint.confirmNoPhoto")
-              : t("checkpoint.confirm")}
+          {busy ? t("checkpoint.saving") : confirmLabel || t("checkpoint.confirm")}
         </button>
       }
     >
@@ -168,7 +164,6 @@ export function PhotoSheet({ open, title, busy, onSubmit, onCancel, maxPhotos = 
         required={photoRequired}
         onChange={(v) => setPhotos(Array.isArray(v) ? v : v ? [v] : [])}
         max={maxPhotos}
-        required
       />
 
       {grouped.length > 0 && (

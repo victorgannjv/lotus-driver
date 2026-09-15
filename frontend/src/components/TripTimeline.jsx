@@ -681,6 +681,7 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
         busy={busy}
         maxPhotos={4}
         photoRequired
+        confirmLabel={t("checkpoint.savePhoto")}
         onCancel={() => setPendingLatePhoto(null)}
         onSubmit={(photo) => addPhotos(pendingLatePhoto.checkpoint, photo)}
       />
