@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../../api";
 import PhotoThumb from "../../components/PhotoThumb";
+import { dropLabel, dropStyle, statusLabel, statusStyle } from "../../lib/status";
 import Icon, { CHECKPOINT_ICON } from "../../components/Icon";
 import { formatDate, formatDuration, formatTime } from "../../lib/duration";
 
@@ -191,15 +192,43 @@ function TripCard({ trip, open, onToggle }) {
               <p className="mb-2 mt-4 text-[10px] font-bold uppercase tracking-widest text-slate-400">Jobs</p>
               <ul className="space-y-1.5">
                 {detail.job_detail.map((j) => (
-                  <li key={j.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs">
-                    <span className={`h-4 w-1 rounded ${j.status === "failed" ? "bg-amber-500" : j.status === "done" ? "bg-emerald-600" : "bg-slate-300"}`} />
-                    <span className="font-semibold">Job {j.seq}</span>
-                    <span className="text-slate-500">{formatTime(j.completed_at) || "pending"}</span>
-                    <span className="text-slate-500">{j.orders.length} orders</span>
-                    <span className="flex-1" />
-                    {j.photo_id && (
-                      <PhotoThumb photoId={j.photo_id} size="h-10 w-10"
-                                  caption={`T-${trip.id} · Job ${j.seq} · ${formatTime(j.completed_at)}`} />
+                  <li key={j.id} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <span className={`h-4 w-1 rounded ${
+                        j.status === "failed" ? "bg-brand-red" : j.status === "done" ? "bg-emerald-600" : "bg-slate-300"
+                      }`} />
+                      <span className="font-semibold">Job {j.seq}</span>
+                      {/* A coloured bar told you something happened without
+                          saying what. The outcome is the thing an admin came
+                          to this row for. */}
+                      <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${dropStyle(j.status)}`}>
+                        {dropLabel(j.status)}
+                      </span>
+                      <span className="text-slate-500">{formatTime(j.completed_at) || "not closed yet"}</span>
+                      <span className="text-slate-500">
+                        {j.orders.length} {j.orders.length === 1 ? "parcel" : "parcels"}
+                      </span>
+                      <span className="flex-1" />
+                      {j.photo_id && (
+                        <PhotoThumb photoId={j.photo_id} size="h-10 w-10"
+                                    caption={`T-${trip.id} · Job ${j.seq} · ${formatTime(j.completed_at)}`} />
+                      )}
+                    </div>
+
+                    {/* Which parcels, and how each one ended. A drop can be
+                        closed with one parcel delivered and another failed,
+                        and the drop's own status cannot show that. */}
+                    {j.orders.length > 0 && (
+                      <ul className="mt-2 space-y-1 border-t border-slate-100 pt-2">
+                        {j.orders.map((o) => (
+                          <li key={o.id} className="flex items-center justify-between gap-2">
+                            <span className="truncate text-slate-600">{o.tracking_no}</span>
+                            <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${statusStyle(o.status_code)}`}>
+                              {statusLabel(o.status_code)}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
                     )}
                   </li>
                 ))}

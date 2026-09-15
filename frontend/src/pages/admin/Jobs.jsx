@@ -1,14 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../../api";
-import { formatDate } from "../../lib/duration";
-
-const STATUS_STYLES = {
-  registered: "bg-slate-100 text-slate-700",
-  delivered: "bg-emerald-100 text-emerald-800",
-  failed: "bg-amber-100 text-amber-800",
-  cancelled: "bg-slate-100 text-slate-500",
-};
+import { formatDate, formatTime } from "../../lib/duration";
+import { statusLabel, statusStyle } from "../../lib/status";
 
 export default function Jobs() {
   const [searchParams] = useSearchParams();
@@ -139,7 +133,7 @@ export default function Jobs() {
                 <th className="px-4 py-3">Driver</th>
                 <th className="px-4 py-3">Warehouse</th>
                 <th className="px-4 py-3">Date</th>
-                <th className="px-4 py-3">Job started</th>
+                <th className="px-4 py-3">Arrived</th>
                 <th className="px-4 py-3">Status</th>
               </tr>
             </thead>
@@ -163,10 +157,10 @@ export default function Jobs() {
                   <td className="px-4 py-3 text-slate-600">{job.driver_name}</td>
                   <td className="px-4 py-3 text-slate-600">{job.warehouse_name || "—"}</td>
                   <td className="px-4 py-3 text-slate-600">{formatDate(job.work_date)}</td>
-                  <td className="px-4 py-3 text-slate-600">{job.warehouse_arrived_at || "—"}</td>
+                  <td className="px-4 py-3 text-slate-600">{formatTime(job.warehouse_arrived_at) || "—"}</td>
                   <td className="px-4 py-3">
-                    <span className={`rounded-full px-2 py-1 text-xs font-medium ${STATUS_STYLES[job.status_code] || "bg-slate-100 text-slate-700"}`}>
-                      {job.status_code}
+                    <span className={`rounded-full px-2 py-1 text-xs font-medium ${statusStyle(job.status_code)}`}>
+                      {statusLabel(job.status_code)}
                     </span>
                   </td>
                 </tr>

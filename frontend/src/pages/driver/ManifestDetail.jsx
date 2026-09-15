@@ -3,13 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { api } from "../../api";
 import AppHeader from "../../components/AppHeader";
 import { useLanguage } from "../../i18n/LanguageContext";
-
-const STATUS_STYLES = {
-  registered: "bg-slate-100 text-slate-700",
-  delivered: "bg-emerald-100 text-emerald-800",
-  failed: "bg-amber-100 text-amber-800",
-  cancelled: "bg-slate-100 text-slate-500",
-};
+import { statusStyle } from "../../lib/status";
 
 export default function ManifestDetail() {
   const { manifestId } = useParams();
@@ -86,7 +80,7 @@ export default function ManifestDetail() {
               className="flex items-center justify-between rounded-lg bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200"
             >
               <p className="text-sm font-medium text-brand-black">{job.tracking_no}</p>
-              <span className={`rounded-full px-2 py-1 text-xs font-medium ${STATUS_STYLES[job.status_code] || "bg-slate-100 text-slate-700"}`}>
+              <span className={`rounded-full px-2 py-1 text-xs font-medium ${statusStyle(job.status_code)}`}>
                 {t(`status.${job.status_code}`)}
               </span>
             </li>
