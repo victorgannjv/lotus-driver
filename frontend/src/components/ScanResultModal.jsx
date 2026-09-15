@@ -20,7 +20,8 @@ const TONE_STYLES = {
 // ones worth reading.
 const AUTO_RETURN_SECONDS = 4;
 
-export default function ScanResultModal({ result, onClose, onFinish, scannedCount = 0 }) {
+export default function ScanResultModal({ result, onClose, onFinish, scannedCount = 0,
+                                         nextDrop = null, onNextDrop = null }) {
   const { t } = useLanguage();
   const autoReturn = !!onFinish && result?.tone === "success";
   const [left, setLeft] = useState(AUTO_RETURN_SECONDS);
@@ -61,10 +62,28 @@ export default function ScanResultModal({ result, onClose, onFinish, scannedCoun
 
         {autoReturn && !held ? (
           <>
+            {/* The next stop is the thing the driver is about to do, so it
+                leads. It does NOT take the countdown: walking to the next
+                door is not instant, and dropping someone into a live camera
+                they did not ask for is worse than one tap. The timer goes to
+                the trip, which is the safe place to be put. */}
+            {nextDrop && onNextDrop && (
+              <button
+                onClick={() => { setHeld(true); onNextDrop(); }}
+                autoFocus
+                className="mt-5 w-full rounded-lg bg-brand-red px-4 py-3 text-sm font-semibold text-white"
+              >
+                {t("scanComplete.nextDrop", { n: nextDrop.seq })}
+              </button>
+            )}
             <button
               onClick={onFinish}
-              autoFocus
-              className="mt-5 w-full rounded-lg bg-brand-red px-4 py-3 text-sm font-semibold text-white"
+              autoFocus={!nextDrop}
+              className={`w-full rounded-lg px-4 py-3 text-sm font-semibold ${
+                nextDrop
+                  ? "mt-2 border border-slate-300 bg-white text-brand-black"
+                  : "mt-5 bg-brand-red text-white"
+              }`}
             >
               {t("scanComplete.backNow", { n: left })}
             </button>

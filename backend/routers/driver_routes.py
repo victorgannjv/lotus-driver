@@ -156,6 +156,28 @@ async def _close_drop(pool, trip_job_id: int | None, driver_id: int, when, lat, 
                 )
 
 
+async def _next_open_drop(pool, trip_job_id: int | None, driver_id: int) -> dict | None:
+    """The next drop still waiting on this trip, so the scanner can offer it.
+
+    Returned from the outcome endpoints rather than fetched separately: the
+    driver is standing in the street and the answer to "what now" should come
+    back with the thing they just did, not after another round trip.
+    """
+    if trip_job_id is None:
+        return None
+    async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
+        await cur.execute(
+            "SELECT nxt.id, nxt.seq FROM trip_job cur_tj "
+            "JOIN manifests m ON m.id = cur_tj.manifest_id "
+            "JOIN trip_job nxt ON nxt.manifest_id = cur_tj.manifest_id AND nxt.status = 'pending' "
+            "WHERE cur_tj.id = %s AND m.driver_id = %s "
+            "ORDER BY nxt.seq LIMIT 1",
+            (trip_job_id, driver_id),
+        )
+        row = await cur.fetchone()
+    return {"id": row["id"], "seq": row["seq"]} if row else None
+
+
 async def _find_or_create_job_for_outcome(pool, driver_id: int, code: str) -> dict:
     """Looks up the job(-order) a delivery-outcome scan refers to. 'registered' and
     'failed' are both open to a new outcome (a driver can retry after a failed
@@ -445,7 +467,9 @@ async def complete_scan(
                       failed=False)
 
     job_complete = await _is_job_complete(pool, job["manifest_id"])
-    return {"job_id": job["id"], "tracking_no": code, "manifest_id": job["manifest_id"], "job_complete": job_complete}
+    return {"job_id": job["id"], "tracking_no": code, "manifest_id": job["manifest_id"],
+            "job_complete": job_complete,
+            "next_drop": await _next_open_drop(pool, trip_job_id, driver["id"])}
 
 
 @router.post("/scans/fail", status_code=201)
@@ -503,7 +527,9 @@ async def fail_scan(
     await _close_drop(pool, trip_job_id, driver["id"], occurred_dt, lat, lng, photo_id, failed=True)
 
     job_complete = await _is_job_complete(pool, job["manifest_id"])
-    return {"job_id": job["id"], "tracking_no": code, "manifest_id": job["manifest_id"], "job_complete": job_complete}
+    return {"job_id": job["id"], "tracking_no": code, "manifest_id": job["manifest_id"],
+            "job_complete": job_complete,
+            "next_drop": await _next_open_drop(pool, trip_job_id, driver["id"])}
 
 
 @router.get("/manifests")

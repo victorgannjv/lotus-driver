@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../../api";
 import AppHeader from "../../components/AppHeader";
@@ -29,6 +29,20 @@ export default function ScanComplete() {
   // Orders successfully recorded on this visit, so the driver can see the drop
   // adding up without opening anything.
   const [scanned, setScanned] = useState(0);
+  // The next drop still waiting, handed back with the outcome so the driver
+  // can walk straight to it instead of going back out to the trip to find it.
+  const [nextDrop, setNextDrop] = useState(null);
+
+  // Moving to the next drop reuses this route with a different query, so React
+  // keeps the component mounted -- without this the running count, the log and
+  // the last result would follow the driver to the next doorstep.
+  useEffect(() => {
+    setScanned(0);
+    setLog([]);
+    setResult(null);
+    setNextDrop(null);
+    setPendingCode(null);
+  }, [tripJobId]);
 
   // A code is scanned -> ask Delivered/Failed (+ reason, + proof photo) before
   // recording anything. Ignore new scans while that flow, a result confirmation, or
@@ -67,6 +81,7 @@ export default function ScanComplete() {
       setLog((l) => [{ code, ok: true, message: logMessage }, ...l]);
       setResult({ code, tone: outcome === "delivered" ? "success" : "warning", message });
       setScanned((n) => n + 1);
+      setNextDrop(res.next_drop || null);
       if (res.job_complete) setCompletedManifestId(res.manifest_id);
     } catch (err) {
       const message = err.detail || t("scanComplete.genericFailed");
@@ -144,6 +159,12 @@ export default function ScanComplete() {
         // started from the trip screen has no such destination, so it keeps
         // the plain OK.
         onFinish={tripJobId && !completedManifestId ? () => navigate("/driver") : null}
+        nextDrop={completedManifestId ? null : nextDrop}
+        onNextDrop={
+          nextDrop
+            ? () => navigate(`/driver/scans/complete?trip_job=${nextDrop.id}&seq=${nextDrop.seq}`)
+            : null
+        }
       />
       <JobCompleteModal
         open={showJobComplete}
