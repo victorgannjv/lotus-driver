@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../../api";
+import { formatDate } from "../../lib/duration";
 
 const STATUS_STYLES = {
   registered: "bg-slate-100 text-slate-700",
@@ -161,7 +162,7 @@ export default function Jobs() {
                   </td>
                   <td className="px-4 py-3 text-slate-600">{job.driver_name}</td>
                   <td className="px-4 py-3 text-slate-600">{job.warehouse_name || "—"}</td>
-                  <td className="px-4 py-3 text-slate-600">{job.work_date}</td>
+                  <td className="px-4 py-3 text-slate-600">{formatDate(job.work_date)}</td>
                   <td className="px-4 py-3 text-slate-600">{job.warehouse_arrived_at || "—"}</td>
                   <td className="px-4 py-3">
                     <span className={`rounded-full px-2 py-1 text-xs font-medium ${STATUS_STYLES[job.status_code] || "bg-slate-100 text-slate-700"}`}>

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "../../api";
 import PhotoThumb from "../../components/PhotoThumb";
 import Icon, { CHECKPOINT_ICON } from "../../components/Icon";
-import { formatDuration, formatTime } from "../../lib/duration";
+import { formatDate, formatDuration, formatTime } from "../../lib/duration";
 
 // The retrieval surface: prove one specific trip.
 //
@@ -110,7 +110,7 @@ function TripCard({ trip, open, onToggle }) {
           </span>
         </span>
 
-        <Cell label="Date">{trip.work_date}</Cell>
+        <Cell label="Date">{formatDate(trip.work_date)}</Cell>
         <Cell label="Arrived">{formatTime(trip.started_at) || "—"}</Cell>
         {/* An open trip says so. The old row rendered "05:01–…", which reads
             like a value that got cut off rather than one that does not exist

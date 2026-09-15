@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../../api";
 import PhotoThumb from "../../components/PhotoThumb";
+import { formatDate } from "../../lib/duration";
 
 export default function JobDetail() {
   const { jobId } = useParams();
@@ -54,7 +55,7 @@ export default function JobDetail() {
           </div>
           <div>
             <dt className="text-slate-400">Session date</dt>
-            <dd className="text-slate-700">{job.work_date}</dd>
+            <dd className="text-slate-700">{formatDate(job.work_date)}</dd>
           </div>
           <div>
             <dt className="text-slate-400">Arrived at warehouse</dt>

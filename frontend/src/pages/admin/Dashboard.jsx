@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../../api";
 import Icon from "../../components/Icon";
-import { formatDuration } from "../../lib/duration";
+import { formatDayRelative, formatDuration, formatShortDate } from "../../lib/duration";
 
 // The monitoring surface. Every figure answers one question: how much time did
 // Lotus cost us, and can we prove it? Nothing here grows as data accumulates --
@@ -115,8 +115,8 @@ function TrendChart({ trend, target }) {
           </>
         )}
         {weeks.map((w, i) => (
-          <text key={w} x={x(i)} y={H - 10} textAnchor="middle" fontSize="10" fill="#94A3B8">
-            {w.slice(5)}
+          <text key={w} x={x(i)} y={H - 10} textAnchor="middle" fontSize="11" fill="#64748B">
+            {formatShortDate(w)}
           </text>
         ))}
         {outlets.map((o, oi) => {
@@ -304,7 +304,7 @@ export default function Dashboard() {
                 <tbody>
                   {data.manpower.map((d) => (
                     <tr key={d.work_date} className="border-t border-slate-100">
-                      <td className="py-2 pr-4 font-medium">{d.work_date}</td>
+                      <td className="py-2 pr-4 font-medium">{formatDayRelative(d.work_date)}</td>
                       <td className="py-2 pr-4">{d.on_duty}</td>
                       <td className="py-2 pr-4">{d.trips}</td>
                       <td className="py-2 pr-4">{d.trips_per_driver}</td>
@@ -329,7 +329,7 @@ export default function Dashboard() {
           <section className="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
             <h2 className="text-base font-semibold text-brand-black">Time at outlet, by week</h2>
             <p className="mt-0.5 text-xs text-slate-500">
-              Weekly average arrival-to-departure per outlet.
+              Weekly average arrival-to-departure per outlet. Each point is the week beginning that date.
             </p>
             <TrendChart trend={data.trend} target={data.at_outlet_target} />
           </section>

@@ -28,3 +28,46 @@ export function formatDayLabel(iso) {
   if (Number.isNaN(d.getTime())) return iso;
   return d.toLocaleDateString(undefined, { weekday: "short", day: "2-digit", month: "short" });
 }
+
+// "2026-09-15" -> "Mon 15 Sep". An ISO date sorts well and reads badly: on a
+// dashboard scanned every morning, "2026-09-15" makes a person count back to
+// work out whether that row is today.
+//
+// Month and weekday names are fixed rather than taken from toLocaleDateString.
+// The browser's locale decides that otherwise -- en-GB renders September as
+// "Sept", which is both wider than every other month and different from what
+// the next person sees. A shared dashboard should read the same to everyone
+// looking at it.
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+function parseISODate(iso) {
+  if (!iso) return null;
+  const d = new Date(`${iso}T00:00:00`);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+export function formatDate(iso) {
+  const d = parseISODate(iso);
+  if (!d) return iso || "";
+  return `${DAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}`;
+}
+
+// The same, with the two labels that save the counting entirely.
+export function formatDayRelative(iso) {
+  const d = parseISODate(iso);
+  if (!d) return iso || "";
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const days = Math.round((today - d) / 86400000);
+  if (days === 0) return `Today · ${formatDate(iso)}`;
+  if (days === 1) return `Yesterday · ${formatDate(iso)}`;
+  return formatDate(iso);
+}
+
+// "2026-09-07" -> "7 Sep", for an axis where the weekday is noise.
+export function formatShortDate(iso) {
+  const d = parseISODate(iso);
+  if (!d) return iso || "";
+  return `${d.getDate()} ${MONTHS[d.getMonth()]}`;
+}
