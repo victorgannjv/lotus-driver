@@ -6,6 +6,7 @@ import AppHeader from "../../components/AppHeader";
 import Icon from "../../components/Icon";
 import LanguageSwitcher from "../../components/LanguageSwitcher";
 import LocationBanner from "../../components/LocationBanner";
+import UpdateBar from "../../components/UpdateBar";
 import MyDay from "../../components/MyDay";
 import TripTimeline from "../../components/TripTimeline";
 import { useLanguage } from "../../i18n/LanguageContext";
@@ -136,6 +137,7 @@ export default function Home() {
             {/* Asked here, where a tap can still raise the browser's dialog --
                 not from inside a submit, half a second after the camera app
                 handed the screen back. */}
+            <UpdateBar />
             <LocationBanner />
 
             {/* Today's runs. A driver does two or three, and needs to be able to
@@ -200,6 +202,13 @@ export default function Home() {
         )}
 
         {tab === "day" && <MyDay refreshKey={refreshKey} />}
+
+        {/* Always readable, so "which version is this phone on?" is a glance
+            rather than an investigation. It cost us several rounds of fixing
+            things that were already fixed. */}
+        <p className="pb-2 pt-6 text-center text-[11px] text-slate-400">
+          {t("update.build", { build: __BUILD_ID__ })}
+        </p>
       </div>
 
     </main>

@@ -3,6 +3,7 @@ import { NavLink, Outlet, useLocation } from "react-router-dom";
 import RequireAdmin from "../../auth/RequireAdmin";
 import AppHeader from "../../components/AppHeader";
 import SampleDataBanner from "../../components/SampleDataBanner";
+import UpdateBar from "../../components/UpdateBar";
 import { CONFIG_TABS } from "./configTabs";
 import Icon from "../../components/Icon";
 
@@ -88,6 +89,7 @@ export default function Gate() {
           </div>
         </nav>
         <div className="px-6 py-6">
+          <UpdateBar />
           <SampleDataBanner />
           <Outlet />
         </div>

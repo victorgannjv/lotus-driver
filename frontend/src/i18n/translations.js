@@ -245,6 +245,11 @@ export const translations = {
       viewJob: "View job",
       keepScanning: "Keep scanning",
     },
+    update: {
+      available: "A newer version of the app is ready.",
+      reload: "Reload",
+      build: "Build {build}",
+    },
     photoCapture: {
       takePhoto: "Take photo",
       chooseFile: "Choose file",
@@ -527,6 +532,11 @@ export const translations = {
       backHome: "Kembali ke laman utama",
       viewJob: "Lihat kerja",
       keepScanning: "Teruskan mengimbas",
+    },
+    update: {
+      available: "Versi aplikasi yang lebih baharu telah sedia.",
+      reload: "Muat semula",
+      build: "Binaan {build}",
     },
     photoCapture: {
       takePhoto: "Ambil gambar",
