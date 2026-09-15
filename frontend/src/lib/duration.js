@@ -65,6 +65,17 @@ export function formatDayRelative(iso) {
   return formatDate(iso);
 }
 
+// "2026-09-15 13:49:00" -> "Mon 15 Sep · 13:49". The wire format carries
+// seconds and an ISO date because it has to sort and parse; a person reading
+// one event in a log needs neither.
+export function formatDateTime(value) {
+  if (!value) return "";
+  const text = String(value);
+  const time = formatTime(text);
+  const day = formatDate(text.slice(0, 10));
+  return time ? `${day} · ${time}` : day;
+}
+
 // "2026-09-07" -> "7 Sep", for an axis where the weekday is noise.
 export function formatShortDate(iso) {
   const d = parseISODate(iso);

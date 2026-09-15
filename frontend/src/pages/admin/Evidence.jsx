@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../../api";
 import PhotoThumb from "../../components/PhotoThumb";
 import { dropLabel, dropStyle, statusLabel, statusStyle } from "../../lib/status";
@@ -71,6 +72,87 @@ function Cell({ label, children, tone }) {
       </span>
       <span className={`min-w-0 truncate text-sm ${tone || "text-brand-black"}`}>{children}</span>
     </span>
+  );
+}
+
+// A drop row is a door, not a dead end.
+//
+// The trail behind one parcel -- every status event with its own time, GPS,
+// photo and the failure reason the driver typed -- lives on the order page.
+// From here an admin could see THAT job 2 failed but then had to go to Orders
+// and search the tracking number to find out WHY, which is the question the
+// row itself raises.
+//
+// The order page is per parcel, so the parcel is what links. A drop carrying a
+// single parcel is unambiguous, so its whole header row goes there as well; a
+// drop with several keeps an inert header and lets each parcel link for
+// itself, rather than guessing which one was meant.
+function JobRow({ trip, job: j }) {
+  const only = j.orders.length === 1 ? j.orders[0] : null;
+  const Head = only ? Link : "div";
+  const headProps = only
+    ? { to: `/admin/jobs/${only.id}`, state: { from: "evidence" }, title: `Open ${only.tracking_no}` }
+    : {};
+
+  return (
+    <li className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs">
+      <div className="flex flex-wrap items-center gap-3">
+        {/* The photo stays outside the link: tapping a proof photo should open
+            the photo, not navigate away from it. */}
+        <Head
+          {...headProps}
+          className={`flex min-w-0 flex-1 flex-wrap items-center gap-3 ${
+            only ? "group -mx-1 rounded px-1 py-0.5 hover:bg-slate-50" : ""
+          }`}
+        >
+          <span className={`h-4 w-1 rounded ${
+            j.status === "failed" ? "bg-brand-red" : j.status === "done" ? "bg-emerald-600" : "bg-slate-300"
+          }`} />
+          <span className={`font-semibold ${only ? "group-hover:text-brand-red" : ""}`}>Job {j.seq}</span>
+          {/* A coloured bar told you something happened without saying what.
+              The outcome is the thing an admin came to this row for. */}
+          <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${dropStyle(j.status)}`}>
+            {dropLabel(j.status)}
+          </span>
+          <span className="text-slate-500">{formatTime(j.completed_at) || "not closed yet"}</span>
+          <span className="text-slate-500">
+            {j.orders.length} {j.orders.length === 1 ? "parcel" : "parcels"}
+          </span>
+          {only && (
+            <Icon name="chevron" className="h-3 w-3 shrink-0 text-slate-300 group-hover:text-brand-red" />
+          )}
+        </Head>
+        {j.photo_id && (
+          <PhotoThumb photoId={j.photo_id} size="h-10 w-10"
+                      caption={`T-${trip.id} · Job ${j.seq} · ${formatTime(j.completed_at)}`} />
+        )}
+      </div>
+
+      {/* Which parcels, and how each one ended. A drop can be closed with one
+          parcel delivered and another failed, and the drop's own status cannot
+          show that. Each one opens its own evidence trail. */}
+      {j.orders.length > 0 && (
+        <ul className="mt-2 space-y-0.5 border-t border-slate-100 pt-1.5">
+          {j.orders.map((o) => (
+            <li key={o.id}>
+              <Link
+                to={`/admin/jobs/${o.id}`}
+                state={{ from: "evidence" }}
+                className="-mx-1 flex items-center justify-between gap-2 rounded px-1 py-1 hover:bg-slate-50"
+              >
+                <span className="truncate font-medium text-brand-red underline">{o.tracking_no}</span>
+                <span className="flex shrink-0 items-center gap-1.5">
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${statusStyle(o.status_code)}`}>
+                    {statusLabel(o.status_code)}
+                  </span>
+                  <Icon name="chevron" className="h-3 w-3 text-slate-300" />
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </li>
   );
 }
 
@@ -192,45 +274,7 @@ function TripCard({ trip, open, onToggle }) {
               <p className="mb-2 mt-4 text-[10px] font-bold uppercase tracking-widest text-slate-400">Jobs</p>
               <ul className="space-y-1.5">
                 {detail.job_detail.map((j) => (
-                  <li key={j.id} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs">
-                    <div className="flex flex-wrap items-center gap-3">
-                      <span className={`h-4 w-1 rounded ${
-                        j.status === "failed" ? "bg-brand-red" : j.status === "done" ? "bg-emerald-600" : "bg-slate-300"
-                      }`} />
-                      <span className="font-semibold">Job {j.seq}</span>
-                      {/* A coloured bar told you something happened without
-                          saying what. The outcome is the thing an admin came
-                          to this row for. */}
-                      <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${dropStyle(j.status)}`}>
-                        {dropLabel(j.status)}
-                      </span>
-                      <span className="text-slate-500">{formatTime(j.completed_at) || "not closed yet"}</span>
-                      <span className="text-slate-500">
-                        {j.orders.length} {j.orders.length === 1 ? "parcel" : "parcels"}
-                      </span>
-                      <span className="flex-1" />
-                      {j.photo_id && (
-                        <PhotoThumb photoId={j.photo_id} size="h-10 w-10"
-                                    caption={`T-${trip.id} · Job ${j.seq} · ${formatTime(j.completed_at)}`} />
-                      )}
-                    </div>
-
-                    {/* Which parcels, and how each one ended. A drop can be
-                        closed with one parcel delivered and another failed,
-                        and the drop's own status cannot show that. */}
-                    {j.orders.length > 0 && (
-                      <ul className="mt-2 space-y-1 border-t border-slate-100 pt-2">
-                        {j.orders.map((o) => (
-                          <li key={o.id} className="flex items-center justify-between gap-2">
-                            <span className="truncate text-slate-600">{o.tracking_no}</span>
-                            <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${statusStyle(o.status_code)}`}>
-                              {statusLabel(o.status_code)}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </li>
+                  <JobRow key={j.id} trip={trip} job={j} />
                 ))}
               </ul>
             </>
@@ -241,41 +285,88 @@ function TripCard({ trip, open, onToggle }) {
   );
 }
 
+// Which trips, which page and which one is open all live in the URL rather
+// than in component state.
+//
+// Opening a parcel's evidence trail leaves this page and comes back to a fresh
+// mount, so state held in useState is gone: the admin returned to page 1 of an
+// unfiltered list with the trip they were reading collapsed. The URL survives
+// that, and survives a refresh and a paste into chat as well -- which for a
+// dispute tool is the point. Filter changes replace the history entry instead
+// of adding one, so Back means "back out of the parcel", not "undo a keystroke".
+const FIELDS = {
+  q: "q",
+  warehouseId: "warehouse_id",
+  driverId: "driver_id",
+  owner: "owner",
+  overOnly: "over_target_only",
+};
+
 export default function Evidence() {
-  const [filters, setFilters] = useState({ q: "", warehouseId: "", driverId: "", owner: "", overOnly: false });
-  const [page, setPage] = useState(1);
+  const [params, setParams] = useSearchParams();
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [warehouses, setWarehouses] = useState([]);
   const [drivers, setDrivers] = useState([]);
-  const [openId, setOpenId] = useState(null);
+
+  const filters = {
+    q: params.get(FIELDS.q) || "",
+    warehouseId: params.get(FIELDS.warehouseId) || "",
+    driverId: params.get(FIELDS.driverId) || "",
+    owner: params.get(FIELDS.owner) || "",
+    overOnly: params.get(FIELDS.overOnly) === "true",
+  };
+  const page = Math.max(1, Number(params.get("page")) || 1);
+  const openId = Number(params.get("trip")) || null;
 
   useEffect(() => {
     api.get("/admin/warehouses").then((d) => setWarehouses(d.warehouses)).catch(() => {});
     api.get("/admin/drivers").then((d) => setDrivers(d.drivers)).catch(() => {});
   }, []);
 
-  const load = useCallback(() => {
-    const qs = new URLSearchParams({ page: String(page), page_size: "25" });
-    if (filters.q) qs.set("q", filters.q);
-    if (filters.warehouseId) qs.set("warehouse_id", filters.warehouseId);
-    if (filters.driverId) qs.set("driver_id", filters.driverId);
-    if (filters.owner) qs.set("owner", filters.owner);
-    if (filters.overOnly) qs.set("over_target_only", "true");
+  const patch = useCallback(
+    (changes, { keepPage = false } = {}) => {
+      setParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          for (const [key, value] of Object.entries(changes)) {
+            if (value === "" || value == null || value === false) next.delete(key);
+            else next.set(key, String(value));
+          }
+          if (!keepPage) next.delete("page");
+          return next;
+        },
+        { replace: true },
+      );
+    },
+    [setParams],
+  );
+
+  // Depends on the query string, not on the filters object -- which is rebuilt
+  // every render and would re-fetch forever as a dependency.
+  const qs = (() => {
+    const out = new URLSearchParams({ page: String(page), page_size: "25" });
+    if (filters.q) out.set("q", filters.q);
+    if (filters.warehouseId) out.set("warehouse_id", filters.warehouseId);
+    if (filters.driverId) out.set("driver_id", filters.driverId);
+    if (filters.owner) out.set("owner", filters.owner);
+    if (filters.overOnly) out.set("over_target_only", "true");
+    return out.toString();
+  })();
+
+  useEffect(() => {
     setData(null);
+    setError(null);
     api
       .get(`/admin/evidence?${qs}`)
       .then(setData)
       .catch((err) => setError(err.detail || "could not load the evidence list"));
-  }, [filters, page]);
-
-  useEffect(load, [load]);
+  }, [qs]);
 
   function set(field) {
     return (e) => {
       const value = e.target.type === "checkbox" ? e.target.checked : e.target.value;
-      setFilters((f) => ({ ...f, [field]: value }));
-      setPage(1);
+      patch({ [FIELDS[field]]: value });
     };
   }
 
@@ -348,7 +439,7 @@ export default function Evidence() {
                 key={trip.id}
                 trip={trip}
                 open={openId === trip.id}
-                onToggle={() => setOpenId(openId === trip.id ? null : trip.id)}
+                onToggle={() => patch({ trip: openId === trip.id ? "" : trip.id }, { keepPage: true })}
               />
             ))}
             {data.trips.length === 0 && (
@@ -371,10 +462,12 @@ export default function Evidence() {
               <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-slate-300" /><b className="text-slate-700">On time</b> — nothing to explain</span>
             </div>
             <div className="flex items-center gap-3">
-              <button type="button" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}
+              <button type="button" disabled={page <= 1}
+                      onClick={() => patch({ page: page - 1, trip: "" }, { keepPage: true })}
                       className="font-semibold text-brand-red disabled:text-slate-300">← Previous</button>
               <span className="text-xs text-slate-500">Page {data.page} of {data.pages}</span>
-              <button type="button" disabled={page >= data.pages} onClick={() => setPage((p) => p + 1)}
+              <button type="button" disabled={page >= data.pages}
+                      onClick={() => patch({ page: page + 1, trip: "" }, { keepPage: true })}
                       className="font-semibold text-brand-red disabled:text-slate-300">Next →</button>
             </div>
           </div>

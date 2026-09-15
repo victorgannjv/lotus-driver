@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { api } from "../../api";
 import PhotoThumb from "../../components/PhotoThumb";
-import { formatDate } from "../../lib/duration";
+import { formatDate, formatDateTime } from "../../lib/duration";
 import { statusLabel, statusStyle } from "../../lib/status";
 
 export default function JobDetail() {
   const { jobId } = useParams();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [job, setJob] = useState(null);
   const [events, setEvents] = useState(null);
   const [error, setError] = useState(null);
@@ -25,9 +27,19 @@ export default function JobDetail() {
 
   return (
     <div>
-      <Link to="/admin/jobs" className="text-sm text-slate-500 underline">
-        ← All jobs
-      </Link>
+      {/* Back to where you came from. This page is now opened from the
+          Evidence tab as well, and sending someone who arrived mid-trip to an
+          unfiltered Orders list costs them the filters, the page and the open
+          trip they had. */}
+      {location.state?.from === "evidence" ? (
+        <button type="button" onClick={() => navigate(-1)} className="text-sm text-slate-500 underline">
+          ← Back to Evidence
+        </button>
+      ) : (
+        <Link to="/admin/jobs" className="text-sm text-slate-500 underline">
+          ← All jobs
+        </Link>
+      )}
 
       <div className="mt-3 rounded-xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
         <div className="flex items-start justify-between">
@@ -62,7 +74,7 @@ export default function JobDetail() {
           </div>
           <div>
             <dt className="text-slate-400">Arrived at warehouse</dt>
-            <dd className="text-slate-700">{job.warehouse_arrived_at || "—"}</dd>
+            <dd className="text-slate-700">{formatDateTime(job.warehouse_arrived_at) || "—"}</dd>
           </div>
           {job.warehouse_arrived_photo_id && (
             <div>
@@ -83,7 +95,7 @@ export default function JobDetail() {
               <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusStyle(ev.status_code)}`}>
                 {statusLabel(ev.status_code)}
               </span>
-              <span className="text-xs text-slate-400">{ev.occurred_at}</span>
+              <span className="text-xs text-slate-400">{formatDateTime(ev.occurred_at)}</span>
             </div>
             <p className="mt-1 text-xs text-slate-500">
               {ev.lat != null
