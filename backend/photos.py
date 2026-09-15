@@ -15,6 +15,8 @@ import io
 
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
+from localities import describe
+
 
 def _font(size: int):
     """Pillow ships Aileron and scales it through FreeType; DejaVu is used when
@@ -102,11 +104,18 @@ def evidence_caption(*, ref: str, what: str, who: str | None = None,
     thread for Lotus to pull.
     """
     head = " · ".join(x for x in (ref, what, who) if x)
-    coords = (
-        f"Lat.: {lat:.7f}, Long.: {lng:.7f}"
-        if lat is not None and lng is not None
-        else "Location not recorded"
-    )
+    # The coordinates stay exact and stay first -- they are the record. The
+    # locality is appended because "3.0819, 101.5813" tells a reader nothing
+    # without a map, and a dispute is read by people who will not open one.
+    # Derived offline from those same coordinates, so it can never contradict
+    # them, and omitted when nothing known is near enough to name.
+    if lat is None or lng is None:
+        coords = "Location not recorded"
+    else:
+        where = describe(lat, lng)
+        coords = f"Lat.: {lat:.7f}, Long.: {lng:.7f}"
+        if where:
+            coords += f"  ({where})"
     return [head, coords, place or "", when]
 
 

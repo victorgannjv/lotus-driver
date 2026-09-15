@@ -19,6 +19,7 @@ from datetime import datetime
 from asyncmy.cursors import DictCursor
 
 from clocks import fmt, to_local
+from localities import describe
 
 # gap_code -> (from checkpoint, to checkpoint, default fault party or None)
 # None means "ask the driver" -- loading time can be Lotus's manpower or ours.
@@ -191,6 +192,9 @@ def serialize_checkpoint(row: dict) -> dict:
         "occurred_at": fmt(row["occurred_at"]),
         "lat": float(row["lat"]) if row["lat"] is not None else None,
         "lng": float(row["lng"]) if row["lng"] is not None else None,
+        # Where that fix was, in words. Saves every screen doing its own
+        # lookup and keeps one answer for one coordinate.
+        "place": describe(row["lat"], row["lng"]),
         "photo_id": row["photo_id"],
         "reason_code": row["reason_code"],
         "reason_label": row.get("reason_label"),

@@ -457,7 +457,12 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
                 {t(`checkpoint.${cp}`)}
               </p>
               {done ? (
-                <p className="text-xs text-slate-500">{formatTime(done.occurred_at)}</p>
+                <p className="text-xs text-slate-500">
+                  {formatTime(done.occurred_at)}
+                  {/* Where the phone was when this was stamped. A coordinate
+                      pair means nothing at a glance; a town does. */}
+                  {done.place ? ` · ${done.place}` : ""}
+                </p>
               ) : (
                 <p className="text-xs text-slate-400">
                   {SERVER_FIRED.has(cp) ? t("checkpoint.auto") : t("checkpoint.pending")}

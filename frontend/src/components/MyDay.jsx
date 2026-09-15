@@ -49,6 +49,12 @@ function CheckpointTrail({ trip }) {
                 {gap.target_minutes != null ? ` / ${formatDuration(gap.target_minutes)}` : ""}
               </p>
             )}
+            {c.place && (
+              <p className="mt-0.5 flex items-center gap-1 text-[11px] text-slate-400">
+                <Icon name="pin" className="h-3 w-3 shrink-0" />
+                {c.place}
+              </p>
+            )}
             {c.reason_label && (
               <p className="mt-1 rounded-r border-l-2 border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] text-slate-600">
                 {c.reason_label}

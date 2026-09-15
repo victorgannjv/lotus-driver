@@ -158,7 +158,10 @@ function TripCard({ trip, open, onToggle }) {
                     <Icon name={CHECKPOINT_ICON[c.checkpoint]} className="h-3.5 w-3.5" />
                   </span>
                   <span className="font-semibold text-brand-black">{CHECKPOINT_LABEL[c.checkpoint]}</span>
-                  <span>{formatTime(c.occurred_at)}</span>
+                  <span className="min-w-0">
+                    <span className="block">{formatTime(c.occurred_at)}</span>
+                    {c.place && <span className="block truncate text-[10px] text-slate-400">{c.place}</span>}
+                  </span>
                   <span className={`${over ? "font-semibold text-brand-red" : "text-slate-500"}`}>
                     {gap ? `${gap.label} ${formatDuration(gap.minutes)} / ${formatDuration(gap.target_minutes)}` : ""}
                     {c.reason_label ? ` · ${c.reason_label}` : ""}
