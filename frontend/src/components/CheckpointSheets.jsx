@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import Icon from "./Icon";
 import PhotoCapture from "./PhotoCapture";
 import { useLanguage } from "../i18n/LanguageContext";
@@ -111,7 +112,7 @@ function Sheet({ title, subtitle, children, onCancel, cancelLabel }) {
 // A photo is the evidence a claim rests on, so the step will not stamp without
 // one. The stamp itself comes from the server clock, not the handset -- a phone
 // with the wrong time would hand Lotus an argument against every photo.
-export function PhotoSheet({ open, title, busy, onSubmit, onCancel, maxPhotos = 4, reasons = [] }) {
+export function PhotoSheet({ open, title, busy, onSubmit, onCancel, maxPhotos = 4, reasons = [], scanTo = null }) {
   const { t } = useLanguage();
   const [photos, setPhotos] = useState([]);
   const [reason, setReason] = useState("");
@@ -142,6 +143,21 @@ export function PhotoSheet({ open, title, busy, onSubmit, onCancel, maxPhotos = 
         </button>
       }
     >
+      {/* Scanning belongs on the page where the drop is being closed, not
+          only on the row behind it: this is where the driver is standing at
+          the door with the parcels in hand. Above the camera because leaving
+          for the scanner unmounts this page -- scan first, photograph second,
+          and nothing taken is lost on the way out. */}
+      {scanTo && (
+        <Link
+          to={scanTo}
+          className="mb-4 flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-brand-black"
+        >
+          <Icon name="route" className="h-4 w-4" />
+          {t("trip.scanOrdersForJob")}
+        </Link>
+      )}
+
       <PhotoCapture
         label={t("checkpoint.photoLabel")}
         onChange={(v) => setPhotos(Array.isArray(v) ? v : v ? [v] : [])}

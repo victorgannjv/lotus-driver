@@ -11,46 +11,75 @@ import Profile from "./pages/driver/Profile";
 import ResetPassword from "./pages/driver/ResetPassword";
 import Signup from "./pages/driver/Signup";
 
+// A driver's tab lives for days. When a deploy replaces the fingerprinted
+// chunks, a lazy import for a route they have not opened yet fetches a URL
+// that no longer exists -- the promise rejects, React renders nothing, and
+// the driver gets a blank page exactly where they tapped. That is what
+// happened to the scan button.
+//
+// One automatic reload fixes it: index.html is no-cache, so a reload picks up
+// the new chunk names. The sessionStorage flag makes it once and not a loop,
+// and it is cleared as soon as anything imports successfully.
+const RELOADED = "njv.chunk.reloaded";
+
+function lazyRoute(factory) {
+  return lazyRoute(() =>
+    factory()
+      .then((mod) => {
+        sessionStorage.removeItem(RELOADED);
+        return mod;
+      })
+      .catch((err) => {
+        if (!sessionStorage.getItem(RELOADED)) {
+          sessionStorage.setItem(RELOADED, "1");
+          window.location.reload();
+          return new Promise(() => {}); // the reload takes over
+        }
+        throw err;
+      }),
+  );
+}
+
 // Admin subtree is lazy-loaded so the field-facing driver bundle stays small. The
 // scan pages pull in the (~450KB) barcode-scanning library, so they're lazy too --
 // no reason to make every driver download that just to sign in or check history.
-const AdminGate = lazy(() => import("./pages/admin/Gate"));
-const AdminDashboard = lazy(() => import("./pages/admin/Dashboard"));
-const AdminJobs = lazy(() => import("./pages/admin/Jobs"));
-const AdminEvidence = lazy(() => import("./pages/admin/Evidence"));
-const ConfigLayout = lazy(() =>
+const AdminGate = lazyRoute(() => import("./pages/admin/Gate"));
+const AdminDashboard = lazyRoute(() => import("./pages/admin/Dashboard"));
+const AdminJobs = lazyRoute(() => import("./pages/admin/Jobs"));
+const AdminEvidence = lazyRoute(() => import("./pages/admin/Evidence"));
+const ConfigLayout = lazyRoute(() =>
   import("./pages/admin/Configuration").then((m) => ({ default: m.ConfigurationLayout }))
 );
-const ConfigOutlets = lazy(() =>
+const ConfigOutlets = lazyRoute(() =>
   import("./pages/admin/Configuration").then((m) => ({ default: m.OutletsConfig }))
 );
-const ConfigSample = lazy(() =>
+const ConfigSample = lazyRoute(() =>
   import("./pages/admin/Configuration").then((m) => ({ default: m.SampleData }))
 );
-const ConfigActivity = lazy(() =>
+const ConfigActivity = lazyRoute(() =>
   import("./pages/admin/Configuration").then((m) => ({ default: m.ActivityLog }))
 );
-const ConfigWindows = lazy(() =>
+const ConfigWindows = lazyRoute(() =>
   import("./pages/admin/Configuration").then((m) => ({ default: m.TripWindows }))
 );
-const ConfigDrivers = lazy(() =>
+const ConfigDrivers = lazyRoute(() =>
   import("./pages/admin/Configuration").then((m) => ({ default: m.DriversConfig }))
 );
-const ConfigAdmins = lazy(() =>
+const ConfigAdmins = lazyRoute(() =>
   import("./pages/admin/Configuration").then((m) => ({ default: m.AdminsConfig }))
 );
-const ConfigReasons = lazy(() =>
+const ConfigReasons = lazyRoute(() =>
   import("./pages/admin/Configuration").then((m) => ({ default: m.ReasonCodes }))
 );
-const ConfigTargets = lazy(() =>
+const ConfigTargets = lazyRoute(() =>
   import("./pages/admin/Configuration").then((m) => ({ default: m.Targets }))
 );
-const ConfigDriverApp = lazy(() =>
+const ConfigDriverApp = lazyRoute(() =>
   import("./pages/admin/Configuration").then((m) => ({ default: m.DriverApp }))
 );
-const AdminJobDetail = lazy(() => import("./pages/admin/JobDetail"));
-const ScanRegister = lazy(() => import("./pages/driver/ScanRegister"));
-const ScanComplete = lazy(() => import("./pages/driver/ScanComplete"));
+const AdminJobDetail = lazyRoute(() => import("./pages/admin/JobDetail"));
+const ScanRegister = lazyRoute(() => import("./pages/driver/ScanRegister"));
+const ScanComplete = lazyRoute(() => import("./pages/driver/ScanComplete"));
 
 export default function App() {
   return (

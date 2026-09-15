@@ -221,7 +221,10 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
   if (nextJob && stamped.has("departed")) {
     action = {
       label: t("trip.completeJob", { n: nextJob.seq, total: state.jobs.length }),
-      run: () => setPendingPhoto({ kind: "job", jobId: nextJob.id, title: t("trip.jobPhotoTitle", { n: nextJob.seq }) }),
+      run: () => setPendingPhoto({
+        kind: "job", jobId: nextJob.id, seq: nextJob.seq,
+        title: t("trip.jobPhotoTitle", { n: nextJob.seq }),
+      }),
     };
   } else if (nextCp && !SERVER_FIRED.has(nextCp)) {
     action = {
@@ -567,6 +570,11 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
         maxPhotos={4}
         onCancel={() => setPendingPhoto(null)}
         reasons={pendingPhoto?.kind === "checkpoint" ? reasons : []}
+        scanTo={
+          pendingPhoto?.kind === "job"
+            ? `/driver/scans/complete?trip_job=${pendingPhoto.jobId}&seq=${pendingPhoto.seq}`
+            : null
+        }
         onSubmit={(photo, reasonCode) =>
           pendingPhoto.kind === "job"
             ? completeJob(pendingPhoto.jobId, photo)
