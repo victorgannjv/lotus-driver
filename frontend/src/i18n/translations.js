@@ -67,6 +67,9 @@ export const translations = {
       blockedHow: "Tap the icon on the left of the address bar, open Permissions, set Location to Allow, then reload this page.",
       allow: "Turn on location",
       retry: "Try again",
+      dismiss: "Not now",
+      state: "Browser reports: {state}",
+      build: "build {build}",
       asking: "Asking…",
     },
     home: {
@@ -347,6 +350,9 @@ export const translations = {
       blockedHow: "Tekan ikon di sebelah kiri bar alamat, buka Permissions, tetapkan Location kepada Allow, kemudian muat semula halaman ini.",
       allow: "Hidupkan lokasi",
       retry: "Cuba lagi",
+      dismiss: "Bukan sekarang",
+      state: "Pelayar melaporkan: {state}",
+      build: "binaan {build}",
       asking: "Sedang bertanya…",
     },
     home: {

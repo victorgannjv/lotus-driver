@@ -36,6 +36,9 @@ export default function LocationBanner() {
   // worth saying.
   const [fix, setFix] = useState(() => lastFix());
   const [result, setResult] = useState(null); // last attempt, for its error code
+  // Dismissed for this visit only. It is a nag by nature, and a driver who has
+  // decided to work without location should be able to get on with the shift.
+  const [hidden, setHidden] = useState(false);
 
   const recheck = useCallback(async () => {
     const state = await permissionState();
@@ -76,6 +79,7 @@ export default function LocationBanner() {
     };
   }, [recheck]);
 
+  if (hidden) return null;
   // Coordinates in hand beat any opinion the Permissions API has.
   if (fix?.lat != null) return null;
   // Still checking, working, or a browser we cannot ask about. The photo screen
@@ -107,6 +111,15 @@ export default function LocationBanner() {
         {title}
       </p>
       <p className="mt-1 leading-snug text-amber-800">{body}</p>
+
+      {/* The facts, so "it still asks every time" can be diagnosed instead of
+          guessed at. `perm` is what the browser itself reports: if it says
+          granted the banner is gone, so seeing "prompt" here means the grant
+          did not persist -- which is what Chrome's "Only this time" does. The
+          build id tells us whether this handset is even running the fix. */}
+      <p className="mt-1.5 text-[11px] text-amber-700/80">
+        {t("location.state", { state: perm })} · {t("location.build", { build: __BUILD_ID__ })}
+      </p>
       {!blocked && (
         <button
           type="button"
@@ -117,6 +130,13 @@ export default function LocationBanner() {
           {busy ? t("location.asking") : result ? t("location.retry") : t("location.allow")}
         </button>
       )}
+      <button
+        type="button"
+        onClick={() => setHidden(true)}
+        className="mt-1.5 w-full py-1.5 text-xs font-medium text-amber-800/80"
+      >
+        {t("location.dismiss")}
+      </button>
     </div>
   );
 }
