@@ -414,6 +414,22 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
                     : t("trip.setJobCount")}
                 </button>
               )}
+              {/* The delivery scanner. /driver/scans/complete survived the
+                  rebuild but nothing linked to it any more, so the one place a
+                  driver records what actually happened to a parcel had no door
+                  -- the barcode is how an order gets tied to a job at all, and
+                  without it a job is a number with nothing underneath it.
+                  Here, on top of the jobs, because that is the only step it
+                  applies to. */}
+              {cp === "deliveries_done" && stamped.has("departed") && !stamped.has("returned") && (
+                <Link
+                  to="/driver/scans/complete"
+                  className="mt-2 flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-semibold text-brand-black shadow-sm ring-1 ring-slate-200"
+                >
+                  <Icon name="route" className="h-4 w-4" />
+                  {t("trip.scanDelivery")}
+                </Link>
+              )}
               {cp === "deliveries_done" && state.jobs.length > 0 && (
                 <ul className="mt-2 space-y-1.5">
                   {state.jobs.map((j) => (
