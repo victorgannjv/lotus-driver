@@ -209,28 +209,49 @@ export default function Dashboard() {
 
       {data && (
         <div className="space-y-5">
+          {/* Asked directly: where do these numbers come from. Answered once,
+              at the top, rather than left to be inferred from four subtitles. */}
+          <p className="text-xs leading-relaxed text-slate-500">
+            Every figure below is calculated from the checkpoints drivers stamp on their phones — arrived,
+            goods ready, loaded, departed, returned. The app subtracts one timestamp from the next to get
+            the time each step took. Nothing here is typed in by hand.
+            {target
+              ? " A step that runs longer than its allowance is counted as a delay, and the reason the driver picks decides whether those minutes are attributed to Lotus, to us, or to neither."
+              : " Per-step time allowances are currently switched off, so no step is counted as a delay and the two attribution figures are not being measured. Lateness is judged against the contracted delivery windows instead."}
+          </p>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {/* Three of these four are measured against the per-step time
+                allowances. With allowances switched off they are not zero,
+                they are unmeasured -- and a confident "0m" next to
+                "Disputable delay" reads as "nothing to claim", which is the
+                opposite of true. They say so instead. */}
             <Tile
-              accent
-              label="Disputable delay"
-              value={formatDuration(t.owned_minutes.lotus)}
-              sub="Lotus-owned time over target"
+              accent={!!target}
+              label="Delay caused by Lotus"
+              value={target ? formatDuration(t.owned_minutes.lotus) : "—"}
+              sub={target
+                ? "Minutes a step ran over its allowance, where the driver's reason points at the outlet"
+                : "Not measured — time allowances are off"}
               delta={
-                t.owned_minutes_previous.lotus
+                target && t.owned_minutes_previous.lotus
                   ? `was ${formatDuration(t.owned_minutes_previous.lotus)} last period`
                   : null
               }
               deltaBad={t.owned_minutes.lotus > t.owned_minutes_previous.lotus}
             />
             <Tile
-              label="Trips over target"
-              value={`${t.over_target} / ${t.trips}`}
-              sub={t.breach_rate !== null ? `${t.breach_rate}% missed the target` : "no trips yet"}
+              label="Trips over allowance"
+              value={target ? `${t.over_target} / ${t.trips}` : `— / ${t.trips}`}
+              sub={!target
+                ? "Not measured — time allowances are off"
+                : t.breach_rate !== null
+                  ? `${t.breach_rate}% of trips spent longer at the outlet than allowed`
+                  : "No trips in this period"}
             />
             <Tile
               label="Avg time at outlet"
               value={formatDuration(t.avg_at_outlet_minutes)}
-              sub="arrival to departure"
+              sub="Average from arriving at the outlet to leaving it"
               delta={
                 t.avg_delta_minutes !== null
                   ? `${t.avg_delta_minutes > 0 ? "▲" : "▼"} ${formatDuration(Math.abs(t.avg_delta_minutes))} vs previous period`
@@ -239,9 +260,11 @@ export default function Dashboard() {
               deltaBad={t.avg_delta_minutes > 0}
             />
             <Tile
-              label="Ours to fix"
-              value={formatDuration(t.owned_minutes.njv)}
-              sub="Ninja Van-owned — concede before filing"
+              label="Delay caused by us"
+              value={target ? formatDuration(t.owned_minutes.njv) : "—"}
+              sub={target
+                ? "Same measure, where the driver's reason points at Ninja Van"
+                : "Not measured — time allowances are off"}
             />
           </div>
 
