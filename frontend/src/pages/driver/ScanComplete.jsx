@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../../api";
 import AppHeader from "../../components/AppHeader";
 import BarcodeScanner from "../../components/BarcodeScanner";
@@ -11,7 +11,13 @@ import { getPosition } from "../../lib/geolocation";
 
 export default function ScanComplete() {
   const navigate = useNavigate();
+  const [params] = useSearchParams();
   const { t } = useLanguage();
+  // Opened from one drop's row, so everything scanned here belongs to that
+  // drop. Without it the server had to guess which job an order joined, and
+  // an order tied to the wrong stop is worse than one tied to none.
+  const tripJobId = params.get("trip_job");
+  const tripJobSeq = params.get("seq");
   const [log, setLog] = useState([]);
   const [manualCode, setManualCode] = useState("");
   const [busy, setBusy] = useState(false);
@@ -46,6 +52,7 @@ export default function ScanComplete() {
       if (position.lat != null) formData.append("lat", position.lat);
       if (position.lng != null) formData.append("lng", position.lng);
       if (outcome === "failed") formData.append("reason", reason);
+      if (tripJobId) formData.append("trip_job_id", tripJobId);
       formData.append("photo", photo);
 
       const res = await api.postForm(outcome === "delivered" ? "/scans/complete" : "/scans/fail", formData);
@@ -72,7 +79,10 @@ export default function ScanComplete() {
 
   return (
     <main className="min-h-screen bg-slate-50">
-      <AppHeader backTo="/driver" title={t("scanComplete.title")} />
+      <AppHeader
+        backTo="/driver"
+        title={tripJobSeq ? t("scanComplete.titleForJob", { n: tripJobSeq }) : t("scanComplete.title")}
+      />
       <div className="mx-auto max-w-md px-4 py-6">
         <p className="text-sm text-slate-500">{t("scanComplete.instructions")}</p>
 

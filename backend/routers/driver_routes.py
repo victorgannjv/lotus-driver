@@ -352,6 +352,7 @@ async def complete_scan(
     lat: float | None = Form(None),
     lng: float | None = Form(None),
     occurred_at: str | None = Form(None),
+    trip_job_id: int | None = Form(None),
     photo: UploadFile = File(...),
     driver=Depends(get_current_driver),
 ):
@@ -371,7 +372,17 @@ async def complete_scan(
     )
 
     async with pool.acquire() as conn, conn.cursor() as cur:
-        await cur.execute("UPDATE delivery_jobs SET status_code = 'delivered' WHERE id = %s", (job["id"],))
+        # Which drop this order was scanned at. The column has existed since
+        # V13 and nothing ever wrote to it, so every order was an orphan and
+        # the admin's per-job order list was permanently empty. Only set when
+        # the driver scanned from a specific job, never guessed.
+        if trip_job_id is not None:
+            await cur.execute(
+                "UPDATE delivery_jobs SET status_code = 'delivered', trip_job_id = %s WHERE id = %s",
+                (trip_job_id, job["id"]),
+            )
+        else:
+            await cur.execute("UPDATE delivery_jobs SET status_code = 'delivered' WHERE id = %s", (job["id"],))
         await cur.execute(
             "INSERT INTO delivery_events (job_id, driver_id, status_code, occurred_at, lat, lng, photo_id) "
             "VALUES (%s, %s, 'delivered', %s, %s, %s, %s)",
@@ -390,6 +401,7 @@ async def fail_scan(
     lat: float | None = Form(None),
     lng: float | None = Form(None),
     occurred_at: str | None = Form(None),
+    trip_job_id: int | None = Form(None),
     photo: UploadFile = File(...),
     driver=Depends(get_current_driver),
 ):
@@ -412,7 +424,17 @@ async def fail_scan(
     )
 
     async with pool.acquire() as conn, conn.cursor() as cur:
-        await cur.execute("UPDATE delivery_jobs SET status_code = 'failed' WHERE id = %s", (job["id"],))
+        # Which drop this order was scanned at. The column has existed since
+        # V13 and nothing ever wrote to it, so every order was an orphan and
+        # the admin's per-job order list was permanently empty. Only set when
+        # the driver scanned from a specific job, never guessed.
+        if trip_job_id is not None:
+            await cur.execute(
+                "UPDATE delivery_jobs SET status_code = 'failed', trip_job_id = %s WHERE id = %s",
+                (trip_job_id, job["id"]),
+            )
+        else:
+            await cur.execute("UPDATE delivery_jobs SET status_code = 'failed' WHERE id = %s", (job["id"],))
         await cur.execute(
             "INSERT INTO delivery_events (job_id, driver_id, status_code, occurred_at, lat, lng, failure_reason, photo_id) "
             "VALUES (%s, %s, 'failed', %s, %s, %s, %s, %s)",

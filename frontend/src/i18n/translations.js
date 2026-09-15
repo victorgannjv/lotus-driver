@@ -115,7 +115,7 @@ export const translations = {
       job: "Job {n}",
       jobPending: "not yet",
       scanOrders: "Scan orders",
-      scanDelivery: "Scan a delivery",
+      scanDelivery: "Scan",
       addReason: "Add the reason",
       changeReason: "Change the reason",
       editJobCount: "Change job count ({n})",
@@ -213,6 +213,7 @@ export const translations = {
       failed: "Failed",
     },
     scanComplete: {
+      titleForJob: "Scan orders — Job {n}",
       title: "Scan to complete a delivery",
       instructions: "Scan the order's barcode, then say whether it was delivered or the attempt failed, and take a photo as proof. We'll log the time and location automatically.",
       delivered: "Delivered",
@@ -404,7 +405,7 @@ export const translations = {
       job: "Kerja {n}",
       jobPending: "belum lagi",
       scanOrders: "Imbas pesanan",
-      scanDelivery: "Imbas penghantaran",
+      scanDelivery: "Imbas",
       addReason: "Tambah sebab",
       changeReason: "Tukar sebab",
       editJobCount: "Tukar bilangan kerja ({n})",
@@ -502,6 +503,7 @@ export const translations = {
       failed: "Gagal",
     },
     scanComplete: {
+      titleForJob: "Imbas pesanan — Kerja {n}",
       title: "Imbas untuk selesaikan penghantaran",
       instructions: "Imbas kod bar pesanan, kemudian nyatakan sama ada ia telah dihantar atau percubaan itu gagal, dan ambil gambar sebagai bukti. Kami akan merekod masa dan lokasi secara automatik.",
       delivered: "Telah dihantar",
