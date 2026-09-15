@@ -75,7 +75,10 @@ function OwnedBar({ owned }) {
 
 // One line per outlet per week against the target. Drawn rather than charted by
 // a library: two series and a reference line do not justify 400KB.
-function TrendChart({ trend, target = 55 }) {
+// target is null when time allowances are switched off, and the reference
+// line is simply not drawn -- a chart should not imply a bar that is not
+// being applied.
+function TrendChart({ trend, target }) {
   const outlets = [...new Set(trend.map((t) => t.outlet))];
   const weeks = [...new Set(trend.map((t) => t.week_start))].sort();
   if (weeks.length < 2) {
@@ -91,21 +94,25 @@ function TrendChart({ trend, target = 55 }) {
   return (
     <div className="mt-3 overflow-x-auto">
       <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full min-w-[520px]" role="img"
-           aria-label="Average time at outlet per week, by outlet, against target">
+           aria-label="Average time at outlet per week, by outlet">
         {[0, 30, 60, 90].filter((v) => v <= max).map((v) => (
           <g key={v}>
             <line x1={L} y1={y(v)} x2={L + pw} y2={y(v)} stroke="#E2E8F0" strokeWidth="1" />
-            <text x={L - 8} y={y(v) + 4} textAnchor="end" fontSize="11" fill="#94A3B8" fontFamily="monospace">
+            <text x={L - 8} y={y(v) + 4} textAnchor="end" fontSize="11" fill="#94A3B8">
               {formatDuration(v)}
             </text>
           </g>
         ))}
-        <line x1={L} y1={y(target)} x2={L + pw} y2={y(target)} stroke="#94A3B8" strokeWidth="2" strokeDasharray="5 4" />
-        <text x={L + 6} y={y(target) - 7} fontSize="11" fill="#94A3B8" fontFamily="monospace">
-          target {formatDuration(target)}
-        </text>
+        {target != null && (
+          <>
+            <line x1={L} y1={y(target)} x2={L + pw} y2={y(target)} stroke="#94A3B8" strokeWidth="2" strokeDasharray="5 4" />
+            <text x={L + 6} y={y(target) - 7} fontSize="11" fill="#94A3B8">
+              allowance {formatDuration(target)}
+            </text>
+          </>
+        )}
         {weeks.map((w, i) => (
-          <text key={w} x={x(i)} y={H - 10} textAnchor="middle" fontSize="10" fill="#94A3B8" fontFamily="monospace">
+          <text key={w} x={x(i)} y={H - 10} textAnchor="middle" fontSize="10" fill="#94A3B8">
             {w.slice(5)}
           </text>
         ))}
@@ -162,6 +169,10 @@ export default function Dashboard() {
 
   const t = data?.totals;
   const maxReason = data?.reasons?.[0]?.minutes || 1;
+  // The allowance actually in force, or null when the feature is off. Nothing
+  // is painted as over target against a bar that is not being applied.
+  const target = data?.at_outlet_target ?? null;
+  const over = (v) => target != null && v != null && v > target;
 
   return (
     <div>
@@ -237,8 +248,8 @@ export default function Dashboard() {
           <section className="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
             <h2 className="text-base font-semibold text-brand-black">Manpower</h2>
             <p className="mt-0.5 text-xs text-slate-500">
-              Before blaming Lotus, rule us out — if we ran short-handed our own trips stretch, and Lotus will say so
-              first. Drivers on duty is counted from the trips actually run.
+              Daily coverage and throughput. Establishes whether our own staffing explains a slow day before
+              outlet performance is questioned. Drivers on duty is derived from trips actually run.
             </p>
             <div className="mt-3 overflow-x-auto">
               <table className="w-full text-sm">
@@ -261,7 +272,7 @@ export default function Dashboard() {
                       <td className="py-2 pr-4">{d.trips}</td>
                       <td className="py-2 pr-4">{d.trips_per_driver}</td>
                       <td className="py-2 pr-4">{d.orders}</td>
-                      <td className={`py-2 pr-4 ${d.avg_at_outlet_minutes > 55 ? "font-semibold text-brand-red" : ""}`}>
+                      <td className={`py-2 pr-4 ${over(d.avg_at_outlet_minutes) ? "font-semibold text-brand-red" : ""}`}>
                         {formatDuration(d.avg_at_outlet_minutes)}
                       </td>
                       <td className="py-2">{d.over_target}</td>
@@ -274,16 +285,16 @@ export default function Dashboard() {
               </table>
             </div>
             <Legend items={[
-              { label: "Red figure", note: "over the 55m target", dot: "bg-brand-red" },
+              ...(target ? [{ label: "Red figure", note: `over the ${target}m allowance`, dot: "bg-brand-red" }] : []),
             ]} />
           </section>
 
           <section className="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
             <h2 className="text-base font-semibold text-brand-black">Time at outlet, by week</h2>
             <p className="mt-0.5 text-xs text-slate-500">
-              Each point is that outlet’s average arrival-to-departure for the week, against target.
+              Weekly average arrival-to-departure per outlet.
             </p>
-            <TrendChart trend={data.trend} />
+            <TrendChart trend={data.trend} target={data.at_outlet_target} />
           </section>
 
           <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -295,7 +306,7 @@ export default function Dashboard() {
                 </div>
                 <dl className="mt-3 grid grid-cols-2 gap-y-1 text-sm">
                   <dt className="text-slate-500">Avg time at outlet</dt>
-                  <dd className={`text-right ${o.avg_at_outlet_minutes > 55 ? "font-semibold text-brand-red" : "text-emerald-700"}`}>
+                  <dd className={`text-right ${over(o.avg_at_outlet_minutes) ? "font-semibold text-brand-red" : "text-emerald-700"}`}>
                     {formatDuration(o.avg_at_outlet_minutes)}
                   </dd>
                   <dt className="text-slate-500">Trips over target</dt>
@@ -305,9 +316,9 @@ export default function Dashboard() {
                 </dl>
                 <OwnedBar owned={o.owned_minutes} />
                 <Legend items={[
-                  { label: "Lotus", note: "goes into the claim", dot: PARTY.lotus.dot },
-                  { label: "Ninja Van", note: "comes out before filing", dot: PARTY.njv.dot },
-                  { label: "External", note: "neither side liable", dot: PARTY.external.dot },
+                  { label: "Lotus", note: "recoverable", dot: PARTY.lotus.dot },
+                  { label: "Ninja Van", note: "absorbed by us", dot: PARTY.njv.dot },
+                  { label: "External", note: "not attributable", dot: PARTY.external.dot },
                 ]} />
               </div>
             ))}
@@ -319,7 +330,7 @@ export default function Dashboard() {
           <section className="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
             <h2 className="text-base font-semibold text-brand-black">Delay by reason code</h2>
             <p className="mt-0.5 text-xs text-slate-500">
-              Time lost over target, ranked. This only exists because reasons are coded rather than typed.
+              Delay minutes by recorded reason, ranked by total time lost.
             </p>
             <div className="mt-4 space-y-2.5">
               {data.reasons.map((r) => (
@@ -342,9 +353,9 @@ export default function Dashboard() {
               )}
             </div>
             <Legend items={[
-              { label: "Lotus", note: "goes into the claim", dot: PARTY.lotus.dot },
-              { label: "Ninja Van", note: "comes out before filing", dot: PARTY.njv.dot },
-              { label: "External", note: "neither side liable", dot: PARTY.external.dot },
+              { label: "Lotus", note: "recoverable", dot: PARTY.lotus.dot },
+              { label: "Ninja Van", note: "absorbed by us", dot: PARTY.njv.dot },
+              { label: "External", note: "not attributable", dot: PARTY.external.dot },
             ]} />
           </section>
         </div>

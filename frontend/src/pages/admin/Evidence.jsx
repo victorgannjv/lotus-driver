@@ -330,12 +330,12 @@ export default function Evidence() {
             {/* Says what every colour on this page means, in the words someone
                 would use to explain it out loud. */}
             <div className="flex max-w-3xl flex-wrap gap-x-4 gap-y-1.5 text-xs text-slate-500">
-              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-brand-red" /><b className="text-slate-700">Red edge</b> — a step ran late, so there may be something to claim</span>
-              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-emerald-600" /><b className="text-slate-700">Green edge</b> — the trip stayed inside its allowed times</span>
-              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-amber-500" /><b className="text-slate-700">Lotus</b> — their delay, we can bill it back</span>
-              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-blue-600" /><b className="text-slate-700">Ninja Van</b> — our delay, we absorb it</span>
-              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-emerald-500" /><b className="text-slate-700">External</b> — traffic or weather, neither side pays</span>
-              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-orange-500" /><b className="text-slate-700">No reason given</b> — late, but the driver did not say why, so it cannot be claimed</span>
+              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-brand-red" /><b className="text-slate-700">Red edge</b> — a step exceeded its allowance</span>
+              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-emerald-600" /><b className="text-slate-700">Green edge</b> — all steps within allowance</span>
+              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-amber-500" /><b className="text-slate-700">Lotus</b> — outlet delay, recoverable</span>
+              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-blue-600" /><b className="text-slate-700">Ninja Van</b> — our delay, absorbed</span>
+              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-emerald-500" /><b className="text-slate-700">External</b> — traffic or weather, not attributable</span>
+              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-orange-500" /><b className="text-slate-700">No reason given</b> — exceeded, but unexplained, so unattributable</span>
               <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-slate-300" /><b className="text-slate-700">On time</b> — nothing to explain</span>
             </div>
             <div className="flex items-center gap-3">

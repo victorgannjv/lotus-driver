@@ -181,7 +181,7 @@ const PARTY_SECTIONS = [
   { party: "lotus", title: "Lotus caused the delay",
     blurb: "Time we can put in a claim. This is the list a dispute is built from." },
   { party: "njv", title: "Our side (Ninja Van)",
-    blurb: "Time we own and concede up front. Conceding it honestly is what makes the Lotus column credible." },
+    blurb: "Delay attributable to Ninja Van. Recorded accurately so the Lotus figures stand up to scrutiny." },
   { party: "external", title: "Outside anyone's control",
     blurb: "Left out of both columns — neither claimed nor conceded." },
 ];
@@ -464,7 +464,7 @@ export function Targets() {
 
       <Section
         title="Use time allowances"
-        blurb="Off by default. These per-step numbers were working assumptions, not terms agreed with Lotus — and flagging a trip red against a bar nobody signed is an argument we lose. Switch it on once the allowances are negotiated."
+        blurb="Off by default. These per-step figures are internal working assumptions, not terms agreed with Lotus. Enable them once the allowances are contractually settled; until then lateness is measured against the delivery windows alone."
       >
         <Row>
           <span className="min-w-[18rem] flex-1">
@@ -951,7 +951,7 @@ export function Roster() {
           <button type="button" className={btn} onClick={() => setWeek(addDays(week, 7))}>Next →</button>
         </div>
       }
-      footer="The dashboard already counts who actually drove; this is the only way it can know who was meant to. Owning up to a short-handed day is what keeps a claim against Lotus credible."
+      footer="The dashboard counts who actually drove. The roster records who was scheduled, which is what makes a short-handed day visible rather than inferred."
     >
       <Err>{error}</Err>
 

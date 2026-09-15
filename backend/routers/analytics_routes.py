@@ -24,6 +24,7 @@ from auth import get_current_admin
 from db import get_pool
 from photos import trip_photo_map
 from trips import (
+    resolve_target,
     CHECKPOINT_ORDER,
     load_schedules,
     schedule_variance,
@@ -296,6 +297,11 @@ async def overview(
         })
 
     return {
+        # The bar the dashboard paints against, or null when time allowances
+        # are switched off. It was hardcoded as 55 in four places on the
+        # client, so the figures went red against a number nobody had agreed
+        # and kept doing it after the allowances were turned off.
+        "at_outlet_target": resolve_target(await load_targets(pool), "time_at_outlet", None),
         "period": {"from": start.isoformat(), "to": end.isoformat(),
                    "previous_from": pstart.isoformat(), "previous_to": pend.isoformat()},
         "totals": {
