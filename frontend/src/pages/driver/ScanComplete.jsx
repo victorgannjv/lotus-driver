@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../../api";
 import AppHeader from "../../components/AppHeader";
 import BarcodeScanner from "../../components/BarcodeScanner";
+import Icon from "../../components/Icon";
 import DeliveryOutcomeModal from "../../components/DeliveryOutcomeModal";
 import JobCompleteModal from "../../components/JobCompleteModal";
 import ScanResultModal from "../../components/ScanResultModal";
@@ -25,6 +26,9 @@ export default function ScanComplete() {
   const [result, setResult] = useState(null);
   const [completedManifestId, setCompletedManifestId] = useState(null);
   const [showJobComplete, setShowJobComplete] = useState(false);
+  // Orders successfully recorded on this visit, so the driver can see the drop
+  // adding up without opening anything.
+  const [scanned, setScanned] = useState(0);
 
   // A code is scanned -> ask Delivered/Failed (+ reason, + proof photo) before
   // recording anything. Ignore new scans while that flow, a result confirmation, or
@@ -62,6 +66,7 @@ export default function ScanComplete() {
       const logMessage = outcome === "failed" ? t("scanComplete.failedWithReason", { reason }) : message;
       setLog((l) => [{ code, ok: true, message: logMessage }, ...l]);
       setResult({ code, tone: outcome === "delivered" ? "success" : "warning", message });
+      setScanned((n) => n + 1);
       if (res.job_complete) setCompletedManifestId(res.manifest_id);
     } catch (err) {
       const message = err.detail || t("scanComplete.genericFailed");
@@ -103,6 +108,13 @@ export default function ScanComplete() {
           </button>
         </form>
 
+        {scanned > 0 && (
+          <p className="mt-4 flex items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2.5 text-sm font-medium text-emerald-800 ring-1 ring-emerald-200">
+            <Icon name="check" className="h-4 w-4 shrink-0" />
+            {t("scanComplete.scannedSoFar", { n: scanned })}
+          </p>
+        )}
+
         <ul className="mt-4 space-y-1">
           {log.map((entry, i) => (
             <li
@@ -118,12 +130,21 @@ export default function ScanComplete() {
           onClick={() => navigate("/driver")}
           className="mt-6 w-full rounded-lg bg-brand-red px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-red-dark"
         >
-          {t("common.done")}
+          {tripJobSeq ? t("scanComplete.backToJob", { n: tripJobSeq }) : t("common.done")}
         </button>
       </div>
 
       <DeliveryOutcomeModal code={pendingCode} busy={busy} onSubmit={handleSubmitOutcome} />
-      <ScanResultModal result={result} onClose={handleResultClose} />
+      <ScanResultModal
+        result={result}
+        onClose={handleResultClose}
+        scannedCount={scanned}
+        // Only when the scanner was opened from a drop: that driver came here
+        // to record one stop and has somewhere to be returned to. A scan
+        // started from the trip screen has no such destination, so it keeps
+        // the plain OK.
+        onFinish={tripJobId && !completedManifestId ? () => navigate("/driver") : null}
+      />
       <JobCompleteModal
         open={showJobComplete}
         onViewJob={() => navigate(`/driver/manifests/${completedManifestId}`)}

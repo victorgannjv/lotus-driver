@@ -123,7 +123,10 @@ export default function BarcodeScanner({ onDetect }) {
         err?.name === "NotAllowedError" ||
         err?.name === "SecurityError" ||
         (await cameraPermission()) === "denied";
-      setError(denied ? t("barcodeScanner.blocked") : err.message || t("barcodeScanner.couldNotAccess"));
+      // Trimmed: the blocked message is a full sentence and the wrapper adds
+      // its own full stop, which read as "come back.. Use manual entry".
+      const text = denied ? t("barcodeScanner.blocked") : err.message || t("barcodeScanner.couldNotAccess");
+      setError(String(text).replace(/\.\s*$/, ""));
     });
 
     return () => {

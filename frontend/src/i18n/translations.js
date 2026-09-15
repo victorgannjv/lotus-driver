@@ -235,6 +235,10 @@ export const translations = {
     },
     scanComplete: {
       titleForJob: "Scan orders — Job {n}",
+      scannedSoFar: "{n} recorded for this drop",
+      backNow: "Back to my trip ({n})",
+      backToJob: "Back to Job {n}",
+      scanAnother: "Stay and scan another",
       title: "Scan to complete a delivery",
       instructions: "Scan the order's barcode, then say whether it was delivered or the attempt failed, and take a photo as proof. We'll log the time and location automatically.",
       delivered: "Delivered",
@@ -543,6 +547,10 @@ export const translations = {
     },
     scanComplete: {
       titleForJob: "Imbas pesanan — Kerja {n}",
+      scannedSoFar: "{n} direkod untuk hentian ini",
+      backNow: "Kembali ke trip saya ({n})",
+      backToJob: "Kembali ke Kerja {n}",
+      scanAnother: "Kekal dan imbas lagi",
       title: "Imbas untuk selesaikan penghantaran",
       instructions: "Imbas kod bar pesanan, kemudian nyatakan sama ada ia telah dihantar atau percubaan itu gagal, dan ambil gambar sebagai bukti. Kami akan merekod masa dan lokasi secara automatik.",
       delivered: "Telah dihantar",
