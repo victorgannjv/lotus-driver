@@ -141,7 +141,10 @@ export default function PhotoCapture({ label, onChange, required = false, max = 
     try {
       const added = [];
       for (const file of picked) {
-        const resized = await resizeImage(file);
+        // One request carries every photo for the step, so the budget is
+        // shared: four photos get a quarter each. Well inside the 1MB a
+        // request body is usually allowed.
+        const resized = await resizeImage(file, { maxBytes: Math.round((900 * 1024) / Math.max(1, max)) });
         added.push({ id: `${Date.now()}-${added.length}`, file: resized, url: URL.createObjectURL(resized) });
       }
       publish(max === 1 ? added.slice(0, 1) : [...shots, ...added]);

@@ -39,11 +39,26 @@ async function request(path, { method = "GET", body, isForm = false } = {}) {
   }
 
   if (!res.ok) {
+    // statusText is an empty string over HTTP/2, which every ingress speaks.
+    // So a 413 or a 502 -- exactly the failures that carry no JSON -- used to
+    // arrive as a blank detail and get shown as a bare "Failed", which is
+    // indistinguishable from any other problem and impossible to act on.
+    // Whatever else happens, the status code gets through.
     let detail;
     try {
-      detail = (await res.json()).detail;
+      const body = await res.json();
+      // FastAPI validation errors are a LIST of objects; rendering one as a
+      // React child throws, so flatten it here rather than in three screens.
+      detail = Array.isArray(body?.detail)
+        ? body.detail.map((d) => d?.msg || JSON.stringify(d)).join("; ")
+        : body?.detail;
     } catch {
-      detail = res.statusText;
+      detail = null;
+    }
+    if (!detail) {
+      detail = res.status === 413
+        ? "The photos were too large to upload. Take fewer, or retake them."
+        : `Upload failed (HTTP ${res.status}). Check your signal and try again.`;
     }
     throw new ApiError(res.status, detail);
   }

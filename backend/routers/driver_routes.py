@@ -104,13 +104,6 @@ async def _driver_outlet(pool, driver_id: int) -> str | None:
     return " - ".join(x for x in (row["name"], row["address"]) if x) or None
 
 
-async def _job_address(pool, job_id: int) -> str | None:
-    async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
-        await cur.execute("SELECT address FROM delivery_jobs WHERE id = %s", (job_id,))
-        row = await cur.fetchone()
-    return (row or {}).get("address") or None
-
-
 async def _find_or_create_job_for_outcome(pool, driver_id: int, code: str) -> dict:
     """Looks up the job(-order) a delivery-outcome scan refers to. 'registered' and
     'failed' are both open to a new outcome (a driver can retry after a failed
@@ -371,8 +364,7 @@ async def complete_scan(
     if not incoming:
         raise HTTPException(status_code=422, detail="a proof photo is required")
     caption = evidence_caption(ref=code, what="Delivered", who=driver.get("name"),
-                               lat=lat, lng=lng, place=await _job_address(pool, job["id"]),
-                               when=clock_stamp(occurred_dt))
+                               lat=lat, lng=lng, when=clock_stamp(occurred_dt))
     photo_ids = [
         await store_photo(pool, await f.read(), f.content_type or "image/jpeg", driver["id"], caption)
         for f in incoming
@@ -428,8 +420,7 @@ async def fail_scan(
     if not incoming:
         raise HTTPException(status_code=422, detail="a proof photo is required")
     caption = evidence_caption(ref=code, what=f"Not delivered - {reason}", who=driver.get("name"),
-                               lat=lat, lng=lng, place=await _job_address(pool, job["id"]),
-                               when=clock_stamp(occurred_dt))
+                               lat=lat, lng=lng, when=clock_stamp(occurred_dt))
     photo_ids = [
         await store_photo(pool, await f.read(), f.content_type or "image/jpeg", driver["id"], caption)
         for f in incoming
