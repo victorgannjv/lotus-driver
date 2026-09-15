@@ -1,7 +1,7 @@
 import { BrowserMultiFormatReader } from "@zxing/browser";
 import { BarcodeFormat, DecodeHintType } from "@zxing/library";
 import { useEffect, useRef, useState } from "react";
-import { acquireCamera, cameraPermission } from "../lib/camera";
+import { acquireCameraClone, cameraPermission } from "../lib/camera";
 import { useLanguage } from "../i18n/LanguageContext";
 
 // ZXing decodes by classic bar-width analysis, which is sensitive to blur/skew.
@@ -60,8 +60,11 @@ export default function BarcodeScanner({ onDetect }) {
       // Shared, and kept alive between mounts -- see lib/camera. Asking the
       // browser again on every scanner open is what produced a permission
       // prompt every time on handsets that do not persist the grant.
-      const stream = await acquireCamera();
-      if (stopped) return;
+      const stream = await acquireCameraClone();
+      if (stopped) {
+        stream.getTracks().forEach((tr) => tr.stop());   // the clone only
+        return;
+      }
       const track = stream.getVideoTracks()[0];
       trackRef.current = track;
       try {
@@ -94,7 +97,10 @@ export default function BarcodeScanner({ onDetect }) {
           pollTimer = setTimeout(poll, 150);
         };
         poll();
-        stopRef.current = () => clearTimeout(pollTimer);
+        stopRef.current = () => {
+          clearTimeout(pollTimer);
+          stream.getTracks().forEach((tr) => tr.stop());  // clone, not the master
+        };
         return;
       }
 
@@ -106,7 +112,10 @@ export default function BarcodeScanner({ onDetect }) {
         controls.stop();
         return;
       }
-      stopRef.current = () => controls.stop();
+      stopRef.current = () => {
+        controls.stop();                                   // stops the clone
+        stream.getTracks().forEach((tr) => tr.stop());
+      };
     }
 
     start().catch(async (err) => {

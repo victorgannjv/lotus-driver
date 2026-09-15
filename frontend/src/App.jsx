@@ -1,6 +1,7 @@
 import { lazy, Suspense } from "react";
 import { Navigate, Route, BrowserRouter as Router, Routes } from "react-router-dom";
 import { DriverAuthProvider } from "./auth/DriverAuthContext";
+import ErrorBoundary from "./components/ErrorBoundary";
 import RequireDriver from "./auth/RequireDriver";
 import { LanguageProvider } from "./i18n/LanguageContext";
 import ForgotPassword from "./pages/driver/ForgotPassword";
@@ -83,6 +84,7 @@ const ScanComplete = lazyRoute(() => import("./pages/driver/ScanComplete"));
 
 export default function App() {
   return (
+    <ErrorBoundary>
     <Router>
       <LanguageProvider>
       <DriverAuthProvider>
@@ -175,5 +177,6 @@ export default function App() {
       </DriverAuthProvider>
       </LanguageProvider>
     </Router>
+    </ErrorBoundary>
   );
 }

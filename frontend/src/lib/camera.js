@@ -27,6 +27,19 @@ function alive(s) {
   return !!s && s.getVideoTracks().some((t) => t.readyState === "live");
 }
 
+// Hands out a CLONE, keeping the master untouched.
+//
+// ZXing's controls.stop() stops the tracks of whatever stream it was given,
+// and the native path's teardown used to do the same. Sharing one stream and
+// letting a consumer stop it means the second scanner open finds dead tracks
+// and re-acquires -- the very prompt this module exists to avoid. A clone is
+// an independent handle onto the same camera: stopping it is a no-op for
+// everyone else.
+export async function acquireCameraClone() {
+  const master = await acquireCamera();
+  return master.clone();
+}
+
 export async function acquireCamera() {
   if (alive(stream)) return stream;
   // A track can end on its own -- the OS camera taken by another app, or the
