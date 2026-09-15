@@ -239,10 +239,15 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
           figure below explains a miss, but does not decide one. */}
       {win && (
         <div className="mb-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
-          <div className="flex items-baseline justify-between gap-2">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{win.label}</p>
-            <p className="text-xs text-slate-500">{win.window_start}–{win.window_end}</p>
-          </div>
+          {/* Two deadlines in plain words, instead of a bare time range and
+              phrases like "after the window opened". The reader is a driver
+              deciding what to do next, not an analyst reading a contract:
+              what he needs is the two times he is measured against and
+              whether he made them. */}
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{win.label}</p>
+          <p className="mt-0.5 text-xs text-slate-500">
+            {t("window.targets", { start: win.window_start, end: win.window_end })}
+          </p>
           <p className={`mt-1 text-sm font-semibold ${win.arrived_on_time ? "text-emerald-700" : "text-brand-red"}`}>
             {win.arrived_on_time
               ? t("window.arrivedOnTime")
