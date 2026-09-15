@@ -104,6 +104,58 @@ async def _driver_outlet(pool, driver_id: int) -> str | None:
     return " - ".join(x for x in (row["name"], row["address"]) if x) or None
 
 
+async def _close_drop(pool, trip_job_id: int | None, driver_id: int, when, lat, lng,
+                      photo_id: int | None, failed: bool) -> None:
+    """A scan against a drop closes that drop.
+
+    Without this a parcel could be scanned, photographed and recorded and the
+    trip would still show "Finish job 1 of 2" -- tapping it restarted the photo
+    flow, and the drop could never actually be closed from the scanner. The
+    scan already carries everything completing a drop requires: a time, a
+    place and a proof photo.
+
+    Only a drop still pending is touched, so scanning a second parcel for the
+    same stop adds an order without disturbing the completion already recorded.
+    Once the last drop closes, deliveries_done is stamped exactly as the photo
+    flow does it -- one rule for when a round is finished, not two.
+    """
+    if trip_job_id is None:
+        return
+    async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
+        await cur.execute(
+            "SELECT tj.id, tj.manifest_id, tj.status FROM trip_job tj "
+            "JOIN manifests m ON m.id = tj.manifest_id "
+            "WHERE tj.id = %s AND m.driver_id = %s",
+            (trip_job_id, driver_id),
+        )
+        drop = await cur.fetchone()
+    if drop is None or drop["status"] != "pending":
+        return
+
+    async with pool.acquire() as conn, conn.cursor() as cur:
+        await cur.execute(
+            "UPDATE trip_job SET status = %s, completed_at = %s, lat = %s, lng = %s, "
+            "photo_id = COALESCE(photo_id, %s) WHERE id = %s",
+            ("failed" if failed else "done", when, lat, lng, photo_id, trip_job_id),
+        )
+        await cur.execute(
+            "SELECT COUNT(*) FROM trip_job WHERE manifest_id = %s AND status = 'pending'",
+            (drop["manifest_id"],),
+        )
+        (still_open,) = await cur.fetchone()
+        if still_open == 0:
+            await cur.execute(
+                "SELECT 1 FROM trip_checkpoint WHERE manifest_id = %s AND checkpoint = 'deliveries_done'",
+                (drop["manifest_id"],),
+            )
+            if not await cur.fetchone():
+                await cur.execute(
+                    "INSERT INTO trip_checkpoint (manifest_id, checkpoint, occurred_at, created_by) "
+                    "VALUES (%s, 'deliveries_done', %s, %s)",
+                    (drop["manifest_id"], when, driver_id),
+                )
+
+
 async def _find_or_create_job_for_outcome(pool, driver_id: int, code: str) -> dict:
     """Looks up the job(-order) a delivery-outcome scan refers to. 'registered' and
     'failed' are both open to a new outcome (a driver can retry after a failed
@@ -389,6 +441,9 @@ async def complete_scan(
             (job["id"], driver["id"], occurred_dt, lat, lng, photo_id),
         )
 
+    await _close_drop(pool, trip_job_id, driver["id"], occurred_dt, lat, lng, photo_id,
+                      failed=False)
+
     job_complete = await _is_job_complete(pool, job["manifest_id"])
     return {"job_id": job["id"], "tracking_no": code, "manifest_id": job["manifest_id"], "job_complete": job_complete}
 
@@ -444,6 +499,8 @@ async def fail_scan(
             "VALUES (%s, %s, 'failed', %s, %s, %s, %s, %s)",
             (job["id"], driver["id"], occurred_dt, lat, lng, reason, photo_id),
         )
+
+    await _close_drop(pool, trip_job_id, driver["id"], occurred_dt, lat, lng, photo_id, failed=True)
 
     job_complete = await _is_job_complete(pool, job["manifest_id"])
     return {"job_id": job["id"], "tracking_no": code, "manifest_id": job["manifest_id"], "job_complete": job_complete}

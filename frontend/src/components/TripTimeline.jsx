@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
 import Icon, { CHECKPOINT_ICON } from "./Icon";
+import PhotoThumb from "./PhotoThumb";
 import { JobCountSheet, PhotoSheet, ReasonSheet } from "./CheckpointSheets";
 import { useLanguage } from "../i18n/LanguageContext";
 import { formatDuration, formatTime } from "../lib/duration";
@@ -56,6 +57,10 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
   const [pendingCount, setPendingCount] = useState(false);
   const [pendingReason, setPendingReason] = useState(null); // { checkpoint, gap }
   const [reasons, setReasons] = useState([]);
+  // Which completed drop is open for review. A closed drop is still the
+  // driver's own evidence, and until the trip ends he should be able to
+  // look at it and add to it.
+  const [openJob, setOpenJob] = useState(null);
   // Drives the countdown. Half a minute is fine for a figure shown in minutes
   // and costs nothing; the interval is torn down with the component.
   const [now, setNow] = useState(() => Date.now());
@@ -506,38 +511,80 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
               )}
               {cp === "deliveries_done" && state.jobs.length > 0 && (
                 <ul className="mt-2 space-y-1.5">
-                  {state.jobs.map((j) => (
-                    <li
-                      key={j.id}
-                      className={`flex items-center justify-between rounded-lg px-3 py-2 text-xs ring-1 ${
-                        j.status === "pending" ? "bg-white text-slate-400 ring-slate-200" : "bg-white text-brand-black ring-slate-200"
-                      }`}
-                    >
-                      <span className="font-semibold">{t("trip.job", { n: j.seq })}</span>
-                      <span className="flex items-center gap-2 text-xs text-slate-500">
-                        {/* Per drop, not per trip. One scanner button for the
-                            whole step made the driver the only record of which
-                            stop a parcel belonged to -- and the server fell
-                            back to guessing. Opened from this row, every code
-                            scanned lands on this job. */}
-                        {j.status === "pending" && (
-                          <Link
-                            to={`/driver/scans/complete?trip_job=${j.id}&seq=${j.seq}`}
-                            className="flex items-center gap-1.5 rounded-lg bg-brand-black px-2.5 py-1.5 text-xs font-semibold text-white"
+                  {state.jobs.map((j) => {
+                    const expanded = openJob === j.id;
+                    const closed = j.status !== "pending";
+                    return (
+                      <li key={j.id} className="rounded-lg bg-white text-xs ring-1 ring-slate-200">
+                        <div className="flex items-center justify-between gap-2 px-3 py-2">
+                          <button
+                            type="button"
+                            // Only a closed drop has anything to show.
+                            onClick={() => closed && setOpenJob(expanded ? null : j.id)}
+                            className="flex min-w-0 flex-1 items-center gap-2 text-left"
                           >
-                            <Icon name="route" className="h-3.5 w-3.5" />
-                            {t("trip.scanDelivery")}
-                          </Link>
+                            {closed && (
+                              <Icon name="chevron"
+                                    className={`h-3 w-3 shrink-0 text-slate-400 ${expanded ? "rotate-90" : ""}`} />
+                            )}
+                            <span className={`font-semibold ${closed ? "text-brand-black" : "text-slate-400"}`}>
+                              {t("trip.job", { n: j.seq })}
+                            </span>
+                            <span className="truncate text-slate-500">
+                              {closed
+                                ? `${formatTime(j.completed_at)}${j.orders ? ` · ${t("trip.orderCount", { n: j.orders })}` : ""}`
+                                : t("trip.jobPending")}
+                            </span>
+                          </button>
+                          {!stamped.has("returned") && (
+                            <Link
+                              to={`/driver/scans/complete?trip_job=${j.id}&seq=${j.seq}`}
+                              className={`flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold ${
+                                closed ? "border border-slate-300 bg-white text-brand-black" : "bg-brand-black text-white"
+                              }`}
+                            >
+                              <Icon name="route" className="h-3.5 w-3.5" />
+                              {t("trip.scanDelivery")}
+                            </Link>
+                          )}
+                        </div>
+
+                        {expanded && (
+                          <div className="border-t border-slate-100 px-3 py-2.5">
+                            {(j.photo_ids || []).length > 0 ? (
+                              <div className="flex flex-wrap gap-2">
+                                {j.photo_ids.map((pid) => (
+                                  <PhotoThumb key={pid} photoId={pid} size="h-16 w-16"
+                                              caption={`${t("trip.job", { n: j.seq })} · ${formatTime(j.completed_at)}`} />
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="text-slate-400">{t("trip.noPhotos")}</p>
+                            )}
+
+                            {(j.order_list || []).length > 0 ? (
+                              <ul className="mt-2 space-y-1">
+                                {j.order_list.map((o) => (
+                                  <li key={o.tracking_no} className="flex items-center justify-between gap-2">
+                                    <span className="truncate text-slate-600">{o.tracking_no}</span>
+                                    <span className={o.status === "failed" ? "text-brand-red" : "text-emerald-700"}>
+                                      {o.status === "failed" ? t("trip.orderFailed") : t("trip.orderDelivered")}
+                                    </span>
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : (
+                              <p className="mt-2 text-slate-400">{t("trip.noOrders")}</p>
+                            )}
+
+                            {!stamped.has("returned") && (
+                              <p className="mt-2 text-[11px] text-slate-400">{t("trip.stillEditable")}</p>
+                            )}
+                          </div>
                         )}
-                        {j.status === "pending" ? null : (
-                          <>
-                            {formatTime(j.completed_at)}
-                            <Icon name="camera" className="h-3 w-3 text-emerald-600" />
-                          </>
-                        )}
-                      </span>
-                    </li>
-                  ))}
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
             </li>

@@ -97,6 +97,19 @@ async def _trip_state(pool, trip: dict) -> dict:
             (mid,),
         )
         counts = {r["seq"]: r["orders"] for r in await cur.fetchall()}
+        # The parcels themselves, not just how many. A driver who has just
+        # closed a drop should be able to see WHAT he recorded against it
+        # while the trip is still open -- a count alone cannot be checked.
+        await cur.execute(
+            "SELECT trip_job_id, tracking_no, status_code FROM delivery_jobs "
+            "WHERE manifest_id = %s AND trip_job_id IS NOT NULL ORDER BY id",
+            (mid,),
+        )
+        orders_by_job: dict = {}
+        for r in await cur.fetchall():
+            orders_by_job.setdefault(r["trip_job_id"], []).append(
+                {"tracking_no": r["tracking_no"], "status": r["status_code"]}
+            )
 
     done_jobs = sum(1 for j in jobs if j["status"] != "pending")
     next_cp = None
@@ -140,6 +153,7 @@ async def _trip_state(pool, trip: dict) -> dict:
                 "started_at": fmt(j["started_at"]),
                 "completed_at": fmt(j["completed_at"]),
                 "photo_id": j["photo_id"], "orders": counts.get(j["seq"], 0),
+                "order_list": orders_by_job.get(j["id"], []),
                 "photo_ids": photo_sets.get(("job", j["id"]))
                 or ([j["photo_id"]] if j["photo_id"] else []),
             }
