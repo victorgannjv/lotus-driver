@@ -433,10 +433,10 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
         open={!!pendingPhoto}
         title={pendingPhoto?.title || ""}
         busy={busy}
-        // "Arrived at Lotus" creates the trip through an endpoint that takes one
-        // photo, so the sheet offers one. Letting the driver take three and
-        // silently keeping the first would be worse than the old behaviour.
-        maxPhotos={manifestId ? 4 : 1}
+        // Every step takes a set, including the one that creates the trip.
+        // Arrival is the stamp a whole late-delivery argument turns on and it
+        // was the last one still capped at a single frame.
+        maxPhotos={4}
         onCancel={() => setPendingPhoto(null)}
         onSubmit={(photo) =>
           pendingPhoto.kind === "job"

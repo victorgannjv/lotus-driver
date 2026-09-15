@@ -9,7 +9,7 @@ import LocationBanner from "../../components/LocationBanner";
 import MyDay from "../../components/MyDay";
 import TripTimeline from "../../components/TripTimeline";
 import { useLanguage } from "../../i18n/LanguageContext";
-import { getPosition } from "../../lib/geolocation";
+import { ensureWatch, getPosition } from "../../lib/geolocation";
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -59,6 +59,10 @@ export default function Home() {
       .catch(() => setSettings(null));
   }, [loadToday]);
 
+  // Once permission is granted, keep a position warm for the whole shift.
+  // Without this every screen starts from nothing and asks again.
+  useEffect(() => { ensureWatch(); }, []);
+
   // "Arrived at Lotus" always creates a NEW trip -- a driver makes more than one
   // run a day, and every order scanned afterwards groups into the newest one.
   async function startTrip(photos) {
@@ -76,9 +80,8 @@ export default function Home() {
         // the photo are the evidence, GPS only corroborates them.
       }
       formData.append("occurred_at", new Date().toISOString());
-      // The start endpoint takes a single photo; the arrival sheet is capped at
-      // one to match, so this is the only shot there is.
-      if (shots[0]) formData.append("photo", shots[0]);
+      // One field name, repeated -- the same shape every other step posts.
+      shots.forEach((f) => formData.append("photos", f));
       const res = await api.postForm("/manifests/start", formData);
       setSelected(res.manifest.id);
       loadToday(false);

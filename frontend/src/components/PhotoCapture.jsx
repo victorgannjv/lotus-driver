@@ -6,7 +6,10 @@ import {
   GEO_DENIED,
   GEO_UNAVAILABLE,
   GEO_UNSUPPORTED,
+  ensureWatch,
   getPosition,
+  lastFix,
+  subscribe,
   onPermissionChange,
   permissionState,
 } from "../lib/geolocation";
@@ -39,7 +42,9 @@ export default function PhotoCapture({ label, onChange, required = false, max = 
   // cannot show the finished pixels. It can show the VALUES, which is what a
   // driver actually wants to check: that the coordinates were found, and that
   // the step and the time are the ones he thinks he is recording.
-  const [fix, setFix] = useState(null);
+  // Seeded from the app-wide fix, not from nothing. Starting blank here is
+  // what made every checkpoint page ask for location again.
+  const [fix, setFix] = useState(() => lastFix());
   const [perm, setPerm] = useState(null); // granted | prompt | denied | unsupported | unknown
   const [locating, setLocating] = useState(false);
   const cameraRef = useRef(null);
@@ -57,7 +62,9 @@ export default function PhotoCapture({ label, onChange, required = false, max = 
     try {
       const p = await getPosition();
       setFix(p);
-      setPerm(await permissionState());
+      const state = await permissionState();
+      setPerm(state);
+      if (state === "granted") ensureWatch();
       return p;
     } finally {
       setLocating(false);
@@ -74,19 +81,24 @@ export default function PhotoCapture({ label, onChange, required = false, max = 
   // half-way to a permanent block. It waits for the driver to tap instead.
   useEffect(() => {
     let live = true;
+    // Whatever the watch reports, this screen shows -- so a fix obtained on the
+    // home screen is already here when the page opens.
+    const unsubscribe = subscribe((f) => live && f && setFix(f));
     permissionState().then((state) => {
       if (!live) return;
       setPerm(state);
+      if (state === "granted") ensureWatch();
       // "unknown" is an older browser with no Permissions API to ask: trying is
       // the only way to find out, and it is the case that used to work.
-      if (state === "granted" || state === "unknown") locate();
+      if ((state === "granted" || state === "unknown") && !lastFix()) locate();
     });
     const off = onPermissionChange((state) => {
       setPerm(state);
-      if (state === "granted") locate();
+      if (state === "granted") { ensureWatch(); locate(); }
     });
     return () => {
       live = false;
+      unsubscribe();
       off();
     };
   }, [locate]);

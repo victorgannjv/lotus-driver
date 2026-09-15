@@ -4,6 +4,7 @@ import { useLanguage } from "../i18n/LanguageContext";
 import {
   GEO_DENIED,
   GEO_UNAVAILABLE,
+  ensureWatch,
   getPosition,
   lastFix,
   onPermissionChange,
@@ -37,7 +38,9 @@ export default function LocationBanner() {
   const [result, setResult] = useState(null); // last attempt, for its error code
 
   const recheck = useCallback(async () => {
-    setPerm(await permissionState());
+    const state = await permissionState();
+    setPerm(state);
+    if (state === "granted") await ensureWatch();
     setFix((current) => lastFix() || current);
   }, []);
 
@@ -47,7 +50,10 @@ export default function LocationBanner() {
       const p = await getPosition();
       setResult(p);
       if (p.lat != null) setFix(p);
-      setPerm(await permissionState());
+      const state = await permissionState();
+      setPerm(state);
+      // Granted once, warm for the rest of the shift -- no later screen asks.
+      if (state === "granted") await ensureWatch();
     } finally {
       setBusy(false);
     }

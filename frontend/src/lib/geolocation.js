@@ -74,13 +74,73 @@ export async function getPosition({ timeout = 8000 } = {}) {
   }
 
   if (res.lat != null) {
-    cached = { lat: res.lat, lng: res.lng, accuracy: res.accuracy, at: Date.now() };
+    remember(res);
     return res;
   }
 
   const recent = lastFix();
   if (recent) return { ...recent, error: res.error, code: res.code, stale: true };
   return res;
+}
+
+// ------------------------------------------------------- one fix, app-wide
+//
+// Permission is granted once; it should be asked for once. The first version
+// kept location in component state, so every screen that wanted coordinates
+// started from nothing -- home asked, then the photo page asked again, then
+// the next checkpoint asked again. Three dialogs for one permission, and the
+// driver reasonably concluded it had not worked.
+//
+// So the fix lives here instead, and screens subscribe. Once permission is
+// granted a single watchPosition keeps it warm for the rest of the shift: the
+// browser feeds us a position as it changes, every screen has one the moment
+// it opens, and nothing has to ask again.
+//
+// A WATCH RATHER THAN A LONGER CACHE, deliberately. The obvious fix for "the
+// photo page has no fix" is to widen the ninety-second window, but a
+// twenty-minute-old fix from the hub burned onto a photo taken at the outlet
+// is not a stale location -- it is a false one, and a false coordinate on a
+// dispute document is worse than an empty field. A watch stays both fresh and
+// instant.
+const listeners = new Set();
+let watchId = null;
+
+function remember(res) {
+  cached = { lat: res.lat, lng: res.lng, accuracy: res.accuracy, at: Date.now() };
+  const fix = lastFix();
+  listeners.forEach((fn) => {
+    try { fn(fix); } catch { /* one bad subscriber must not stop the rest */ }
+  });
+}
+
+export function subscribe(fn) {
+  listeners.add(fn);
+  return () => listeners.delete(fn);
+}
+
+// Safe to call from anywhere, as often as you like. Starts nothing unless the
+// permission is already granted -- watchPosition on "prompt" would raise a
+// dialog nobody tapped for, which is the thing this whole module exists to
+// avoid.
+export async function ensureWatch() {
+  if (watchId !== null || !supported()) return;
+  if ((await permissionState()) !== "granted") return;
+  if (watchId !== null) return; // a second caller may have won the await
+  watchId = navigator.geolocation.watchPosition(
+    (pos) => remember({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy }),
+    () => {},
+    // Network-accurate is plenty to keep warm, and does not sit on the GPS for
+    // a whole shift. Anything that actually gets submitted still asks for a
+    // high-accuracy fix first.
+    { enableHighAccuracy: false, maximumAge: 15_000, timeout: 30_000 },
+  );
+}
+
+export function stopWatch() {
+  if (watchId !== null) {
+    navigator.geolocation.clearWatch(watchId);
+    watchId = null;
+  }
 }
 
 export function lastFix() {

@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 
 from auth import get_current_driver
 from db import get_pool
-from photos import evidence_caption, store_photo
+from photos import evidence_caption, link_trip_photos, store_photo
 from clocks import fmt, local_today, stamp as clock_stamp
 from schemas import DriverWarehouseRequest, ScanRequest
 
@@ -223,24 +223,39 @@ async def start_manifest(
     lat: float | None = Form(None),
     lng: float | None = Form(None),
     occurred_at: str | None = Form(None),
-    photo: UploadFile = File(...),
+    photo: UploadFile | None = File(None),
+    photos: list[UploadFile] | None = File(None),
     driver=Depends(get_current_driver),
 ):
     """"Arrived at warehouse" -- always creates a new job (a driver may make more
-    than one warehouse trip a day), timestamped + geotagged at creation, and now
-    requires a photo proving they're actually there (same proof-photo pattern as a
-    delivery outcome)."""
+    than one warehouse trip a day), timestamped + geotagged at creation, and
+    requires at least one photo proving they're actually there.
+
+    Takes a set, like every other step. This was the one checkpoint still
+    capped at a single photo, which forced the app to offer one -- and it is
+    the arrival, the stamp a whole late-delivery argument turns on. One frame
+    cannot always show the gate, the truck and the clock.
+
+    `photo` is still accepted so an older app build keeps working.
+    """
     pool = get_pool(request)
     occurred_dt = _parse_occurred_at(occurred_at)
     today = local_today().isoformat()
 
+    incoming = [f for f in ([photo] if photo is not None else []) + list(photos or []) if f is not None]
+    if not incoming:
+        raise HTTPException(status_code=422, detail="a photo is required to start a trip")
+
     outlet = await _driver_outlet(pool, driver["id"])
-    photo_bytes = await photo.read()
-    photo_id = await store_photo(
-        pool, photo_bytes, photo.content_type or "image/jpeg", driver["id"],
-        evidence_caption(ref="Arrived at outlet", what="", who=driver.get("name"),
-                         lat=lat, lng=lng, place=outlet, when=clock_stamp(occurred_dt)),
-    )
+    caption = evidence_caption(ref="Arrived at outlet", what="", who=driver.get("name"),
+                               lat=lat, lng=lng, place=outlet, when=clock_stamp(occurred_dt))
+    photo_ids = [
+        await store_photo(pool, await f.read(), f.content_type or "image/jpeg", driver["id"], caption)
+        for f in incoming
+    ]
+    # The first one stays on the row, so every screen that reads a single photo
+    # keeps working; trip_photo carries the whole set.
+    photo_id = photo_ids[0]
 
     # Which contracted window this run is against -- the day's first trip is
     # slot 1, the second slot 2. Stamped at the start so cancelling or
@@ -272,6 +287,8 @@ async def start_manifest(
             "VALUES (%s, 'arrived', %s, %s, %s, %s, %s)",
             (manifest_id, occurred_dt, lat, lng, photo_id, driver["id"]),
         )
+
+    await link_trip_photos(pool, photo_ids, manifest_id=manifest_id, checkpoint="arrived")
 
     async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
         await cur.execute(f"SELECT {_MANIFEST_COLUMNS} FROM manifests WHERE id = %s", (manifest_id,))
