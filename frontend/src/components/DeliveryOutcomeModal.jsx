@@ -17,7 +17,7 @@ export default function DeliveryOutcomeModal({ code, busy, onSubmit }) {
     setMode("choice");
     setOutcome(null);
     setReason("");
-    setPhoto(null);
+    setPhotos([]);
   }, [code]);
 
   if (!code) return null;
