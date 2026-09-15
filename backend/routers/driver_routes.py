@@ -19,6 +19,7 @@ from db import get_pool
 from photos import evidence_caption, link_trip_photos, store_photo
 from clocks import fmt, local_today, stamp as clock_stamp
 from localities import describe
+from trips import load_settings, setting_list
 from schemas import DriverWarehouseRequest, ScanRequest
 
 router = APIRouter()
@@ -311,8 +312,13 @@ async def start_manifest(
     occurred_dt = _parse_occurred_at(occurred_at)
     today = local_today().isoformat()
 
+    # Governed by the same setting as every other checkpoint, not by a rule of
+    # its own. This endpoint stamps "arrived" -- it is the first checkpoint,
+    # and the fact that it also creates the trip is an implementation detail,
+    # not a reason to demand a photo the settings say is optional. It was
+    # blocking the start of every trip while the setting said otherwise.
     incoming = [f for f in ([photo] if photo is not None else []) + list(photos or []) if f is not None]
-    if not incoming:
+    if not incoming and "arrived" in setting_list(await load_settings(pool), "photo_required_checkpoints"):
         raise HTTPException(status_code=422, detail="a photo is required to start a trip")
 
     outlet = await _driver_outlet(pool, driver["id"])
@@ -322,9 +328,9 @@ async def start_manifest(
         await store_photo(pool, await f.read(), f.content_type or "image/jpeg", driver["id"], caption)
         for f in incoming
     ]
-    # The first one stays on the row, so every screen that reads a single photo
-    # keeps working; trip_photo carries the whole set.
-    photo_id = photo_ids[0]
+    # None when the driver started without one. Every column it lands in is
+    # nullable, and the photo can be attached later from the timeline.
+    photo_id = photo_ids[0] if photo_ids else None
 
     # Which contracted window this run is against -- the day's first trip is
     # slot 1, the second slot 2. Stamped at the start so cancelling or

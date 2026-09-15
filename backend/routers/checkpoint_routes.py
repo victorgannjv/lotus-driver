@@ -524,7 +524,11 @@ async def complete_job(
     trip = await _owned_trip(pool, driver["id"], job["manifest_id"])
     now = datetime.now(timezone.utc).replace(tzinfo=None)
 
+    # The one photo that stays compulsory. A checkpoint is proven by its
+    # timestamp; a parcel reaching a door is not proven by anything else.
     incoming = [f for f in ([photo] if photo is not None else []) + list(photos or []) if f is not None]
+    if not incoming:
+        raise HTTPException(status_code=422, detail="a proof photo is required to close a drop")
     photo_ids: list[int] = []
     if incoming:
         caption = evidence_caption(
