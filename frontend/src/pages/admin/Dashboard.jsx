@@ -217,21 +217,23 @@ export default function Dashboard() {
             the time each step took. Nothing here is typed in by hand.
             {target
               ? " A step that runs longer than its allowance is counted as a delay, and the reason the driver picks decides whether those minutes are attributed to Lotus, to us, or to neither."
-              : " Per-step time allowances are currently switched off, so no step is counted as a delay and the two attribution figures are not being measured. Lateness is judged against the contracted delivery windows instead."}
+              : " Per-step time allowances are switched off, so lateness is measured against the contracted delivery windows: arriving after a window opens is counted as ours, and still being there after it closes is counted as the outlet's."}
           </p>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {/* Three of these four are measured against the per-step time
-                allowances. With allowances switched off they are not zero,
-                they are unmeasured -- and a confident "0m" next to
-                "Disputable delay" reads as "nothing to claim", which is the
-                opposite of true. They say so instead. */}
+            {/* Two sources, one row. The per-step allowances are off, so
+                anything measured against them is not zero -- it is unmeasured,
+                and a confident "0m" beside "Delay caused by Lotus" reads as
+                "nothing to claim", which is the opposite of true.
+                The contracted delivery windows ARE in force and carry the same
+                attribution, so while allowances are off these tiles report the
+                windows and say so. Nothing on the row is a placeholder. */}
             <Tile
-              accent={!!target}
+              accent
               label="Delay caused by Lotus"
-              value={target ? formatDuration(t.owned_minutes.lotus) : "—"}
+              value={formatDuration(target ? t.owned_minutes.lotus : t.window.late_minutes_lotus)}
               sub={target
                 ? "Minutes a step ran over its allowance, where the driver's reason points at the outlet"
-                : "Not measured — time allowances are off"}
+                : "Minutes a run left the outlet after its delivery window closed, beyond any late arrival of ours"}
               delta={
                 target && t.owned_minutes_previous.lotus
                   ? `was ${formatDuration(t.owned_minutes_previous.lotus)} last period`
@@ -240,13 +242,17 @@ export default function Dashboard() {
               deltaBad={t.owned_minutes.lotus > t.owned_minutes_previous.lotus}
             />
             <Tile
-              label="Trips over allowance"
-              value={target ? `${t.over_target} / ${t.trips}` : `— / ${t.trips}`}
-              sub={!target
-                ? "Not measured — time allowances are off"
-                : t.breach_rate !== null
-                  ? `${t.breach_rate}% of trips spent longer at the outlet than allowed`
-                  : "No trips in this period"}
+              label={target ? "Trips over allowance" : "Trips that missed their window"}
+              value={target
+                ? `${t.over_target} / ${t.trips}`
+                : `${t.window.missed} / ${t.window.trips_with_window}`}
+              sub={target
+                ? (t.breach_rate !== null
+                    ? `${t.breach_rate}% of trips spent longer at the outlet than allowed`
+                    : "No trips in this period")
+                : (t.window.on_time_rate !== null
+                    ? `${t.window.on_time_rate}% left inside their contracted window`
+                    : "No trips with a delivery window in this period")}
             />
             <Tile
               label="Avg time at outlet"
@@ -261,10 +267,10 @@ export default function Dashboard() {
             />
             <Tile
               label="Delay caused by us"
-              value={target ? formatDuration(t.owned_minutes.njv) : "—"}
+              value={formatDuration(target ? t.owned_minutes.njv : t.window.late_minutes_njv)}
               sub={target
                 ? "Same measure, where the driver's reason points at Ninja Van"
-                : "Not measured — time allowances are off"}
+                : "Minutes a run arrived after its delivery window opened — counted first, before any Lotus delay"}
             />
           </div>
 
