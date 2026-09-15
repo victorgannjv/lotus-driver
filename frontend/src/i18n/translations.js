@@ -59,7 +59,8 @@ export const translations = {
       failed: "reset failed",
     },
     location: {
-      offTitle: "Location is not switched on",
+      needTitle: "Turn on location for this app",
+      offTitle: "Location is switched off on this phone",
       blockedTitle: "Location is blocked for this site",
       why: "Every photo you send is stamped with where you were. Turn it on once and the app stops asking.",
       deviceOffHow: "Location is switched off on the phone itself. Turn it on in your phone settings, then tap Try again.",
@@ -334,7 +335,8 @@ export const translations = {
       failed: "penetapan semula gagal",
     },
     location: {
-      offTitle: "Lokasi belum dihidupkan",
+      needTitle: "Hidupkan lokasi untuk aplikasi ini",
+      offTitle: "Lokasi dimatikan pada telefon ini",
       blockedTitle: "Lokasi disekat untuk laman ini",
       why: "Setiap gambar yang anda hantar dicap dengan lokasi anda. Hidupkannya sekali dan aplikasi ini tidak akan bertanya lagi.",
       deviceOffHow: "Lokasi dimatikan pada telefon itu sendiri. Hidupkannya dalam tetapan telefon anda, kemudian tekan Cuba lagi.",
