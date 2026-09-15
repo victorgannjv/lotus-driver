@@ -105,8 +105,24 @@ export async function getPosition({ timeout = 8000 } = {}) {
 const listeners = new Set();
 let watchId = null;
 
+// Survives reloads. navigator.permissions is the only thing that can tell us
+// "you already have this", and on Chrome for Android it is not reliable enough
+// to hang a nagging banner on -- it reports "prompt" to plenty of people who
+// have granted. Once this device has actually produced a coordinate we know
+// location works here, whatever the Permissions API says afterwards.
+const WORKED_KEY = "njv.geo.worked";
+
+export function everWorked() {
+  try {
+    return localStorage.getItem(WORKED_KEY) === "1";
+  } catch {
+    return false; // private mode, storage disabled -- fall back to asking
+  }
+}
+
 function remember(res) {
   cached = { lat: res.lat, lng: res.lng, accuracy: res.accuracy, at: Date.now() };
+  try { localStorage.setItem(WORKED_KEY, "1"); } catch { /* not worth failing over */ }
   const fix = lastFix();
   listeners.forEach((fn) => {
     try { fn(fix); } catch { /* one bad subscriber must not stop the rest */ }
@@ -141,6 +157,17 @@ export function stopWatch() {
     navigator.geolocation.clearWatch(watchId);
     watchId = null;
   }
+}
+
+// Cheap enough to run on every screen open: one attempt, network accuracy, and
+// happy with a ten-minute-old cached position. Where permission is already
+// granted this comes back immediately and silently, which is the whole point
+// -- it is how the banner learns that location works without asking anybody.
+export async function quickProbe() {
+  if (!supported()) return { lat: null, lng: null, code: GEO_UNSUPPORTED, error: "unsupported" };
+  const res = await once({ enableHighAccuracy: false, timeout: 6000, maximumAge: 600_000 });
+  if (res.lat != null) remember(res);
+  return res;
 }
 
 export function lastFix() {

@@ -5,10 +5,11 @@ import {
   GEO_DENIED,
   GEO_UNAVAILABLE,
   ensureWatch,
+  everWorked,
   getPosition,
   lastFix,
-  onPermissionChange,
   permissionState,
+  quickProbe,
 } from "../lib/geolocation";
 
 // Ask at the top of the shift, not at the loading bay.
@@ -16,83 +17,79 @@ import {
 // Every coordinate this app records is collected inside a submit -- after the
 // camera app has been and gone, in a promise the browser did not see anybody
 // tap. That is the one moment a permission dialog is least likely to appear,
-// and when it doesn't the checkpoint is simply filed without a location and
-// nobody finds out until an admin needs it.
+// and when it doesn't the checkpoint is filed without a location and nobody
+// finds out until an admin needs it.
 //
-// SHOWN ONLY ON EVIDENCE THAT LOCATION WILL NOT WORK. The first version hid
-// itself for "granted" and "unsupported" and showed for everything else, which
-// got it backwards: "unknown" is what permissionState returns when the browser
-// has no Permissions API to interrogate, or when the query throws -- common on
-// Android WebViews -- and location may well be working perfectly. It also
-// never looked at whether a fix had actually been obtained, so a driver who
-// granted access still got told it was off. Silence is the default now, and
-// the banner has to earn its place.
+// IT ASKS THE DEVICE, NOT THE PERMISSIONS API. Earlier versions decided
+// whether to nag from navigator.permissions.query, and on Chrome for Android
+// that reports "prompt" to people who have plainly granted -- so the banner
+// sat there after every reload insisting location was off while the app was
+// happily stamping coordinates onto photos. Being wrong in that direction is
+// the worst of the options: it teaches a driver to ignore the one warning
+// that matters on the day location really is broken.
+//
+// So it runs a real probe when the screen opens. One attempt, network
+// accuracy, content with a ten-minute-old cached position: where permission is
+// granted that returns immediately and silently and the banner never renders.
+// Only a probe that actually FAILS puts it on screen -- and once this device
+// has ever produced a coordinate, that is remembered across reloads.
 export default function LocationBanner() {
   const { t } = useLanguage();
   const [perm, setPerm] = useState(null);
+  const [probe, setProbe] = useState(null); // last attempt; null while running
   const [busy, setBusy] = useState(false);
-  // A fix from anywhere in the app counts -- geolocation caches the last good
-  // one, so if the photo screen already got coordinates there is nothing here
-  // worth saying.
-  const [fix, setFix] = useState(() => lastFix());
-  const [result, setResult] = useState(null); // last attempt, for its error code
-  // Dismissed for this visit only. It is a nag by nature, and a driver who has
-  // decided to work without location should be able to get on with the shift.
   const [hidden, setHidden] = useState(false);
 
-  const recheck = useCallback(async () => {
+  const check = useCallback(async () => {
+    const res = await quickProbe();
+    setProbe(res);
     const state = await permissionState();
     setPerm(state);
-    if (state === "granted") await ensureWatch();
-    setFix((current) => lastFix() || current);
+    if (res.lat != null || state === "granted") ensureWatch();
   }, []);
 
+  // The explicit tap -- the only request a browser is obliged to raise a
+  // dialog for.
   const ask = useCallback(async () => {
     setBusy(true);
     try {
       const p = await getPosition();
-      setResult(p);
-      if (p.lat != null) setFix(p);
+      setProbe(p);
       const state = await permissionState();
       setPerm(state);
-      // Granted once, warm for the rest of the shift -- no later screen asks.
-      if (state === "granted") await ensureWatch();
+      if (p.lat != null || state === "granted") ensureWatch();
     } finally {
       setBusy(false);
     }
   }, []);
 
   useEffect(() => {
-    recheck();
-    const off = onPermissionChange((s) => setPerm(s));
-    // The fix for a block is made in the browser's own settings, which means
-    // leaving this tab and coming back. onPermissionChange covers browsers
-    // with a working Permissions API; this covers the ones that sent us here
-    // in the first place.
-    const onReturn = () => { if (!document.hidden) recheck(); };
+    check();
+    const onReturn = () => { if (!document.hidden) check(); };
     document.addEventListener("visibilitychange", onReturn);
     window.addEventListener("focus", onReturn);
     return () => {
-      off();
       document.removeEventListener("visibilitychange", onReturn);
       window.removeEventListener("focus", onReturn);
     };
-  }, [recheck]);
+  }, [check]);
 
   if (hidden) return null;
-  // Coordinates in hand beat any opinion the Permissions API has.
-  if (fix?.lat != null) return null;
-  // Still checking, working, or a browser we cannot ask about. The photo screen
-  // is the backstop for that last one -- it reports what actually happened at
-  // the moment it mattered, rather than guessing here.
-  if (perm === null || perm === "granted" || perm === "unsupported" || perm === "unknown") return null;
+  // Working, or working a moment ago. Either way there is nothing to warn about.
+  if (probe?.lat != null || lastFix()?.lat != null) return null;
+  if (perm === "granted" || perm === "unsupported") return null;
+  // Still probing. Silence beats a banner that appears and then withdraws.
+  if (probe === null) return null;
 
-  const blocked = perm === "denied" || result?.code === GEO_DENIED;
-  const deviceOff = !blocked && result?.code === GEO_UNAVAILABLE;
+  const blocked = perm === "denied" || probe.code === GEO_DENIED;
+  const deviceOff = !blocked && probe.code === GEO_UNAVAILABLE;
 
-  // Three different problems, three different sentences. "Location is not
-  // switched on" was being shown for all of them, including the case where
-  // nothing is wrong and we simply have not asked yet.
+  // A timeout means the fix was slow, not that anything is switched off -- a
+  // steel-roofed loading bay does that routinely. If location has worked on
+  // this device before, there is nothing here worth saying; the photo screen
+  // reports it where it actually matters.
+  if (!blocked && !deviceOff && everWorked()) return null;
+
   const title = blocked
     ? t("location.blockedTitle")
     : deviceOff
@@ -111,12 +108,6 @@ export default function LocationBanner() {
         {title}
       </p>
       <p className="mt-1 leading-snug text-amber-800">{body}</p>
-
-      {/* The facts, so "it still asks every time" can be diagnosed instead of
-          guessed at. `perm` is what the browser itself reports: if it says
-          granted the banner is gone, so seeing "prompt" here means the grant
-          did not persist -- which is what Chrome's "Only this time" does. The
-          build id tells us whether this handset is even running the fix. */}
       <p className="mt-1.5 text-[11px] text-amber-700/80">
         {t("location.state", { state: perm })} · {t("location.build", { build: __BUILD_ID__ })}
       </p>
@@ -127,7 +118,7 @@ export default function LocationBanner() {
           disabled={busy}
           className="mt-2 w-full rounded-lg bg-brand-black px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
         >
-          {busy ? t("location.asking") : result ? t("location.retry") : t("location.allow")}
+          {busy ? t("location.asking") : probe ? t("location.retry") : t("location.allow")}
         </button>
       )}
       <button

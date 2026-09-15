@@ -12,6 +12,7 @@ import {
   subscribe,
   onPermissionChange,
   permissionState,
+  quickProbe,
 } from "../lib/geolocation";
 
 // Two explicit ways in, rather than one "Choose File" control.
@@ -73,12 +74,17 @@ export default function PhotoCapture({ label, onChange, required = false, max = 
 
   // Find out where we stand before asking for anything.
   //
-  // Already granted: fetch straight away, so the fix is warm by the time the
-  // driver comes back from the camera app -- the browser will not raise a
-  // prompt while another app is in the foreground, which is exactly the moment
-  // the old code chose to ask. Not granted: do NOT fire a silent request. A
-  // prompt nobody expected gets dismissed, and on Chrome a dismissed prompt is
-  // half-way to a permanent block. It waits for the driver to tap instead.
+  // Fetch straight away, so the fix is warm by the time the driver comes back
+  // from the camera app -- the browser will not raise a prompt while another
+  // app is in the foreground, which is exactly the moment the old code chose
+  // to ask.
+  //
+  // This used to skip the fetch unless the Permissions API said "granted", to
+  // avoid a dialog nobody tapped for. That caution cost more than it saved:
+  // Chrome for Android reports "prompt" to plenty of drivers who have granted,
+  // so the screen sat there offering a button to turn on something already on.
+  // A probe costs a silent success where permission exists and a timeout where
+  // it does not, and either answer is worth more than the guess.
   useEffect(() => {
     let live = true;
     // Whatever the watch reports, this screen shows -- so a fix obtained on the
@@ -88,9 +94,17 @@ export default function PhotoCapture({ label, onChange, required = false, max = 
       if (!live) return;
       setPerm(state);
       if (state === "granted") ensureWatch();
-      // "unknown" is an older browser with no Permissions API to ask: trying is
-      // the only way to find out, and it is the case that used to work.
-      if ((state === "granted" || state === "unknown") && !lastFix()) locate();
+      // Probe whatever the Permissions API claims. On Chrome for Android it
+      // reports "prompt" to people who have granted, and taking that at face
+      // value is what put a "Turn on location" button in front of drivers
+      // whose location was working fine. A granted probe returns silently; an
+      // ungranted one costs a timeout and tells us the truth.
+      if (!lastFix()) {
+        quickProbe().then((res) => {
+          if (!live) return;
+          if (res.lat != null) { setFix(res); ensureWatch(); }
+        });
+      }
     });
     const off = onPermissionChange((state) => {
       setPerm(state);
