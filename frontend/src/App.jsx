@@ -23,7 +23,7 @@ import Signup from "./pages/driver/Signup";
 const RELOADED = "njv.chunk.reloaded";
 
 function lazyRoute(factory) {
-  return lazyRoute(() =>
+  return lazy(() =>
     factory()
       .then((mod) => {
         sessionStorage.removeItem(RELOADED);
