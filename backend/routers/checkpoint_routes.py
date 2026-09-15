@@ -307,6 +307,72 @@ async def stamp_checkpoint(
     return state
 
 
+@router.post("/trips/{manifest_id}/checkpoints/{checkpoint}/photos", status_code=201)
+async def add_checkpoint_photos(
+    manifest_id: int,
+    checkpoint: str,
+    request: Request,
+    lat: float | None = Form(None),
+    lng: float | None = Form(None),
+    photos: list[UploadFile] | None = File(None),
+    photo: UploadFile | None = File(None),
+    driver=Depends(get_current_driver),
+):
+    """Attach photos to a checkpoint that was already stamped.
+
+    Stamping no longer waits for a camera, so the photo has to be able to
+    arrive later -- otherwise "optional" just means "missing".
+
+    The caption carries the time the PHOTO was taken, not the time the
+    checkpoint was stamped, and says it was added afterwards. A picture taken
+    twenty minutes later that claims the stamp's timestamp is a forgery, and
+    one honest line is the difference between a late photo and a worthless
+    one.
+
+    Only while the trip is open. Once it has returned the record is closed,
+    which is what stops a gap being filled in from memory days later.
+    """
+    pool = get_pool(request)
+    trip = await _owned_trip(pool, driver["id"], manifest_id)
+    if trip["day_closed_at"] is not None:
+        raise HTTPException(status_code=409, detail="that day is closed")
+
+    existing = (await fetch_checkpoints(pool, [manifest_id])).get(manifest_id, {})
+    if checkpoint not in existing:
+        raise HTTPException(status_code=404, detail="that step has not been stamped yet")
+    if "returned" in existing and checkpoint != "returned":
+        raise HTTPException(status_code=409, detail="this trip is finished -- photos can no longer be added")
+
+    incoming = [f for f in ([photo] if photo is not None else []) + list(photos or []) if f is not None]
+    if not incoming:
+        raise HTTPException(status_code=422, detail="no photo was attached")
+
+    taken = datetime.now(timezone.utc).replace(tzinfo=None)
+    place = " - ".join(x for x in (trip.get("warehouse_name"), trip.get("warehouse_address")) if x)
+    caption = evidence_caption(
+        ref=f"T-{manifest_id}",
+        what=f"{CHECKPOINT_LABELS.get(checkpoint, checkpoint)} - photo added later",
+        who=driver.get("name"),
+        lat=lat, lng=lng, place=place, when=clock_stamp(taken),
+    )
+    photo_ids = [
+        await store_photo(pool, await f.read(), f.content_type or "image/jpeg", driver["id"], caption)
+        for f in incoming
+    ]
+    await link_trip_photos(pool, photo_ids, manifest_id=manifest_id, checkpoint=checkpoint)
+
+    # The row keeps the first photo it ever had, so a late addition never
+    # displaces one taken at the time.
+    async with pool.acquire() as conn, conn.cursor() as cur:
+        await cur.execute(
+            "UPDATE trip_checkpoint SET photo_id = COALESCE(photo_id, %s) "
+            "WHERE manifest_id = %s AND checkpoint = %s",
+            (photo_ids[0], manifest_id, checkpoint),
+        )
+
+    return await _trip_state(pool, trip)
+
+
 @router.post("/trips/{manifest_id}/checkpoints/{checkpoint}/reason")
 async def set_checkpoint_reason(
     manifest_id: int,

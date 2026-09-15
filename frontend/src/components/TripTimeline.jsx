@@ -61,6 +61,7 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
   // driver's own evidence, and until the trip ends he should be able to
   // look at it and add to it.
   const [openJob, setOpenJob] = useState(null);
+  const [pendingLatePhoto, setPendingLatePhoto] = useState(null);
   // Drives the countdown. Half a minute is fine for a figure shown in minutes
   // and costs nothing; the interval is torn down with the component.
   const [now, setNow] = useState(() => Date.now());
@@ -93,6 +94,26 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
       // and the photo are the evidence that matters, GPS is corroboration.
     }
     return formData;
+  }
+
+  // Photos for a step already stamped. Separate from stampCheckpoint on
+  // purpose: this one does not move any timestamp.
+  async function addPhotos(checkpoint, photos) {
+    const shots = Array.isArray(photos) ? photos : photos ? [photos] : [];
+    if (!shots.length) return setPendingLatePhoto(null);
+    setBusy(true);
+    setError(null);
+    try {
+      const fd = await withPosition(new FormData());
+      shots.forEach((f) => fd.append("photos", f));
+      setState(await api.postForm(`/trips/${manifestId}/checkpoints/${checkpoint}/photos`, fd));
+      setPendingLatePhoto(null);
+      if (onChanged) onChanged();
+    } catch (err) {
+      setError(err.detail || t("trip.stampError"));
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function stampCheckpoint(checkpoint, photos, reasonCode) {
@@ -483,6 +504,19 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
                   offered on any stamped step -- a driver who knows Lotus held
                   them up should not have to wait for a threshold to say so. A
                   breach still asks unprompted. */}
+              {/* A step stamped without a photo can still get one, for as
+                  long as the trip is open. Optional would otherwise just
+                  mean missing. */}
+              {done && (done.photo_ids || []).length === 0 && !stamped.has("returned") && (
+                <button
+                  type="button"
+                  onClick={() => setPendingLatePhoto({ checkpoint: cp, label: t(`checkpoint.${cp}`) })}
+                  className="mt-1 mr-2 inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600"
+                >
+                  <Icon name="camera" className="h-3.5 w-3.5" />
+                  {t("checkpoint.addPhoto")}
+                </button>
+              )}
               {done && gap && (
                 <button
                   type="button"
@@ -622,6 +656,13 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
         maxPhotos={4}
         onCancel={() => setPendingPhoto(null)}
         reasons={pendingPhoto?.kind === "checkpoint" ? reasons : []}
+        // A drop's proof photo stays compulsory -- there is no timestamp that
+        // proves a parcel reached a door. A checkpoint's does not: the stamp
+        // is the evidence and a late stamp is worse than a late photo.
+        photoRequired={
+          pendingPhoto?.kind === "job" ||
+          (settings?.photo_required_checkpoints || []).includes(pendingPhoto?.checkpoint)
+        }
         scanTo={
           pendingPhoto?.kind === "job"
             ? `/driver/scans/complete?trip_job=${pendingPhoto.jobId}&seq=${pendingPhoto.seq}`
@@ -633,6 +674,17 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
             : stampCheckpoint(pendingPhoto.checkpoint, photo, reasonCode)
         }
       />
+      <PhotoSheet
+        key={pendingLatePhoto ? `late-${pendingLatePhoto.checkpoint}` : "late-none"}
+        open={!!pendingLatePhoto}
+        title={t("checkpoint.addPhotoTitle", { step: pendingLatePhoto?.label || "" })}
+        busy={busy}
+        maxPhotos={4}
+        photoRequired
+        onCancel={() => setPendingLatePhoto(null)}
+        onSubmit={(photo) => addPhotos(pendingLatePhoto.checkpoint, photo)}
+      />
+
       <JobCountSheet
         open={pendingCount}
         busy={busy}

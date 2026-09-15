@@ -112,7 +112,8 @@ function Sheet({ title, subtitle, children, onCancel, cancelLabel }) {
 // A photo is the evidence a claim rests on, so the step will not stamp without
 // one. The stamp itself comes from the server clock, not the handset -- a phone
 // with the wrong time would hand Lotus an argument against every photo.
-export function PhotoSheet({ open, title, busy, onSubmit, onCancel, maxPhotos = 4, reasons = [], scanTo = null }) {
+export function PhotoSheet({ open, title, busy, onSubmit, onCancel, maxPhotos = 4, reasons = [],
+                            scanTo = null, photoRequired = true }) {
   const { t } = useLanguage();
   const [photos, setPhotos] = useState([]);
   const [reason, setReason] = useState("");
@@ -129,17 +130,21 @@ export function PhotoSheet({ open, title, busy, onSubmit, onCancel, maxPhotos = 
   return (
     <FullPage
       title={title}
-      subtitle={t("checkpoint.photoSubtitle")}
+      subtitle={photoRequired ? t("checkpoint.photoSubtitle") : t("checkpoint.photoOptional")}
       onCancel={busy ? null : onCancel}
       cancelLabel={t("common.cancel")}
       action={
         <button
           type="button"
-          disabled={busy || photos.length === 0}
+          disabled={busy || (photoRequired && photos.length === 0)}
           onClick={() => onSubmit(photos, reason || null)}
           className="w-full rounded-xl bg-brand-red px-4 py-3.5 text-base font-semibold text-white hover:bg-brand-red-dark disabled:opacity-50"
         >
-          {busy ? t("checkpoint.saving") : t("checkpoint.confirm")}
+          {busy
+            ? t("checkpoint.saving")
+            : photos.length === 0 && !photoRequired
+              ? t("checkpoint.confirmNoPhoto")
+              : t("checkpoint.confirm")}
         </button>
       }
     >
@@ -160,6 +165,7 @@ export function PhotoSheet({ open, title, busy, onSubmit, onCancel, maxPhotos = 
 
       <PhotoCapture
         label={t("checkpoint.photoLabel")}
+        required={photoRequired}
         onChange={(v) => setPhotos(Array.isArray(v) ? v : v ? [v] : [])}
         max={maxPhotos}
         required
