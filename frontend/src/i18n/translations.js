@@ -141,6 +141,10 @@ export const translations = {
     reason: {
       title: "Why the delay?",
       subtitle: "{gap} took {over} against a target of {target}. Pick the closest reason.",
+      inlineLabel: "Anything hold you up?",
+      inlineHelp: "Optional. Easier to answer now than to remember later.",
+      inlineNone: "No delay — everything went normally",
+      skip: "Skip for now",
       party: { lotus: "Lotus side", njv: "Our side", external: "Outside both sides" },
       partyNote: {
         lotus: "Something at the outlet held you up.",
@@ -417,6 +421,10 @@ export const translations = {
     reason: {
       title: "Kenapa lewat?",
       subtitle: "{gap} mengambil {over} berbanding sasaran {target}. Pilih sebab yang paling hampir.",
+      inlineLabel: "Ada apa-apa yang melambatkan anda?",
+      inlineHelp: "Pilihan. Lebih mudah dijawab sekarang daripada diingat kemudian.",
+      inlineNone: "Tiada kelewatan — semuanya berjalan seperti biasa",
+      skip: "Langkau buat masa ini",
       party: { lotus: "Pihak Lotus", njv: "Pihak kami", external: "Di luar kawalan" },
       partyNote: {
         lotus: "Sesuatu di outlet melambatkan anda.",

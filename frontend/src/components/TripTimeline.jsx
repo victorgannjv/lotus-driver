@@ -7,6 +7,17 @@ import { useLanguage } from "../i18n/LanguageContext";
 import { formatDuration, formatTime } from "../lib/duration";
 import { getPosition } from "../lib/geolocation";
 
+// Which gap each checkpoint closes. Mirrors CHECKPOINT_GAP in backend/trips.py
+// so the photo page can offer the right reasons before the stamp exists --
+// "arrived" is absent on purpose, nothing precedes it.
+const GAP_FOR_CHECKPOINT = {
+  goods_ready: "waiting_for_lotus",
+  loaded: "loading",
+  departed: "departure_lag",
+  deliveries_done: "delivery_round",
+  returned: "return_leg",
+};
+
 // The whole trip as one vertical timeline: what is done keeps its time and its
 // delay, the current step is the only button on screen, and what is still to
 // come stays visible but dim so the driver can see the shape of the run.
@@ -72,7 +83,7 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
     return formData;
   }
 
-  async function stampCheckpoint(checkpoint, photos) {
+  async function stampCheckpoint(checkpoint, photos, reasonCode) {
     const shots = Array.isArray(photos) ? photos : photos ? [photos] : [];
     // No trip yet: "Arrived at Lotus" is what creates one, so hand the photos to
     // the caller's start flow rather than posting a checkpoint into nothing.
@@ -89,6 +100,8 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
       // One field name, repeated. The server reads them in order and burns the
       // same caption onto every one, because they evidence the same instant.
       shots.forEach((f) => fd.append("photos", f));
+      // Given at photo time, so the server does not ask again afterwards.
+      if (reasonCode) fd.append("reason_code", reasonCode);
       const next = await api.postForm(`/trips/${manifestId}/checkpoints`, fd);
       setState(next);
       setPendingPhoto(null);
@@ -145,6 +158,20 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
     }
   }
 
+  // Reasons for the gap this checkpoint is about to close, fetched while the
+  // driver is taking the photo so the picker is populated by the time they
+  // look at it.
+  async function loadReasonsFor(checkpoint) {
+    const gapCode = GAP_FOR_CHECKPOINT[checkpoint];
+    if (!gapCode) return setReasons([]);
+    try {
+      const d = await api.get(`/reason-codes?gap=${encodeURIComponent(gapCode)}`);
+      setReasons(d.reason_codes);
+    } catch {
+      setReasons([]);
+    }
+  }
+
   async function openReason(checkpoint, fromState) {
     const gap = gapFor(fromState || state, checkpoint);
     if (!gap) return;
@@ -192,8 +219,10 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
   } else if (nextCp && !SERVER_FIRED.has(nextCp)) {
     action = {
       label: t(`checkpoint.${nextCp}`),
-      run: () =>
-        setPendingPhoto({ kind: "checkpoint", checkpoint: nextCp, title: t(`checkpoint.${nextCp}`) }),
+      run: () => {
+        setPendingPhoto({ kind: "checkpoint", checkpoint: nextCp, title: t(`checkpoint.${nextCp}`) });
+        loadReasonsFor(nextCp);
+      },
     };
   }
 
@@ -438,10 +467,11 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
         // was the last one still capped at a single frame.
         maxPhotos={4}
         onCancel={() => setPendingPhoto(null)}
-        onSubmit={(photo) =>
+        reasons={pendingPhoto?.kind === "checkpoint" ? reasons : []}
+        onSubmit={(photo, reasonCode) =>
           pendingPhoto.kind === "job"
             ? completeJob(pendingPhoto.jobId, photo)
-            : stampCheckpoint(pendingPhoto.checkpoint, photo)
+            : stampCheckpoint(pendingPhoto.checkpoint, photo, reasonCode)
         }
       />
       <JobCountSheet
@@ -458,6 +488,7 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
         reasons={reasons}
         busy={busy}
         onSubmit={submitReason}
+        onSkip={() => setPendingReason(null)}
       />
     </div>
   );

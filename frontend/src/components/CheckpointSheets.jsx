@@ -4,6 +4,9 @@ import PhotoCapture from "./PhotoCapture";
 import { useLanguage } from "../i18n/LanguageContext";
 import { formatDuration } from "../lib/duration";
 
+// Shared by both places a reason is offered: the photo page and the sheet.
+const PARTY_ORDER = ["lotus", "njv", "external"];
+
 // The screens the trip timeline raises, in the order a checkpoint needs them:
 // photo -> (job count, at loading only) -> reason, if the gap ran over target.
 // Kept in one file because they are never used apart.
@@ -87,10 +90,20 @@ function Sheet({ title, subtitle, children, onCancel, cancelLabel }) {
 // A photo is the evidence a claim rests on, so the step will not stamp without
 // one. The stamp itself comes from the server clock, not the handset -- a phone
 // with the wrong time would hand Lotus an argument against every photo.
-export function PhotoSheet({ open, title, busy, onSubmit, onCancel, maxPhotos = 4 }) {
+export function PhotoSheet({ open, title, busy, onSubmit, onCancel, maxPhotos = 4, reasons = [] }) {
   const { t } = useLanguage();
   const [photos, setPhotos] = useState([]);
+  const [reason, setReason] = useState("");
   if (!open) return null;
+
+  // Asked here, while the driver is still standing in the thing he is
+  // describing. The old flow only asked AFTER the stamp, and only if the gap
+  // had already breached -- by which point he has put the phone away, and the
+  // answer is a memory rather than an observation. Optional: most steps are
+  // fine, and a required field on a clean trip trains people to pick anything.
+  const grouped = PARTY_ORDER
+    .map((party) => ({ party, items: reasons.filter((r) => r.fault_party === party) }))
+    .filter((g) => g.items.length > 0);
   return (
     <FullPage
       title={title}
@@ -101,7 +114,7 @@ export function PhotoSheet({ open, title, busy, onSubmit, onCancel, maxPhotos = 
         <button
           type="button"
           disabled={busy || photos.length === 0}
-          onClick={() => onSubmit(photos)}
+          onClick={() => onSubmit(photos, reason || null)}
           className="w-full rounded-xl bg-brand-red px-4 py-3.5 text-base font-semibold text-white hover:bg-brand-red-dark disabled:opacity-50"
         >
           {busy ? t("checkpoint.saving") : t("checkpoint.confirm")}
@@ -114,6 +127,27 @@ export function PhotoSheet({ open, title, busy, onSubmit, onCancel, maxPhotos = 
         max={maxPhotos}
         required
       />
+
+      {grouped.length > 0 && (
+        <label className="mt-5 block">
+          <span className="block text-sm font-medium text-slate-700">{t("reason.inlineLabel")}</span>
+          <span className="mt-0.5 block text-xs text-slate-500">{t("reason.inlineHelp")}</span>
+          <select
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm text-brand-black focus:border-brand-red focus:outline-none"
+          >
+            <option value="">{t("reason.inlineNone")}</option>
+            {grouped.map((g) => (
+              <optgroup key={g.party} label={t(`reason.party.${g.party}`)}>
+                {g.items.map((r) => (
+                  <option key={r.code} value={r.code}>{r.label}</option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+        </label>
+      )}
     </FullPage>
   );
 }
@@ -186,14 +220,19 @@ export function JobCountSheet({ open, busy, quickPicks, max, onSubmit, onCancel 
 // Only raised when a gap actually ran over its target, so a clean trip is never
 // interrupted. Codes are grouped by who owns the delay, with the gap's likely
 // owner listed first -- that grouping is the whole basis of the dispute split.
-const PARTY_ORDER = ["lotus", "njv", "external"];
 const PARTY_STYLE = {
   lotus: "text-amber-700",
   njv: "text-blue-700",
   external: "text-emerald-700",
 };
 
-export function ReasonSheet({ open, gap, reasons, busy, onSubmit }) {
+// There was no way out of this sheet at all -- no cancel, no back, and tapping
+// outside did nothing, so the only move was to pick something. A driver
+// cornered into an answer picks the nearest one, which is how a dispute
+// register fills up with reasons nobody meant. Skipping is allowed now, and it
+// is not free: the trip reads "No reason given" in Evidence, which is a queue
+// someone chases.
+export function ReasonSheet({ open, gap, reasons, busy, onSubmit, onSkip }) {
   const { t } = useLanguage();
   if (!open || !gap) return null;
 
@@ -210,6 +249,8 @@ export function ReasonSheet({ open, gap, reasons, busy, onSubmit }) {
         over: formatDuration(gap.minutes),
         target: formatDuration(gap.target_minutes),
       })}
+      onCancel={busy ? null : onSkip}
+      cancelLabel={t("reason.skip")}
     >
       {grouped.map((g) => (
         <div key={g.party} className="mb-4">
