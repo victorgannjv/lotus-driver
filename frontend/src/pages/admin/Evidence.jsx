@@ -130,7 +130,14 @@ function JobRow({ trip, job: j }) {
 
       {/* Which parcels, and how each one ended. A drop can be closed with one
           parcel delivered and another failed, and the drop's own status cannot
-          show that. Each one opens its own evidence trail. */}
+          show that. Each one opens its own evidence trail.
+
+          The row is the link, not the text. A tracking number here is often
+          typed by the driver rather than scanned, so underlining it in red
+          dressed a scrap of free text up as an identifier -- and a column of
+          those reads as noise. The row lights on hover and carries the same
+          chevron as the job above it, which is how everything else on this
+          page says "this opens". */}
       {j.orders.length > 0 && (
         <ul className="mt-2 space-y-0.5 border-t border-slate-100 pt-1.5">
           {j.orders.map((o) => (
@@ -138,14 +145,15 @@ function JobRow({ trip, job: j }) {
               <Link
                 to={`/admin/jobs/${o.id}`}
                 state={{ from: "evidence" }}
-                className="-mx-1 flex items-center justify-between gap-2 rounded px-1 py-1 hover:bg-slate-50"
+                title={`Open ${o.tracking_no}`}
+                className="group/parcel -mx-1 flex items-center justify-between gap-2 rounded px-1 py-1 hover:bg-slate-50"
               >
-                <span className="truncate font-medium text-brand-red underline">{o.tracking_no}</span>
+                <span className="truncate text-slate-600 group-hover/parcel:text-brand-black">{o.tracking_no}</span>
                 <span className="flex shrink-0 items-center gap-1.5">
                   <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${statusStyle(o.status_code)}`}>
                     {statusLabel(o.status_code)}
                   </span>
-                  <Icon name="chevron" className="h-3 w-3 text-slate-300" />
+                  <Icon name="chevron" className="h-3 w-3 text-slate-300 group-hover/parcel:text-slate-500" />
                 </span>
               </Link>
             </li>
