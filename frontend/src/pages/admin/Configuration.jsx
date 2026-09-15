@@ -553,7 +553,25 @@ const CHECKPOINTS = [
   ["returned", "Returned to Lotus"],
 ];
 
+// The steps a trip can be made of, and what switching one off actually costs.
+// Two are shown but cannot be turned off: "Arrived" is the tap that creates a
+// trip, and "Deliveries done" is written by the system when the last drop
+// closes, so there is nobody to stop asking.
+const TRIP_STEPS = [
+  ["arrived", "Arrived at Lotus", "This is the tap that starts a trip", true],
+  ["goods_ready", "Lotus goods ready", "Ends the wait we bill Lotus for", false],
+  ["loaded", "Loaded to truck", "Where the driver is asked how many drops the trip carries", false],
+  ["departed", "Departed outlet", "Time at outlet is measured from Arrived to here", false],
+  ["deliveries_done", "Deliveries done", "Recorded by the system when the last drop closes", true],
+  ["returned", "Returned to Lotus", "Ends the trip and closes the driver's day", false],
+];
+
 const SETTING_UI = {
+  active_checkpoints: {
+    label: "Steps a trip is made of",
+    help: "Switch one off and the app stops asking for it — the driver goes straight to the next step. Trips that already recorded it keep it, and so does every claim built on them.",
+    type: "steps",
+  },
   job_count_quick_picks: { label: "Quick buttons for number of jobs", help: "Shown when the driver is asked how many drops the trip carries.", type: "numbers" },
   job_count_manual_max: { label: "Most jobs a driver can type", help: "A safety limit on the typed box.", type: "number", min: 1, max: 200 },
   allow_add_job_mid_trip: { label: "Let drivers add a job after loading", help: "For when the load changes on the road.", type: "bool" },
@@ -572,6 +590,11 @@ const SETTING_UI = {
 // does not appear -- and a key the backend does not return is skipped, so this
 // list can name a setting before the migration that creates it lands.
 const SETTING_GROUPS = [
+  {
+    title: "Steps in a trip",
+    blurb: "Which checkpoints the driver app asks for. Change it whenever the run changes — drivers pick it up on their next screen, with nothing to install.",
+    keys: ["active_checkpoints"],
+  },
   {
     title: "Counting the jobs",
     blurb: "What the app accepts when a driver says how many drops a trip carries.",
@@ -640,6 +663,43 @@ function SettingRow({ s, ui, v, dirty, busy, set, commit }) {
                         set(k, [...String(v).split(",").filter(Boolean), String(n)].join(","));
                       }
                     }}>Add</button>
+          </span>
+          <button type="button" className={btnPrimary} disabled={busy || !dirty}
+                  onClick={() => commit(k, v)}>Save</button>
+        </>
+      )}
+
+      {ui.type === "steps" && (
+        <>
+          <span className="flex w-full min-w-0 flex-col gap-1.5 sm:w-[24rem]">
+            {TRIP_STEPS.map(([code, label, note, locked]) => {
+              const list = String(v).split(",").map((x) => x.trim()).filter(Boolean);
+              const on = locked || list.includes(code);
+              return (
+                <span key={code}
+                      className={`flex items-center justify-between gap-3 rounded-lg px-3 py-2 ${
+                        on ? "bg-emerald-50" : "bg-slate-100"
+                      }`}>
+                  <span className="min-w-0">
+                    <span className={`block text-sm font-medium ${on ? "text-emerald-900" : "text-slate-500"}`}>
+                      {label}
+                    </span>
+                    <span className="block text-[11px] leading-snug text-slate-500">{note}</span>
+                  </span>
+                  {/* Shown greyed and explained rather than hidden. A list that
+                      silently omits two of the six steps reads as a list of
+                      all the steps there are. */}
+                  {locked ? (
+                    <span className="shrink-0 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                      Always on
+                    </span>
+                  ) : (
+                    <Toggle on={on} disabled={busy} label={label}
+                            onChange={() => set(k, (on ? list.filter((x) => x !== code) : [...list, code]).join(","))} />
+                  )}
+                </span>
+              );
+            })}
           </span>
           <button type="button" className={btnPrimary} disabled={busy || !dirty}
                   onClick={() => commit(k, v)}>Save</button>

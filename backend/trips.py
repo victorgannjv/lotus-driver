@@ -1,9 +1,14 @@
 """Trip checkpoint domain logic, shared by the driver and admin surfaces.
 
-A trip (a `manifests` row) is stamped at five points: arrived, goods_ready,
-loaded, departed, returned -- plus deliveries_done, which the app fires by itself
-once every job in the trip is resolved rather than making a driver confirm what
-the system can already see.
+A trip (a `manifests` row) is stamped at up to five points: arrived,
+goods_ready, loaded, departed, returned -- plus deliveries_done, which the app
+fires by itself once every job in the trip is resolved rather than making a
+driver confirm what the system can already see.
+
+WHICH of those the app asks for is a setting, not a constant (see
+active_checkpoints): the shape of a run is still being worked out with the
+outlets, and a driver asked for a stamp that means nothing learns to fire them
+all at the gate. Only `arrived` and `deliveries_done` are fixed.
 
 The time BETWEEN two checkpoints is a "gap", and a gap that runs past its target
 is what Ninja Van disputes with. Gaps are always COMPUTED, never stored: a stored
@@ -44,6 +49,23 @@ GAP_LABELS = {
 }
 
 CHECKPOINT_ORDER = ["arrived", "goods_ready", "loaded", "departed", "deliveries_done", "returned"]
+
+# The ones the driver taps, in order. deliveries_done is absent on purpose --
+# the server fires it when the last drop closes.
+DRIVER_CHECKPOINTS = ["arrived", "goods_ready", "loaded", "departed", "returned"]
+
+# Steps that cannot be switched off.
+#
+# `arrived` IS the trip: POST /manifests/start creates the manifest and stamps
+# it in the same breath, so a run without it does not exist. `deliveries_done`
+# is fired by the server and is what the drop list hangs off -- nobody is being
+# asked for it, so there is nothing for an admin to switch off.
+LOCKED_CHECKPOINTS = ("arrived", "deliveries_done")
+
+# Anything after the deliveries themselves can only be stamped once every drop
+# is resolved. Derived rather than hard-coded to "returned", because which step
+# ends a run is now configurable.
+AFTER_DELIVERIES = set(CHECKPOINT_ORDER[CHECKPOINT_ORDER.index("deliveries_done") + 1:])
 
 CHECKPOINT_LABELS = {
     "arrived": "Arrived at Lotus",
@@ -133,17 +155,46 @@ def open_gap(stamps: dict, targets: dict, warehouse_id: int | None, next_cp: str
         if to_cp != next_cp:
             continue
         start = stamps.get(from_cp)
-        if start is None:
+        if start is not None:
+            return {
+                "gap_code": code,
+                "label": GAP_LABELS[code],
+                "from_checkpoint": from_cp,
+                "to_checkpoint": to_cp,
+                "started_at": fmt(start),
+                "target_minutes": resolve_target(targets, code, warehouse_id),
+                "default_fault_party": party,
+            }
+
+        # This gap begins at a step that is switched off, so nothing stamped
+        # it. Count from the last stamp there actually is -- the driver is
+        # still standing in a loading bay and the clock since the last thing
+        # that happened is the useful number.
+        #
+        # WITHOUT the allowance. The interval being measured is no longer the
+        # one the allowance was set for, and counting a wider interval down
+        # against a narrower bar would flag a breach that was never defined.
+        prev = _previous_stamp(stamps, to_cp)
+        if prev is None:
             return None
+        prev_cp, prev_at = prev
         return {
             "gap_code": code,
             "label": GAP_LABELS[code],
-            "from_checkpoint": from_cp,
+            "from_checkpoint": prev_cp,
             "to_checkpoint": to_cp,
-            "started_at": fmt(start),
-            "target_minutes": resolve_target(targets, code, warehouse_id),
+            "started_at": fmt(prev_at),
+            "target_minutes": None,
             "default_fault_party": party,
         }
+    return None
+
+
+def _previous_stamp(stamps: dict, before_cp: str):
+    """The latest checkpoint stamped ahead of `before_cp`, as (code, time)."""
+    for cp in reversed(CHECKPOINT_ORDER[: CHECKPOINT_ORDER.index(before_cp)]):
+        if stamps.get(cp) is not None:
+            return cp, stamps[cp]
     return None
 
 
@@ -238,6 +289,55 @@ def setting_bool(settings: dict, key: str, default: bool = False) -> bool:
 def setting_list(settings: dict, key: str) -> list[str]:
     raw = settings.get(key, "")
     return [p.strip() for p in raw.split(",") if p.strip()]
+
+
+def active_checkpoints(settings: dict) -> list[str]:
+    """Which steps the app asks for, in trip order.
+
+    The shape of a run is still being worked out with the outlets, so it is a
+    setting rather than a constant -- an outlet that stages its goods before we
+    arrive makes "Lotus goods ready" a tap with nothing behind it, and a driver
+    asked for a stamp that means nothing learns to fire them all at the gate,
+    which costs us the stamps that do mean something.
+
+    An absent or empty setting means every step. An app that asks for nothing
+    is not what an empty box was ever meant to say, and this has to be safe on
+    a database where the row does not exist yet.
+    """
+    chosen = set(setting_list(settings, "active_checkpoints"))
+    if not chosen:
+        return list(CHECKPOINT_ORDER)
+    return [cp for cp in CHECKPOINT_ORDER if cp in chosen or cp in LOCKED_CHECKPOINTS]
+
+
+def trip_end(stamps: dict, ended_cp: str):
+    """The moment a trip finished, or None while it is still running.
+
+    "Returned to Lotus" while that step is switched on, and whatever now ends a
+    run when it is not -- but a trip that DID come back is over by anyone's
+    reckoning even if the step has since been switched off, so both are
+    considered and the later one wins. A setting change must not rewrite when
+    past trips ended.
+    """
+    times = [stamps[c] for c in {ended_cp, "returned"} if c in stamps]
+    return max(times) if times else None
+
+
+def stampable_checkpoints(active: list[str]) -> list[str]:
+    """The active steps the driver actually taps, in order."""
+    return [cp for cp in DRIVER_CHECKPOINTS if cp in active]
+
+
+def final_checkpoint(active: list[str]) -> str:
+    """The stamp that means "this trip is over".
+
+    "Returned to Lotus" while it is switched on, and whatever now ends the run
+    when it is not. Several rules hang off this -- a trip stops accepting late
+    photos, a day closes itself -- and all of them meant "the last thing the
+    driver does", not "returned" specifically.
+    """
+    stampable = stampable_checkpoints(active)
+    return stampable[-1] if stampable else "arrived"
 
 
 # ---------------------------------------------------------------------------

@@ -20,8 +20,13 @@ from photos import evidence_caption, link_trip_photos, store_photo, trip_photo_m
 from localities import LOCALITIES
 from clocks import fmt, local_today, stamp as clock_stamp
 from trips import (
+    AFTER_DELIVERIES,
     CHECKPOINT_GAP,
     CHECKPOINT_LABELS,
+    DRIVER_CHECKPOINTS,
+    active_checkpoints,
+    final_checkpoint,
+    stampable_checkpoints,
     load_schedules,
     schedule_variance,
     slots_for,
@@ -36,13 +41,14 @@ from trips import (
     setting_bool,
     setting_list,
     stamps_from,
+    trip_end,
 )
 
 router = APIRouter()
 
-# Order the driver walks. deliveries_done is fired by the server when the last
-# job resolves, so it is never POSTed by the app.
-DRIVER_STAMPABLE = ["arrived", "goods_ready", "loaded", "departed", "returned"]
+# Which steps the driver walks is a setting now (trips.active_checkpoints), so
+# it is read per request rather than fixed here. DRIVER_CHECKPOINTS holds the
+# full order; stampable_checkpoints() narrows it to the ones switched on.
 
 
 def _parse_occurred_at(value: str | None) -> datetime:
@@ -81,6 +87,7 @@ async def _trip_state(pool, trip: dict) -> dict:
     mid = trip["id"]
     cps = (await fetch_checkpoints(pool, [mid])).get(mid, {})
     targets = await load_targets(pool)
+    active = active_checkpoints(await load_settings(pool))
     stamps = stamps_from(cps)
     gaps = compute_gaps(stamps, targets, trip["warehouse_id"])
 
@@ -114,11 +121,14 @@ async def _trip_state(pool, trip: dict) -> dict:
 
     done_jobs = sum(1 for j in jobs if j["status"] != "pending")
     next_cp = None
-    for cp in DRIVER_STAMPABLE:
+    for cp in stampable_checkpoints(active):
         if cp in cps:
             continue
-        # returned only becomes available once every job is resolved
-        if cp == "returned" and jobs and done_jobs < len(jobs):
+        # A step that comes after the deliveries only becomes available once
+        # every drop is resolved. Keyed on where the step sits in the run
+        # rather than on "returned", because which step ends a trip is now
+        # configurable and the rule was never about that name.
+        if cp in AFTER_DELIVERIES and jobs and done_jobs < len(jobs):
             break
         next_cp = cp
         break
@@ -162,6 +172,12 @@ async def _trip_state(pool, trip: dict) -> dict:
         ],
         "jobs_done": done_jobs,
         "next_checkpoint": next_cp,
+        # Steps already stamped are sent above whatever this says. An admin can
+        # switch a step off mid-run, and a stamp that has been taken is
+        # evidence -- the setting governs what we ask for next, never what has
+        # already been recorded.
+        "active_checkpoints": active,
+        "final_checkpoint": final_checkpoint(active),
     }
 
 
@@ -175,6 +191,11 @@ async def driver_app_settings(request: Request, driver=Depends(get_current_drive
         "job_count_quick_picks": [int(v) for v in setting_list(s, "job_count_quick_picks") if v.isdigit()],
         "job_count_manual_max": int(s.get("job_count_manual_max", "40")),
         "allow_add_job_mid_trip": setting_bool(s, "allow_add_job_mid_trip", True),
+        # Which steps the app asks for at all. Sent with the rest so the
+        # timeline can be drawn before a trip exists -- the driver sees the
+        # shape of the run on the first screen, and it has to be the shape
+        # that is actually configured.
+        "active_checkpoints": active_checkpoints(s),
         "photo_required_checkpoints": setting_list(s, "photo_required_checkpoints"),
         "photo_burn_timestamp": setting_bool(s, "photo_burn_timestamp", True),
         "photo_timestamp_source": s.get("photo_timestamp_source", "server"),
@@ -235,19 +256,26 @@ async def stamp_checkpoint(
     """Stamps one checkpoint. Refuses without a photo where the settings demand
     one, and refuses to run ahead of the sequence -- a driver cannot record
     departure before the truck was loaded."""
-    if checkpoint not in DRIVER_STAMPABLE:
+    if checkpoint not in DRIVER_CHECKPOINTS:
         raise HTTPException(status_code=422, detail=f"'{checkpoint}' is not a checkpoint the app stamps")
 
     pool = get_pool(request)
     trip = await _owned_trip(pool, driver["id"], manifest_id)
     settings = await load_settings(pool)
+    stampable = stampable_checkpoints(active_checkpoints(settings))
+    # Switched off between the app drawing the screen and the driver tapping
+    # it. Says which, because "not a checkpoint" would send someone looking
+    # for a bug in an app that was right when it loaded.
+    if checkpoint not in stampable:
+        raise HTTPException(status_code=409, detail="that step is switched off for this app")
 
     existing = (await fetch_checkpoints(pool, [manifest_id])).get(manifest_id, {})
     if checkpoint in existing:
         raise HTTPException(status_code=409, detail="that checkpoint is already stamped for this trip")
 
-    # every earlier stampable checkpoint must already be in place
-    for earlier in DRIVER_STAMPABLE[: DRIVER_STAMPABLE.index(checkpoint)]:
+    # every earlier stampable checkpoint must already be in place -- earlier
+    # among the steps that are ON, so a switched-off step never blocks the run
+    for earlier in stampable[: stampable.index(checkpoint)]:
         if earlier not in existing:
             raise HTTPException(status_code=409, detail=f"stamp '{earlier}' first")
 
@@ -340,7 +368,8 @@ async def add_checkpoint_photos(
     existing = (await fetch_checkpoints(pool, [manifest_id])).get(manifest_id, {})
     if checkpoint not in existing:
         raise HTTPException(status_code=404, detail="that step has not been stamped yet")
-    if "returned" in existing and checkpoint != "returned":
+    ended = final_checkpoint(active_checkpoints(await load_settings(pool)))
+    if ended in existing and checkpoint != ended:
         raise HTTPException(status_code=409, detail="this trip is finished -- photos can no longer be added")
 
     incoming = [f for f in ([photo] if photo is not None else []) + list(photos or []) if f is not None]
@@ -592,18 +621,23 @@ async def close_day(work_date: str, request: Request, driver=Depends(get_current
 
 
 async def _autoclose_finished_days(pool, driver_id: int) -> None:
-    """A past day whose every trip came back to the outlet is finished, whatever
+    """A past day whose every trip reached its last step is finished, whatever
     the driver remembered to tap. Closing it on read keeps the history honest
-    rather than leaving a trail of days stuck open behind them."""
+    rather than leaving a trail of days stuck open behind them.
+
+    The last step is whichever one is configured to end a run -- "returned"
+    while that is switched on. Hard-coded to it, a fleet that had turned the
+    return leg off would never close a day again."""
+    ended = final_checkpoint(active_checkpoints(await load_settings(pool)))
     async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
         await cur.execute(
             "SELECT m.work_date, COUNT(*) AS trips, "
             "SUM(tc.id IS NOT NULL) AS returned, MAX(tc.occurred_at) AS last_return "
             "FROM manifests m "
-            "LEFT JOIN trip_checkpoint tc ON tc.manifest_id = m.id AND tc.checkpoint = 'returned' "
+            "LEFT JOIN trip_checkpoint tc ON tc.manifest_id = m.id AND tc.checkpoint = %s "
             "WHERE m.driver_id = %s AND m.cancelled_at IS NULL AND m.day_closed_at IS NULL "
             "AND m.work_date < CURDATE() GROUP BY m.work_date",
-            (driver_id,),
+            (ended, driver_id),
         )
         rows = await cur.fetchall()
     done = [r for r in rows if r["trips"] and r["returned"] == r["trips"]]
@@ -663,6 +697,7 @@ async def my_days(
     day_photo_sets = await trip_photo_map(pool, ids)
     targets = await load_targets(pool)
     schedules = await load_schedules(pool)
+    ended_cp = final_checkpoint(active_checkpoints(await load_settings(pool)))
 
     async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
         await cur.execute(
@@ -703,7 +738,12 @@ async def my_days(
             "orders": int(orr.get("n") or 0),
             "failed_orders": int(orr.get("failed") or 0),
             "started_at": fmt(stamps["arrived"]) if "arrived" in stamps else None,
-            "ended_at": fmt(stamps["returned"]) if "returned" in stamps else None,
+            # When the trip ended. "Returned to Lotus" while that step is
+            # switched on, and whatever now ends a run when it is not -- but a
+            # trip that DID come back is over by anyone's reckoning, even if
+            # the step has since been switched off, so both are considered and
+            # the later one wins. History does not change when a setting does.
+            "ended_at": fmt(trip_end(stamps, ended_cp)),
             "time_at_outlet": tao,
             "checkpoints": [
                 {**serialize_checkpoint(cps[c]),

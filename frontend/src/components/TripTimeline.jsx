@@ -25,7 +25,16 @@ const GAP_FOR_CHECKPOINT = {
 //
 // Order matters more than decoration here -- this is read in a loading bay, at
 // speed, by someone holding a scanner in the other hand.
+// Every step there is, in order. WHICH of them this fleet actually records is
+// an admin setting (state.active_checkpoints) -- the run is still being shaped
+// with the outlets, so the list below is the vocabulary, not the itinerary.
 const STEPS = ["arrived", "goods_ready", "loaded", "departed", "deliveries_done", "returned"];
+
+// The steps that happen at the outlet, before a single drop is made. Whichever
+// of these are switched on have to be stamped before the drops open -- that
+// used to be spelled "departed", which stopped being true the moment a fleet
+// could switch departure off.
+const BEFORE_DELIVERIES = ["arrived", "goods_ready", "loaded", "departed"];
 
 // deliveries_done is fired by the server when the last job resolves; the driver
 // is never asked to confirm what the app already knows.
@@ -69,6 +78,25 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
     const id = setInterval(() => setNow(Date.now()), 30_000);
     return () => clearInterval(id);
   }, []);
+
+  // Which steps this fleet records. From the trip while one is running, from
+  // the app settings before the first trip exists (so the driver sees the real
+  // shape of the run on the opening screen), and everything if neither has
+  // answered yet.
+  //
+  // Declared up here rather than beside the rest of the derived values,
+  // because stampCheckpoint closes over countAnchor: a const declared after an
+  // early return is never initialised on a render that takes it, and the
+  // handler would throw the moment it was called.
+  const active = state?.active_checkpoints || settings?.active_checkpoints || STEPS;
+
+  // Where the "how many drops?" question belongs: at the loading bay while
+  // that step exists, otherwise as soon as the trip starts.
+  const countAnchor = active.includes("loaded") ? "loaded" : "arrived";
+
+  // Parcels are scanned into the trip between goods-ready and loading. With
+  // goods-ready switched off the arrival is the only anchor left.
+  const scanAnchor = active.includes("goods_ready") ? "goods_ready" : "arrived";
 
   const load = useCallback(() => {
     if (!manifestId) {
@@ -138,7 +166,7 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
       const next = await api.postForm(`/trips/${manifestId}/checkpoints`, fd);
       setState(next);
       setPendingPhoto(null);
-      if (checkpoint === "loaded" && next.trip.expected_job_count == null) {
+      if (checkpoint === countAnchor && next.trip.expected_job_count == null) {
         setPendingCount(true);
       } else if (next.reason_required_for) {
         openReason(checkpoint, next);
@@ -238,13 +266,29 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
   const stamped = new Map(state.checkpoints.map((c) => [c.checkpoint, c]));
   const jobsPending = state.jobs.filter((j) => j.status === "pending");
   const nextCp = state.next_checkpoint;
-  const inDeliveries = nextCp === "returned" || (state.jobs.length > 0 && jobsPending.length > 0);
   const nextJob = jobsPending[0] || null;
   const tao = state.time_at_outlet;
 
+  // A step already stamped is drawn whether or not it is still switched on. An
+  // admin can change this mid-run, and a stamp that has been taken is the
+  // driver's own evidence -- it does not vanish from under him.
+  const steps = STEPS.filter((cp) => active.includes(cp) || stamped.has(cp));
+
+  // "The trip is over" is the last step there is, not "returned" specifically.
+  const finalCp = state.final_checkpoint
+    || [...active].reverse().find((cp) => !SERVER_FIRED.has(cp))
+    || "returned";
+  const tripOver = stamped.has(finalCp);
+
+  // The drops open once every outlet step that is switched on has been
+  // stamped. With all six on this is exactly "departed is stamped".
+  const readyToDeliver = BEFORE_DELIVERIES
+    .filter((cp) => active.includes(cp))
+    .every((cp) => stamped.has(cp));
+
   // What the one big button does right now.
   let action = null;
-  if (nextJob && stamped.has("departed")) {
+  if (nextJob && readyToDeliver) {
     action = {
       label: t("trip.completeJob", { n: nextJob.seq, total: state.jobs.length }),
       run: () => setPendingPhoto({
@@ -264,7 +308,7 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
 
   // The job count can be set or changed for as long as the trip is open. It
   // is not a one-shot question asked at the loading bay.
-  const canSetJobs = stamped.has("loaded") && !stamped.has("returned");
+  const canSetJobs = stamped.has(countAnchor) && !tripOver;
   const jobsMissing = canSetJobs && state.jobs.length === 0;
 
   const win = state.window;
@@ -411,11 +455,11 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
             {starting ? t("home.oneSec") : action.label}
           </button>
           <p className="mt-2 text-center text-xs text-slate-400">
-            {nextJob && stamped.has("departed") ? t("trip.jobCtaHint") : t("trip.ctaHint")}
+            {nextJob && readyToDeliver ? t("trip.jobCtaHint") : t("trip.ctaHint")}
           </p>
           {/* A job is a drop; a scan is one parcel inside it. Both are needed,
               so say which is which instead of leaving two similar buttons. */}
-          {nextJob && stamped.has("departed") && (
+          {nextJob && readyToDeliver && (
             <Link
               to="/driver/scans/complete"
               className="mt-3 flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-medium text-brand-black shadow-sm ring-1 ring-slate-200"
@@ -447,7 +491,7 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
       {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
 
       <ol className="mt-6 space-y-0">
-        {STEPS.map((cp, i) => {
+        {steps.map((cp, i) => {
           const done = stamped.get(cp);
           const isNext = cp === nextCp && !done;
           const gap = gapFor(state, cp);
@@ -457,7 +501,7 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
               {/* The rail is drawn only between steps. Rendering it on the last
                   one (the old `last:hidden` never matched -- this span is not
                   the li's last child) left a line dangling into nothing. */}
-              {i < STEPS.length - 1 && (
+              {i < steps.length - 1 && (
                 <span
                   className="absolute bottom-0 left-[13px] top-7 w-0.5 bg-slate-200"
                   aria-hidden="true"
@@ -507,7 +551,7 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
               {/* A step stamped without a photo can still get one, for as
                   long as the trip is open. Optional would otherwise just
                   mean missing. */}
-              {done && (done.photo_ids || []).length === 0 && !stamped.has("returned") && (
+              {done && (done.photo_ids || []).length === 0 && !tripOver && (
                 <button
                   type="button"
                   onClick={() => setPendingLatePhoto({ checkpoint: cp, label: t(`checkpoint.${cp}`) })}
@@ -575,7 +619,7 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
                                 : t("trip.jobPending")}
                             </span>
                           </button>
-                          {!stamped.has("returned") && (
+                          {!tripOver && (
                             <Link
                               to={`/driver/scans/complete?trip_job=${j.id}&seq=${j.seq}`}
                               className={`flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold ${
@@ -616,7 +660,7 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
                               <p className="mt-2 text-slate-400">{t("trip.noOrders")}</p>
                             )}
 
-                            {!stamped.has("returned") && (
+                            {!tripOver && (
                               <p className="mt-2 text-[11px] text-slate-400">{t("trip.stillEditable")}</p>
                             )}
                           </div>
@@ -635,7 +679,7 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
           floating at the bottom of the screen where it competed with the one
           real next action. Parcels are scanned IN between goods-ready and
           loaded... */}
-      {stamped.has("goods_ready") && !stamped.has("departed") && (
+      {stamped.has(scanAnchor) && !readyToDeliver && (
         <Link
           to={`/driver/manifests/${manifestId}/register`}
           className="mt-2 flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-medium text-brand-black shadow-sm ring-1 ring-slate-200"

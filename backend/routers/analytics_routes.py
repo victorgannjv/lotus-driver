@@ -24,6 +24,10 @@ from auth import get_current_admin
 from db import get_pool
 from photos import trip_photo_map
 from trips import (
+    active_checkpoints,
+    final_checkpoint,
+    load_settings,
+    trip_end,
     resolve_target,
     CHECKPOINT_ORDER,
     load_schedules,
@@ -106,6 +110,7 @@ async def _scored(pool, rows: list[dict]) -> list[dict]:
     schedules = await load_schedules(pool)
     jobs, orders = await _counts(pool, ids)
     photo_sets = await trip_photo_map(pool, ids)
+    ended_cp = final_checkpoint(active_checkpoints(await load_settings(pool)))
 
     out = []
     for r in rows:
@@ -146,7 +151,12 @@ async def _scored(pool, rows: list[dict]) -> list[dict]:
             "owner": party,
             "reason": reason,
             "started_at": fmt(stamps["arrived"]) if "arrived" in stamps else None,
-            "ended_at": fmt(stamps["returned"]) if "returned" in stamps else None,
+            # When the trip ended. "Returned to Lotus" while that step is
+            # switched on, and whatever now ends a run when it is not -- but a
+            # trip that DID come back is over by anyone's reckoning, even if
+            # the step has since been switched off, so both are considered and
+            # the later one wins. History does not change when a setting does.
+            "ended_at": fmt(trip_end(stamps, ended_cp)),
         })
     return out
 
