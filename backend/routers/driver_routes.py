@@ -18,6 +18,7 @@ from auth import get_current_driver
 from db import get_pool
 from photos import evidence_caption, link_trip_photos, store_photo
 from clocks import fmt, local_today, stamp as clock_stamp
+from localities import describe
 from schemas import DriverWarehouseRequest, ScanRequest
 
 router = APIRouter()
@@ -57,6 +58,7 @@ def _serialize_event(row: dict) -> dict:
         "occurred_at": fmt(row["occurred_at"]),
         "lat": float(row["lat"]) if row["lat"] is not None else None,
         "lng": float(row["lng"]) if row["lng"] is not None else None,
+        "place": describe(row["lat"], row["lng"]),
         "failure_reason": row["failure_reason"],
         "photo_id": row["photo_id"],
     }

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Icon from "./Icon";
 import { useLanguage } from "../i18n/LanguageContext";
 import { resizeImage } from "../lib/imageResize";
+import { placeFor } from "../lib/places";
 import {
   GEO_DENIED,
   GEO_UNAVAILABLE,
@@ -48,6 +49,10 @@ export default function PhotoCapture({ label, onChange, required = false, max = 
   const [fix, setFix] = useState(() => lastFix());
   const [perm, setPerm] = useState(null); // granted | prompt | denied | unsupported | unknown
   const [locating, setLocating] = useState(false);
+  // The town the fix falls in, resolved from the same table the server
+  // burns into the caption -- so the preview promises exactly what the
+  // photo will say.
+  const [place, setPlace] = useState(null);
   const cameraRef = useRef(null);
   const fileRef = useRef(null);
 
@@ -117,6 +122,16 @@ export default function PhotoCapture({ label, onChange, required = false, max = 
     };
   }, [locate]);
 
+  useEffect(() => {
+    let live = true;
+    if (fix?.lat == null) {
+      setPlace(null);
+      return undefined;
+    }
+    placeFor(fix.lat, fix.lng).then((p) => { if (live) setPlace(p); });
+    return () => { live = false; };
+  }, [fix?.lat, fix?.lng]);
+
   function publish(next) {
     setShots(next);
     onChange(max === 1 ? next[0]?.file || null : next.map((s) => s.file));
@@ -174,7 +189,9 @@ export default function PhotoCapture({ label, onChange, required = false, max = 
   let whereTone = "text-amber-700";
   if (locating) whereText = t("photoCapture.stampLocating");
   else if (hasFix) {
-    whereText = `${fix.lat.toFixed(5)}, ${fix.lng.toFixed(5)}`;
+    whereText = place
+      ? `${place} · ${fix.lat.toFixed(5)}, ${fix.lng.toFixed(5)}`
+      : `${fix.lat.toFixed(5)}, ${fix.lng.toFixed(5)}`;
     whereTone = "text-slate-700";
   } else if (unsupported) whereText = t("photoCapture.stampUnsupported");
   else if (blocked) whereText = t("photoCapture.stampBlocked");

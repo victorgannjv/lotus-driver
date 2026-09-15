@@ -7,6 +7,7 @@ import io
 from asyncmy.cursors import DictCursor
 
 from clocks import fmt, local_today
+from localities import describe
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 
 from auth import get_current_admin
@@ -99,6 +100,7 @@ def _serialize_admin_event(row: dict) -> dict:
         "occurred_at": fmt(row["occurred_at"]),
         "lat": float(row["lat"]) if row["lat"] is not None else None,
         "lng": float(row["lng"]) if row["lng"] is not None else None,
+        "place": describe(row["lat"], row["lng"]),
         "failure_reason": row["failure_reason"],
         "photo_id": row["photo_id"],
     }

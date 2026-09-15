@@ -80,7 +80,9 @@ export default function JobDetail() {
               <span className="text-xs text-slate-400">{ev.occurred_at}</span>
             </div>
             <p className="mt-1 text-xs text-slate-500">
-              {ev.lat != null ? `GPS: ${ev.lat.toFixed(5)}, ${ev.lng.toFixed(5)}` : "No GPS recorded"}
+              {ev.lat != null
+                ? `${ev.place ? `${ev.place} · ` : ""}${ev.lat.toFixed(5)}, ${ev.lng.toFixed(5)}`
+                : "No GPS recorded"}
             </p>
             {ev.failure_reason && <p className="mt-1 text-xs text-amber-700">Reason: {ev.failure_reason}</p>}
             <PhotoThumb photoId={ev.photo_id} size="mt-2 h-20 w-20" />

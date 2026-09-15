@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from auth import get_current_driver
 from db import get_pool
 from photos import evidence_caption, link_trip_photos, store_photo, trip_photo_map
+from localities import LOCALITIES
 from clocks import fmt, local_today, stamp as clock_stamp
 from trips import (
     CHECKPOINT_GAP,
@@ -178,6 +179,14 @@ async def driver_app_settings(request: Request, driver=Depends(get_current_drive
         "photo_burn_timestamp": setting_bool(s, "photo_burn_timestamp", True),
         "photo_timestamp_source": s.get("photo_timestamp_source", "server"),
         "photo_capture_gps": setting_bool(s, "photo_capture_gps", True),
+        # The place table, sent with the settings the app already fetches at
+        # start-up. The photo screen has to name a location BEFORE anything is
+        # uploaded, so it cannot ask the server per fix -- and a loading bay is
+        # the last place to depend on a round trip. One table, served once,
+        # so the preview and the burned caption can never disagree.
+        "localities": [
+            {"name": n, "state": st, "lat": la, "lng": lg} for n, st, la, lg in LOCALITIES
+        ],
         "reason_prompt_on_breach": setting_bool(s, "reason_prompt_on_breach", True),
         "default_language": s.get("default_language", "en"),
     }
