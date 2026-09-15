@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from "react";
 import Icon from "./Icon";
 import { useLanguage } from "../i18n/LanguageContext";
 import {
-  GEO_DENIED,
   GEO_UNAVAILABLE,
   ensureWatch,
   everWorked,
@@ -74,6 +73,31 @@ export default function LocationBanner() {
     };
   }, [check]);
 
+  // Raise the browser's dialog on the driver's FIRST tap, wherever it lands.
+  //
+  // Chrome rejects a geolocation request that no gesture preceded, which is
+  // why asking on mount silently fails -- and leaving it to a button means
+  // the driver has to notice a yellow box and decide to act on it before the
+  // app ever asks for anything. Any tap is a gesture: opening a tab, choosing
+  // a trip, scrolling with a finger down. The dialog arrives in the first
+  // second or two of the shift, which is when it should.
+  //
+  // Capture phase, once, and nothing is prevented -- whatever the driver
+  // actually tapped still happens.
+  useEffect(() => {
+    if (perm !== "prompt" && perm !== "unknown") return undefined;
+    if (probe?.lat != null || lastFix()?.lat != null) return undefined;
+    let done = false;
+    const fire = () => {
+      if (done) return;
+      done = true;
+      document.removeEventListener("pointerdown", fire, true);
+      ask();
+    };
+    document.addEventListener("pointerdown", fire, true);
+    return () => document.removeEventListener("pointerdown", fire, true);
+  }, [perm, probe, ask]);
+
   if (hidden) return null;
   // Working, or working a moment ago. Either way there is nothing to warn about.
   if (probe?.lat != null || lastFix()?.lat != null) return null;
@@ -81,7 +105,16 @@ export default function LocationBanner() {
   // Still probing. Silence beats a banner that appears and then withdraws.
   if (probe === null) return null;
 
-  const blocked = perm === "denied" || probe.code === GEO_DENIED;
+  // "Blocked" is only what the browser SAYS is blocked.
+  //
+  // A silent probe can come back PERMISSION_DENIED simply because no user
+  // gesture preceded it -- Chrome rejects ungestured geolocation outright --
+  // so treating that code as a refusal told drivers their browser was
+  // blocking the site while the Permissions API sat there saying "prompt".
+  // Worse, the blocked branch hid the Allow button, so the screen described a
+  // problem and then removed the only control that could fix it. If the
+  // browser has not made up its mind, the answer is to ask it properly.
+  const blocked = perm === "denied";
   const deviceOff = !blocked && probe.code === GEO_UNAVAILABLE;
 
   // A timeout means the fix was slow, not that anything is switched off -- a
@@ -100,6 +133,14 @@ export default function LocationBanner() {
     : deviceOff
       ? t("location.deviceOffHow")
       : t("location.why");
+  // Numbered, because "open Permissions" is an instruction and the rest was
+  // scenery. Worded for a phone and a laptop at once: the control lives in a
+  // different place on each, and this app is read on both.
+  const steps = blocked
+    ? [t("location.step1"), t("location.step2"), t("location.step3")]
+    : deviceOff
+      ? [t("location.deviceStep1"), t("location.deviceStep2")]
+      : [];
 
   return (
     <div className="mb-4 rounded-xl bg-amber-50 px-3 py-3 text-sm ring-1 ring-amber-200">
@@ -108,19 +149,31 @@ export default function LocationBanner() {
         {title}
       </p>
       <p className="mt-1 leading-snug text-amber-800">{body}</p>
-      <p className="mt-1.5 text-[11px] text-amber-700/80">
+      {steps.length > 0 && (
+        <ol className="mt-2 space-y-1.5 text-amber-800">
+          {steps.map((step, i) => (
+            <li key={i} className="flex gap-2 leading-snug">
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-200 text-[11px] font-bold text-amber-900">
+                {i + 1}
+              </span>
+              <span className="min-w-0">{step}</span>
+            </li>
+          ))}
+        </ol>
+      )}
+      <p className="mt-2 text-[11px] text-amber-700/80">
         {t("location.state", { state: perm })} · {t("location.build", { build: __BUILD_ID__ })}
       </p>
-      {!blocked && (
-        <button
-          type="button"
-          onClick={ask}
-          disabled={busy}
-          className="mt-2 w-full rounded-lg bg-brand-black px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
-        >
-          {busy ? t("location.asking") : probe ? t("location.retry") : t("location.allow")}
-        </button>
-      )}
+      {/* Always offered. Someone who has just changed the setting needs a way
+          back in that is not "reload the page and hope". */}
+      <button
+        type="button"
+        onClick={ask}
+        disabled={busy}
+        className="mt-2 w-full rounded-lg bg-brand-black px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+      >
+        {busy ? t("location.asking") : blocked ? t("location.retry") : t("location.allow")}
+      </button>
       <button
         type="button"
         onClick={() => setHidden(true)}
