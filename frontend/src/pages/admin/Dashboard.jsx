@@ -55,18 +55,21 @@ function Legend({ items }) {
 }
 
 function OwnedBar({ owned }) {
-  const total = owned.lotus + owned.njv + owned.external;
+  // Defaulted. A panel with a missing figure should render short, not take
+  // the dashboard down with it -- which is exactly what a bare read did.
+  const o = owned || {};
+  const total = (o.lotus || 0) + (o.njv || 0) + (o.external || 0);
   if (!total) return <p className="mt-3 text-xs text-slate-400">No time over target in this period.</p>;
   return (
     <div className="mt-3">
       <div className="flex h-2.5 gap-0.5 overflow-hidden rounded-full bg-slate-100">
         {["lotus", "njv", "external"].map((p) =>
-          owned[p] ? <span key={p} className={PARTY[p].bar} style={{ width: `${(owned[p] / total) * 100}%` }} /> : null
+          o[p] ? <span key={p} className={PARTY[p].bar} style={{ width: `${(o[p] / total) * 100}%` }} /> : null
         )}
       </div>
       <div className="mt-1.5 flex flex-wrap gap-x-4 text-[11px] text-slate-500">
         {["lotus", "njv", "external"].map((p) =>
-          owned[p] ? <span key={p}>{PARTY[p].label} {formatDuration(owned[p])}</span> : null
+          o[p] ? <span key={p}>{PARTY[p].label} {formatDuration(o[p])}</span> : null
         )}
       </div>
     </div>
@@ -172,6 +175,11 @@ export default function Dashboard() {
   // The allowance actually in force, or null when the feature is off. Nothing
   // is painted as over target against a bar that is not being applied.
   const target = data?.at_outlet_target ?? null;
+  // `window` is a sibling of `totals` in the payload, not a member of it.
+  // Reading it as t.window made every tile dereference undefined and took the
+  // whole dashboard down. Defaulted so a missing block can never do that
+  // again -- a dashboard is not worth a blank page.
+  const win = data?.window ?? {};
   const over = (v) => target != null && v != null && v > target;
 
   return (
@@ -230,7 +238,7 @@ export default function Dashboard() {
             <Tile
               accent
               label="Delay caused by Lotus"
-              value={formatDuration(target ? t.owned_minutes.lotus : t.window.late_minutes_lotus)}
+              value={formatDuration(target ? t.owned_minutes.lotus : win.late_minutes_lotus ?? 0)}
               sub={target
                 ? "Minutes a step ran over its allowance, where the driver's reason points at the outlet"
                 : "Minutes a run left the outlet after its delivery window closed, beyond any late arrival of ours"}
@@ -245,13 +253,13 @@ export default function Dashboard() {
               label={target ? "Trips over allowance" : "Trips that missed their window"}
               value={target
                 ? `${t.over_target} / ${t.trips}`
-                : `${t.window.missed} / ${t.window.trips_with_window}`}
+                : `${win.missed ?? 0} / ${win.trips_with_window ?? 0}`}
               sub={target
                 ? (t.breach_rate !== null
                     ? `${t.breach_rate}% of trips spent longer at the outlet than allowed`
                     : "No trips in this period")
-                : (t.window.on_time_rate !== null
-                    ? `${t.window.on_time_rate}% left inside their contracted window`
+                : (win.on_time_rate != null
+                    ? `${win.on_time_rate}% left inside their contracted window`
                     : "No trips with a delivery window in this period")}
             />
             <Tile
@@ -267,7 +275,7 @@ export default function Dashboard() {
             />
             <Tile
               label="Delay caused by us"
-              value={formatDuration(target ? t.owned_minutes.njv : t.window.late_minutes_njv)}
+              value={formatDuration(target ? t.owned_minutes.njv : win.late_minutes_njv ?? 0)}
               sub={target
                 ? "Same measure, where the driver's reason points at Ninja Van"
                 : "Minutes a run arrived after its delivery window opened — counted first, before any Lotus delay"}

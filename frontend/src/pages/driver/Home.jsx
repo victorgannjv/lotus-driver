@@ -107,6 +107,7 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-slate-50">
       <AppHeader
+        homeTo="/driver"
         greeting={driver?.name ? t("home.greeting", { name: driver.name }) : t("home.title")}
         place={driver?.warehouse_name}
         right={

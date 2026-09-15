@@ -48,7 +48,7 @@ export default function Gate() {
   return (
     <RequireAdmin>
       <div className="min-h-screen bg-slate-50">
-        <AppHeader greeting={`Hi, ${email ? email.split("@")[0] : "admin"}`} place="Admin" />
+        <AppHeader homeTo="/admin/dashboard" greeting={`Hi, ${email ? email.split("@")[0] : "admin"}`} place="Admin" />
         <nav className="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-6 py-3">
           <NavLink to="/admin/dashboard" className={linkClass}>Dashboard</NavLink>
           <NavLink to="/admin/evidence" className={linkClass}>Evidence</NavLink>

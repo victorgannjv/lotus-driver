@@ -38,7 +38,7 @@ export default function Profile() {
 
   return (
     <main className="min-h-screen bg-slate-50">
-      <AppHeader backTo="/driver" title={t("profile.title")} />
+      <AppHeader homeTo="/driver" backTo="/driver" title={t("profile.title")} />
       <div className="mx-auto max-w-md px-4 py-6">
         <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
           <p className="text-sm font-medium text-brand-black">{driver?.name}</p>

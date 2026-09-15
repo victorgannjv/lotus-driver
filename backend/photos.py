@@ -109,14 +109,20 @@ def evidence_caption(*, ref: str, what: str, who: str | None = None,
     # without a map, and a dispute is read by people who will not open one.
     # Derived offline from those same coordinates, so it can never contradict
     # them, and omitted when nothing known is near enough to name.
+    # Two lines, in the order a person reads them: where this was, then the
+    # coordinates that prove it. One line carrying both buried the readable
+    # half behind fourteen digits.
+    #
+    # The derived town is skipped when a contracted address is already being
+    # printed below -- that address is better evidence and naming the same
+    # place twice wastes a line on a photo.
     if lat is None or lng is None:
         coords = "Location not recorded"
+        where_line = None
     else:
-        where = describe(lat, lng)
         coords = f"Lat.: {lat:.7f}, Long.: {lng:.7f}"
-        if where:
-            coords += f"  ({where})"
-    return [head, coords, place or "", when]
+        where_line = None if place else describe(lat, lng)
+    return [head, where_line or "", coords, place or "", when]
 
 
 def normalize_image(raw: bytes, caption: list[str] | None = None) -> tuple[bytes, str]:

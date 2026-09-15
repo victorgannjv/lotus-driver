@@ -186,12 +186,15 @@ export default function PhotoCapture({ label, onChange, required = false, max = 
   const unsupported = perm === "unsupported" || fix?.code === GEO_UNSUPPORTED;
 
   let whereText;
+  // The town on one line and the raw numbers on another. One line carrying
+  // both made the part a person can actually read compete with the part only
+  // a map can.
+  let coordsText = null;
   let whereTone = "text-amber-700";
   if (locating) whereText = t("photoCapture.stampLocating");
   else if (hasFix) {
-    whereText = place
-      ? `${place} · ${fix.lat.toFixed(5)}, ${fix.lng.toFixed(5)}`
-      : `${fix.lat.toFixed(5)}, ${fix.lng.toFixed(5)}`;
+    whereText = place || t("photoCapture.stampNoPlace");
+    coordsText = `${fix.lat.toFixed(5)}, ${fix.lng.toFixed(5)}`;
     whereTone = "text-slate-700";
   } else if (unsupported) whereText = t("photoCapture.stampUnsupported");
   else if (blocked) whereText = t("photoCapture.stampBlocked");
@@ -261,8 +264,14 @@ export default function PhotoCapture({ label, onChange, required = false, max = 
         </div>
         <div className="flex justify-between gap-3">
           <span className="text-slate-500">{t("photoCapture.stampWhere")}</span>
-          <span className={whereTone}>{whereText}</span>
+          <span className={`min-w-0 text-right ${whereTone}`}>{whereText}</span>
         </div>
+        {coordsText && (
+          <div className="flex justify-between gap-3">
+            <span className="text-slate-500">{t("photoCapture.stampCoords")}</span>
+            <span className="text-slate-600">{coordsText}</span>
+          </div>
+        )}
 
         {/* The button exists so the browser's own dialog is raised by a real
             tap. A permission prompt fired from a background promise is one the

@@ -101,6 +101,7 @@ export default function ScanComplete() {
   return (
     <main className="min-h-screen bg-slate-50">
       <AppHeader
+        homeTo="/driver"
         backTo="/driver"
         title={tripJobSeq ? t("scanComplete.titleForJob", { n: tripJobSeq }) : t("scanComplete.title")}
       />

@@ -29,7 +29,7 @@ function PinIcon() {
 // controls sitting over the greeting. The controls drop to their own row until
 // there is width for them, rather than being made smaller until they are hard
 // to hit with a thumb.
-export default function AppHeader({ title, greeting, place, backTo, right }) {
+export default function AppHeader({ title, greeting, place, backTo, right, homeTo = null }) {
   const heading = greeting ? (
     <div className="flex min-w-0 items-center gap-2">
       <h1 className="truncate text-sm font-semibold text-white">{greeting}</h1>
@@ -61,7 +61,16 @@ export default function AppHeader({ title, greeting, place, backTo, right }) {
             tree with it. */}
         {right && <div className="hidden shrink-0 items-center gap-5 sm:flex">{right}</div>}
 
-        <img src={logo} alt="Ninja Van" className="h-7 w-auto shrink-0 sm:h-8" />
+        {/* The logo goes home. It is the one thing on every screen and the
+            place people instinctively tap to get back -- it did nothing.
+            Unlinked on the signed-out screens, where there is no home yet. */}
+        {homeTo ? (
+          <Link to={homeTo} aria-label="Home" className="shrink-0">
+            <img src={logo} alt="Ninja Van" className="h-7 w-auto sm:h-8" />
+          </Link>
+        ) : (
+          <img src={logo} alt="Ninja Van" className="h-7 w-auto shrink-0 sm:h-8" />
+        )}
       </div>
 
       {right && (

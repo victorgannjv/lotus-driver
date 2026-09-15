@@ -76,7 +76,7 @@ export default function ScanRegister() {
 
   return (
     <main className="min-h-screen bg-slate-50">
-      <AppHeader backTo={`/driver/manifests/${manifestId}`} title={t("scanRegister.title")} />
+      <AppHeader homeTo="/driver" backTo={`/driver/manifests/${manifestId}`} title={t("scanRegister.title")} />
       <div className="mx-auto max-w-md px-4 py-6">
         <p className="text-sm text-slate-500">{t("scanRegister.instructions")}</p>
 
