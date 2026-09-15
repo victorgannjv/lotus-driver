@@ -353,7 +353,8 @@ async def complete_scan(
     lng: float | None = Form(None),
     occurred_at: str | None = Form(None),
     trip_job_id: int | None = Form(None),
-    photo: UploadFile = File(...),
+    photo: UploadFile | None = File(None),
+    photos: list[UploadFile] | None = File(None),
     driver=Depends(get_current_driver),
 ):
     pool = get_pool(request)
@@ -363,13 +364,20 @@ async def complete_scan(
     occurred_dt = _parse_occurred_at(occurred_at)
     job = await _find_or_create_job_for_outcome(pool, driver["id"], code)
 
-    photo_bytes = await photo.read()
-    photo_id = await store_photo(
-        pool, photo_bytes, photo.content_type or "image/jpeg", driver["id"],
-        evidence_caption(ref=code, what="Delivered", who=driver.get("name"),
-                         lat=lat, lng=lng, place=await _job_address(pool, job["id"]),
-                         when=clock_stamp(occurred_dt)),
-    )
+    # A proof of delivery is often more than one frame: the parcel at the door,
+    # the unit number, the person who took it. Capped at one, a driver had to
+    # choose which of those to keep.
+    incoming = [f for f in ([photo] if photo is not None else []) + list(photos or []) if f is not None]
+    if not incoming:
+        raise HTTPException(status_code=422, detail="a proof photo is required")
+    caption = evidence_caption(ref=code, what="Delivered", who=driver.get("name"),
+                               lat=lat, lng=lng, place=await _job_address(pool, job["id"]),
+                               when=clock_stamp(occurred_dt))
+    photo_ids = [
+        await store_photo(pool, await f.read(), f.content_type or "image/jpeg", driver["id"], caption)
+        for f in incoming
+    ]
+    photo_id = photo_ids[0]
 
     async with pool.acquire() as conn, conn.cursor() as cur:
         # Which drop this order was scanned at. The column has existed since
@@ -402,7 +410,8 @@ async def fail_scan(
     lng: float | None = Form(None),
     occurred_at: str | None = Form(None),
     trip_job_id: int | None = Form(None),
-    photo: UploadFile = File(...),
+    photo: UploadFile | None = File(None),
+    photos: list[UploadFile] | None = File(None),
     driver=Depends(get_current_driver),
 ):
     pool = get_pool(request)
@@ -415,13 +424,17 @@ async def fail_scan(
     occurred_dt = _parse_occurred_at(occurred_at)
     job = await _find_or_create_job_for_outcome(pool, driver["id"], code)
 
-    photo_bytes = await photo.read()
-    photo_id = await store_photo(
-        pool, photo_bytes, photo.content_type or "image/jpeg", driver["id"],
-        evidence_caption(ref=code, what=f"Not delivered - {reason}", who=driver.get("name"),
-                         lat=lat, lng=lng, place=await _job_address(pool, job["id"]),
-                         when=clock_stamp(occurred_dt)),
-    )
+    incoming = [f for f in ([photo] if photo is not None else []) + list(photos or []) if f is not None]
+    if not incoming:
+        raise HTTPException(status_code=422, detail="a proof photo is required")
+    caption = evidence_caption(ref=code, what=f"Not delivered - {reason}", who=driver.get("name"),
+                               lat=lat, lng=lng, place=await _job_address(pool, job["id"]),
+                               when=clock_stamp(occurred_dt))
+    photo_ids = [
+        await store_photo(pool, await f.read(), f.content_type or "image/jpeg", driver["id"], caption)
+        for f in incoming
+    ]
+    photo_id = photo_ids[0]
 
     async with pool.acquire() as conn, conn.cursor() as cur:
         # Which drop this order was scanned at. The column has existed since

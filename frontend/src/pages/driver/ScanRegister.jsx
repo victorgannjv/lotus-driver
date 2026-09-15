@@ -5,7 +5,7 @@ import AppHeader from "../../components/AppHeader";
 import BarcodeScanner from "../../components/BarcodeScanner";
 import ScanResultModal from "../../components/ScanResultModal";
 import { useLanguage } from "../../i18n/LanguageContext";
-import { getPosition } from "../../lib/geolocation";
+import { positionForSubmit } from "../../lib/geolocation";
 
 export default function ScanRegister() {
   const { manifestId } = useParams();
@@ -42,7 +42,7 @@ export default function ScanRegister() {
     if (busy || result) return;
     setBusy(true);
     try {
-      const position = await getPosition();
+      const position = await positionForSubmit();
       const res = await api.post("/scans/register", {
         code,
         manifest_id: Number(manifestId),

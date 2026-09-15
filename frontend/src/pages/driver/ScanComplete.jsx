@@ -7,7 +7,7 @@ import DeliveryOutcomeModal from "../../components/DeliveryOutcomeModal";
 import JobCompleteModal from "../../components/JobCompleteModal";
 import ScanResultModal from "../../components/ScanResultModal";
 import { useLanguage } from "../../i18n/LanguageContext";
-import { getPosition } from "../../lib/geolocation";
+import { positionForSubmit } from "../../lib/geolocation";
 
 export default function ScanComplete() {
   const navigate = useNavigate();
@@ -42,10 +42,10 @@ export default function ScanComplete() {
     handleDetect(code);
   }
 
-  async function handleSubmitOutcome(code, outcome, reason, photo) {
+  async function handleSubmitOutcome(code, outcome, reason, photos) {
     setBusy(true);
     try {
-      const position = await getPosition();
+      const position = await positionForSubmit();
       const formData = new FormData();
       formData.append("code", code);
       formData.append("occurred_at", new Date().toISOString());
@@ -53,7 +53,8 @@ export default function ScanComplete() {
       if (position.lng != null) formData.append("lng", position.lng);
       if (outcome === "failed") formData.append("reason", reason);
       if (tripJobId) formData.append("trip_job_id", tripJobId);
-      formData.append("photo", photo);
+      const shots = Array.isArray(photos) ? photos : photos ? [photos] : [];
+      shots.forEach((f) => formData.append("photos", f));
 
       const res = await api.postForm(outcome === "delivered" ? "/scans/complete" : "/scans/fail", formData);
 

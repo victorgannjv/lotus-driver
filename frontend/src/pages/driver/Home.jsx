@@ -10,7 +10,7 @@ import UpdateBar from "../../components/UpdateBar";
 import MyDay from "../../components/MyDay";
 import TripTimeline from "../../components/TripTimeline";
 import { useLanguage } from "../../i18n/LanguageContext";
-import { ensureWatch, getPosition } from "../../lib/geolocation";
+import { ensureWatch, positionForSubmit } from "../../lib/geolocation";
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -73,7 +73,7 @@ export default function Home() {
     try {
       const formData = new FormData();
       try {
-        const position = await getPosition();
+        const position = await positionForSubmit();
         if (position.lat != null) formData.append("lat", position.lat);
         if (position.lng != null) formData.append("lng", position.lng);
       } catch {

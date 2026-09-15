@@ -5,7 +5,7 @@ import Icon, { CHECKPOINT_ICON } from "./Icon";
 import { JobCountSheet, PhotoSheet, ReasonSheet } from "./CheckpointSheets";
 import { useLanguage } from "../i18n/LanguageContext";
 import { formatDuration, formatTime } from "../lib/duration";
-import { getPosition } from "../lib/geolocation";
+import { positionForSubmit } from "../lib/geolocation";
 
 // Which gap each checkpoint closes. Mirrors CHECKPOINT_GAP in backend/trips.py
 // so the photo page can offer the right reasons before the stamp exists --
@@ -73,7 +73,7 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
 
   async function withPosition(formData) {
     try {
-      const pos = await getPosition();
+      const pos = await positionForSubmit();
       if (pos.lat != null) formData.append("lat", pos.lat);
       if (pos.lng != null) formData.append("lng", pos.lng);
     } catch {

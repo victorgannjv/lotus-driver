@@ -170,6 +170,20 @@ export async function quickProbe() {
   return res;
 }
 
+// What a SUBMIT should use. Never the long retry.
+//
+// getPosition is 8s of high-accuracy followed by 15s of network fallback --
+// up to twenty-three seconds, and it was being awaited before the upload was
+// even started. On a handset with no fix that is twenty-three seconds of a
+// dead-looking screen after the driver taps Confirm, which reads as a failed
+// upload and gets tapped again. The photo and the timestamp are the evidence;
+// coordinates corroborate. They are not worth making anyone wait.
+export async function positionForSubmit() {
+  const warm = lastFix();
+  if (warm) return warm;
+  return quickProbe();   // one attempt, six seconds, then we send without it
+}
+
 export function lastFix() {
   if (!cached || Date.now() - cached.at > FRESH_MS) return null;
   return { lat: cached.lat, lng: cached.lng, accuracy: cached.accuracy, error: null, code: 0 };

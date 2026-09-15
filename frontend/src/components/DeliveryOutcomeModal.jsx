@@ -11,7 +11,7 @@ export default function DeliveryOutcomeModal({ code, busy, onSubmit }) {
   const [mode, setMode] = useState("choice"); // "choice" | "reason" | "photo"
   const [outcome, setOutcome] = useState(null); // "delivered" | "failed"
   const [reason, setReason] = useState("");
-  const [photo, setPhoto] = useState(null);
+  const [photos, setPhotos] = useState([]);
 
   useEffect(() => {
     setMode("choice");
@@ -30,8 +30,8 @@ export default function DeliveryOutcomeModal({ code, busy, onSubmit }) {
 
   function handlePhotoSubmit(e) {
     e.preventDefault();
-    if (!photo) return;
-    onSubmit(code, outcome, reason.trim(), photo);
+    if (photos.length === 0) return;
+    onSubmit(code, outcome, reason.trim(), photos);
   }
 
   return (
@@ -96,11 +96,19 @@ export default function DeliveryOutcomeModal({ code, busy, onSubmit }) {
               {outcome === "delivered" ? t("deliveryOutcome.proofOfDelivery") : t("deliveryOutcome.proofOfFailure")}
             </p>
             <div className="mt-3">
-              <PhotoCapture label={t("deliveryOutcome.proofPhotoLabel")} onChange={setPhoto} max={1} required />
+              {/* A proof of delivery is often more than one frame: the parcel at the
+                door, the unit number, who took it. One was a choice nobody
+                should have to make. */}
+            <PhotoCapture
+              label={t("deliveryOutcome.proofPhotoLabel")}
+              onChange={(v) => setPhotos(Array.isArray(v) ? v : v ? [v] : [])}
+              max={4}
+              required
+            />
             </div>
             <button
               type="submit"
-              disabled={busy || !photo}
+              disabled={busy || photos.length === 0}
               className="mt-4 w-full rounded-lg bg-brand-red px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-red-dark disabled:opacity-50"
             >
               {busy ? t("deliveryOutcome.submitting") : t("deliveryOutcome.submit")}
