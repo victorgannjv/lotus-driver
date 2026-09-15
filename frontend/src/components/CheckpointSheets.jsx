@@ -265,11 +265,17 @@ export function ReasonSheet({ open, gap, reasons, busy, onSubmit, onSkip }) {
   return (
     <Sheet
       title={t("reason.title")}
-      subtitle={t("reason.subtitle", {
-        gap: gap.label,
-        over: formatDuration(gap.minutes),
-        target: formatDuration(gap.target_minutes),
-      })}
+      subtitle={
+        // With allowances switched off there is no target to quote, but the
+        // driver can still open this from the timeline to explain a step.
+        gap.target_minutes != null
+          ? t("reason.subtitle", {
+              gap: gap.label,
+              over: formatDuration(gap.minutes),
+              target: formatDuration(gap.target_minutes),
+            })
+          : t("reason.subtitleNoTarget", { gap: gap.label, took: formatDuration(gap.minutes) })
+      }
       onCancel={busy ? null : onSkip}
       cancelLabel={t("reason.skip")}
     >

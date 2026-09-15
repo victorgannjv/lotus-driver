@@ -429,48 +429,116 @@ const GAP_LABEL = {
 export function Targets() {
   const { rows, error, busy, run } = useList("/admin/config/targets", "targets");
   const [edits, setEdits] = useState({});
+  // The master switch lives in app_setting, not in this table -- it governs
+  // whether the whole idea applies, and the table is the numbers it governs.
+  const [enabled, setEnabled] = useState(null);
+  const [settingBusy, setSettingBusy] = useState(false);
+
+  const loadSetting = useCallback(() => {
+    api.get("/admin/config/settings")
+      .then((d) => {
+        const row = (d.settings || []).find((x) => x.setting_key === "gap_targets_enabled");
+        setEnabled(String(row?.value).toLowerCase() === "true");
+      })
+      .catch(() => setEnabled(false));
+  }, []);
+  useEffect(loadSetting, [loadSetting]);
+
+  async function setMaster(next) {
+    setSettingBusy(true);
+    try {
+      await api.put("/admin/config/settings/gap_targets_enabled", { value: String(next) });
+      setEnabled(next);
+    } finally {
+      setSettingBusy(false);
+    }
+  }
 
   return (
     <Panel
       title="Time allowances"
-      blurb="How long each step may take before it is flagged."
-      footer="These explain why a run was late. The delivery windows decide whether it was."
+      blurb="How long each step may take before it is flagged as late."
+      footer="Allowances explain WHY a run was late. The delivery windows decide WHETHER it was — those work on their own and are unaffected by anything on this page."
     >
       <Err>{error}</Err>
-      {!rows ? <p className="text-sm text-slate-500">Loading…</p> : rows.map((r) => {
-        const value = edits[r.id] ?? r.target_minutes;
-        const dirty = Number(value) !== r.target_minutes;
-        return (
-          <GridRow key={r.id} cols="md:grid-cols-[minmax(0,1fr)_13rem_auto]">
-            <span>
-              <span className="block text-sm text-brand-black">{GAP_LABEL[r.gap_code] || r.gap_code}</span>
-              <span className="block text-xs text-slate-400">{r.warehouse_name ? `${r.warehouse_name} only` : "Every outlet"}</span>
+
+      <Section
+        title="Use time allowances"
+        blurb="Off by default. These per-step numbers were working assumptions, not terms agreed with Lotus — and flagging a trip red against a bar nobody signed is an argument we lose. Switch it on once the allowances are negotiated."
+      >
+        <Row>
+          <span className="min-w-[18rem] flex-1">
+            <span className="block text-sm font-medium text-brand-black">
+              Flag steps that run over their allowance
             </span>
-            <label className="flex items-center gap-2 text-sm text-slate-500">
-              <input type="number" min="1" max="1440" className={`${input} w-24`} value={value}
-                     onChange={(e) => setEdits((v) => ({ ...v, [r.id]: e.target.value }))} />
-              minutes
-            </label>
-            <span className={actionsCell}>
-            <button type="button" className={btnPrimary} disabled={busy || !dirty}
-                    onClick={async () => {
-                      const ok = await run(() => api.post("/admin/config/targets", {
-                        gap_code: r.gap_code, warehouse_id: r.warehouse_id, target_minutes: Number(value),
-                      }));
-                      if (ok) setEdits((v) => ({ ...v, [r.id]: undefined }));
-                    }}>Save</button>
-            <button type="button" className={btnDanger} disabled={busy}
-                    onClick={() => confirmed(
-                      r.warehouse_id
-                        ? "Delete this outlet's allowance? It will fall back to the every-outlet one."
-                        : "Delete this allowance? That step will stop being flagged as late."
-                    ) && run(() => api.del(`/admin/config/targets/${r.id}`))}>
-              Delete
-            </button>
+            <span className="mt-0.5 block text-xs text-slate-500">
+              {enabled
+                ? "On — steps over their allowance are flagged, the driver is asked why, and the time is attributed."
+                : "Off — no step is flagged, no reason is demanded, and lateness comes only from the delivery windows. Drivers can still add a reason whenever they want to."}
             </span>
-          </GridRow>
-        );
-      })}
+          </span>
+          {enabled === null ? (
+            <span className="text-sm text-slate-500">Loading…</span>
+          ) : (
+            <Toggle on={enabled} disabled={settingBusy} label="Use time allowances"
+                    onChange={setMaster} />
+          )}
+        </Row>
+      </Section>
+
+      <Section
+        title="The allowances"
+        blurb={enabled
+          ? "Switch individual steps off to leave them unflagged while the rest apply."
+          : "Kept, and editable, but none of them apply while the switch above is off."}
+      >
+        {!rows ? <p className="text-sm text-slate-500">Loading…</p> : rows.map((r) => {
+          const value = edits[r.id] ?? r.target_minutes;
+          const dirty = Number(value) !== r.target_minutes;
+          // Dimmed rather than hidden while the feature is off: the numbers
+          // are still the record of what was proposed.
+          const muted = !enabled || !r.is_active;
+          return (
+            <GridRow key={r.id} cols="md:grid-cols-[minmax(0,1fr)_11rem_5rem_auto]">
+              <span className={muted ? "opacity-60" : ""}>
+                <span className="block text-sm text-brand-black">{GAP_LABEL[r.gap_code] || r.gap_code}</span>
+                <span className="block text-xs text-slate-400">
+                  {r.warehouse_name ? `${r.warehouse_name} only` : "Every outlet"}
+                  {enabled && !r.is_active ? " · not applied" : ""}
+                </span>
+              </span>
+              <label className={`flex items-center gap-2 text-sm text-slate-500 ${muted ? "opacity-60" : ""}`}>
+                <input type="number" min="1" max="1440" className={`${input} w-24`} value={value}
+                       onChange={(e) => setEdits((v) => ({ ...v, [r.id]: e.target.value }))} />
+                minutes
+              </label>
+              <Toggle
+                on={!!r.is_active}
+                disabled={busy || !enabled}
+                label={`Apply the ${GAP_LABEL[r.gap_code] || r.gap_code} allowance`}
+                onChange={(next) => run(() => api.put(`/admin/config/targets/${r.id}/active`, { is_active: next }))}
+              />
+              <span className={actionsCell}>
+                <button type="button" className={btnPrimary} disabled={busy || !dirty}
+                        onClick={async () => {
+                          const ok = await run(() => api.post("/admin/config/targets", {
+                            gap_code: r.gap_code, warehouse_id: r.warehouse_id, target_minutes: Number(value),
+                          }));
+                          if (ok) setEdits((v) => ({ ...v, [r.id]: undefined }));
+                        }}>Save</button>
+                <button type="button" className={btnDanger} disabled={busy}
+                        onClick={() => confirmed(
+                          r.warehouse_id
+                            ? "Delete this outlet's allowance? It will fall back to the every-outlet one."
+                            : "Delete this allowance? Switching it off keeps the number; deleting loses it."
+                        ) && run(() => api.del(`/admin/config/targets/${r.id}`))}>
+                  Delete
+                </button>
+              </span>
+            </GridRow>
+          );
+        })}
+      </Section>
     </Panel>
   );
 }

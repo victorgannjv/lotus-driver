@@ -59,10 +59,24 @@ CHECKPOINT_GAP = {to_cp: code for code, _from, to_cp, _party in GAP_DEFS}
 
 
 async def load_targets(pool) -> dict:
-    """All gap targets, keyed (gap_code, warehouse_id). warehouse_id None is the
-    global default; an outlet row overrides it for that outlet only."""
+    """Active gap targets, keyed (gap_code, warehouse_id). warehouse_id None is
+    the global default; an outlet row overrides it for that outlet only.
+
+    Empty when the feature is switched off, which is the default -- the
+    per-step allowances are working numbers, not terms Lotus has agreed, and
+    flagging a trip against a bar nobody signed is an argument we lose. An
+    empty map makes resolve_target return None, and every consumer already
+    treats a missing target as "nothing to flag": no red, no reason prompt, no
+    fault attribution. One switch, no branches."""
     async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
-        await cur.execute("SELECT gap_code, warehouse_id, target_minutes FROM gap_target")
+        await cur.execute("SELECT value FROM app_setting WHERE setting_key = 'gap_targets_enabled'")
+        row = await cur.fetchone()
+        enabled = str((row or {}).get("value", "false")).strip().lower()
+        if enabled not in ("1", "true", "yes", "on"):
+            return {}
+        await cur.execute(
+            "SELECT gap_code, warehouse_id, target_minutes FROM gap_target WHERE is_active = 1"
+        )
         rows = await cur.fetchall()
     return {(r["gap_code"], r["warehouse_id"]): r["target_minutes"] for r in rows}
 

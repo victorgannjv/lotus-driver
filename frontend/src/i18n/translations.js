@@ -138,6 +138,7 @@ export const translations = {
       left: "{time} left",
       over: "{time} over",
       elapsed: "{elapsed} so far · {allowed} allowed",
+      sinceStep: "so far on this step",
       // Neutral on purpose. The allowance is a measure, not a verdict, and a
       // fair share of the time the wait belongs to the outlet.
       overNote: "Record a reason at the next step so the time is accounted for.",
@@ -163,6 +164,7 @@ export const translations = {
     reason: {
       title: "Why the delay?",
       subtitle: "{gap} took {over} against a target of {target}. Pick the closest reason.",
+      subtitleNoTarget: "{gap} took {took}. Pick the closest reason if something held you up.",
       inlineLabel: "Anything hold you up?",
       inlineHelp: "Optional. Easier to answer now than to remember later.",
       inlineNone: "No delay — everything went normally",
@@ -445,6 +447,7 @@ export const translations = {
       left: "Tinggal {time}",
       over: "Lebih {time}",
       elapsed: "{elapsed} setakat ini · {allowed} dibenarkan",
+      sinceStep: "setakat ini pada langkah ini",
       overNote: "Rekodkan sebab pada langkah seterusnya supaya masa itu diambil kira.",
     },
     window: {
@@ -468,6 +471,7 @@ export const translations = {
     reason: {
       title: "Kenapa lewat?",
       subtitle: "{gap} mengambil {over} berbanding sasaran {target}. Pilih sebab yang paling hampir.",
+      subtitleNoTarget: "{gap} mengambil masa {took}. Pilih sebab yang paling hampir jika ada sesuatu yang melambatkan anda.",
       inlineLabel: "Ada apa-apa yang melambatkan anda?",
       inlineHelp: "Pilihan. Lebih mudah dijawab sekarang daripada diingat kemudian.",
       inlineNone: "Tiada kelewatan — semuanya berjalan seperti biasa",

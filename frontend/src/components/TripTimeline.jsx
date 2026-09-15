@@ -263,20 +263,26 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
   // because the whole value of this card is that the number moves.
   const og = state.open_gap;
   let live = null;
-  if (og && og.target_minutes != null && og.started_at) {
+  if (og && og.started_at) {
     // The API sends local wall-clock ("2026-09-15 09:41:00"); parsed as local
     // it lines up with the phone's own clock.
     const started = new Date(og.started_at.replace(" ", "T"));
     if (!Number.isNaN(started.getTime())) {
       const elapsed = Math.max(0, Math.round((now - started.getTime()) / 60000));
-      const leftMins = og.target_minutes - elapsed;
+      // With allowances switched off there is no countdown to run, but the
+      // step and how long it has taken are still the most useful thing on
+      // the screen. Elapsed only, and no colour -- there is no bar to be on
+      // the wrong side of.
+      const hasTarget = og.target_minutes != null;
+      const leftMins = hasTarget ? og.target_minutes - elapsed : null;
       live = {
         label: og.label,
         elapsed,
+        hasTarget,
         target: og.target_minutes,
-        leftMins: Math.max(0, leftMins),
-        over: leftMins < 0,
-        overBy: Math.max(0, -leftMins),
+        leftMins: hasTarget ? Math.max(0, leftMins) : null,
+        over: hasTarget && leftMins < 0,
+        overBy: hasTarget ? Math.max(0, -leftMins) : 0,
       };
     }
   }
@@ -325,16 +331,22 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
             {t("live.now")}
           </p>
           <p className="mt-0.5 text-sm font-semibold text-brand-black">{live.label}</p>
-          <p className={`mt-1 text-2xl font-semibold ${live.over ? "text-brand-red" : "text-emerald-700"}`}>
-            {live.over
-              ? t("live.over", { time: formatDuration(live.overBy) })
-              : t("live.left", { time: formatDuration(live.leftMins) })}
+          <p className={`mt-1 text-2xl font-semibold ${
+            !live.hasTarget ? "text-brand-black" : live.over ? "text-brand-red" : "text-emerald-700"
+          }`}>
+            {!live.hasTarget
+              ? formatDuration(live.elapsed)
+              : live.over
+                ? t("live.over", { time: formatDuration(live.overBy) })
+                : t("live.left", { time: formatDuration(live.leftMins) })}
           </p>
           <p className="mt-0.5 text-xs text-slate-500">
-            {t("live.elapsed", {
-              elapsed: formatDuration(live.elapsed),
-              allowed: formatDuration(live.target),
-            })}
+            {live.hasTarget
+              ? t("live.elapsed", {
+                  elapsed: formatDuration(live.elapsed),
+                  allowed: formatDuration(live.target),
+                })
+              : t("live.sinceStep")}
           </p>
           {live.over && (
             <p className="mt-2 rounded-lg bg-white/70 px-2.5 py-1.5 text-xs text-slate-600">
@@ -350,10 +362,12 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
           <p className={`mt-0.5 text-2xl font-semibold ${tao.over_target ? "text-brand-red" : "text-emerald-700"}`}>
             {formatDuration(tao.minutes)}
           </p>
-          <p className="mt-0.5 text-xs text-slate-500">
-            {t("trip.target", { target: formatDuration(tao.target_minutes) })}
-            {tao.over_target ? ` · ${t("trip.over", { over: formatDuration(tao.over_by_minutes) })}` : ""}
-          </p>
+          {tao.target_minutes != null && (
+            <p className="mt-0.5 text-xs text-slate-500">
+              {t("trip.target", { target: formatDuration(tao.target_minutes) })}
+              {tao.over_target ? ` · ${t("trip.over", { over: formatDuration(tao.over_by_minutes) })}` : ""}
+            </p>
+          )}
         </div>
       )}
 
@@ -443,7 +457,8 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
               )}
               {gap && (
                 <p className={`text-xs ${over ? "font-semibold text-brand-red" : "text-emerald-700"}`}>
-                  {gap.label} {formatDuration(gap.minutes)} / {formatDuration(gap.target_minutes)}
+                  {gap.label} {formatDuration(gap.minutes)}
+                  {gap.target_minutes != null ? ` / ${formatDuration(gap.target_minutes)}` : ""}
                 </p>
               )}
               {done && done.reason_label && (

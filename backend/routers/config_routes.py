@@ -96,6 +96,10 @@ class ReasonCodeUpdate(BaseModel):
     is_active: bool | None = None
 
 
+class ActiveIn(BaseModel):
+    is_active: bool
+
+
 class TargetIn(BaseModel):
     gap_code: str
     warehouse_id: int | None = None
@@ -194,12 +198,12 @@ async def list_targets(request: Request, admin=Depends(get_current_admin)):
     pool = get_pool(request)
     async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
         await cur.execute(
-            "SELECT gt.id, gt.gap_code, gt.warehouse_id, w.name AS warehouse_name, gt.target_minutes "
+            "SELECT gt.id, gt.gap_code, gt.warehouse_id, w.name AS warehouse_name, gt.target_minutes, gt.is_active "
             "FROM gap_target gt LEFT JOIN warehouses w ON w.id = gt.warehouse_id "
             "ORDER BY gt.gap_code, gt.warehouse_id IS NOT NULL, w.name"
         )
         rows = await cur.fetchall()
-    return {"targets": rows}
+    return {"targets": [{**r, "is_active": bool(r["is_active"])} for r in rows]}
 
 
 @router.post("/targets", status_code=201)
@@ -238,6 +242,27 @@ async def upsert_target(body: TargetIn, request: Request, admin=Depends(get_curr
                 + (f" for outlet {body.warehouse_id}" if body.warehouse_id else " for every outlet"),
                 after=body.model_dump())
     return {"gap_code": body.gap_code, "warehouse_id": body.warehouse_id, "target_minutes": body.target_minutes}
+
+
+@router.put("/targets/{target_id}/active")
+async def set_target_active(target_id: int, body: ActiveIn, request: Request,
+                            admin=Depends(get_current_admin)):
+    """Switch one allowance on or off without losing the number. An allowance
+    that has not been agreed with Lotus should not be flagging trips, but the
+    value is worth keeping for the day it is."""
+    pool = get_pool(request)
+    async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
+        await cur.execute("SELECT gap_code FROM gap_target WHERE id = %s", (target_id,))
+        row = await cur.fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="allowance not found")
+    async with pool.acquire() as conn, conn.cursor() as cur:
+        await cur.execute("UPDATE gap_target SET is_active = %s WHERE id = %s",
+                          (1 if body.is_active else 0, target_id))
+    await audit(pool, admin, "target", row["gap_code"], "update",
+                f"{'Switched on' if body.is_active else 'Switched off'} the "
+                f"'{row['gap_code']}' allowance")
+    return {"id": target_id, "is_active": body.is_active}
 
 
 @router.delete("/targets/{target_id}")

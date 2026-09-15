@@ -45,7 +45,8 @@ function CheckpointTrail({ trip }) {
             </div>
             {gap && (
               <p className={`text-[11px] ${over ? "font-semibold text-brand-red" : "text-slate-400"}`}>
-                {gap.label} {formatDuration(gap.minutes)} / {formatDuration(gap.target_minutes)}
+                {gap.label} {formatDuration(gap.minutes)}
+                {gap.target_minutes != null ? ` / ${formatDuration(gap.target_minutes)}` : ""}
               </p>
             )}
             {c.reason_label && (
