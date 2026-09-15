@@ -27,6 +27,7 @@ from trips import (
     CHECKPOINT_ORDER,
     compute_gaps,
     compute_time_at_outlet,
+    open_gap,
     fetch_checkpoints,
     load_settings,
     load_targets,
@@ -130,6 +131,9 @@ async def _trip_state(pool, trip: dict) -> dict:
         ],
         "gaps": gaps,
         "time_at_outlet": compute_time_at_outlet(stamps, targets, trip["warehouse_id"]),
+        # The step in progress, so the app can count down rather than report a
+        # figure that stopped moving when the last checkpoint was stamped.
+        "open_gap": open_gap(stamps, targets, trip["warehouse_id"], next_cp),
         "jobs": [
             {
                 "id": j["id"], "seq": j["seq"], "status": j["status"],

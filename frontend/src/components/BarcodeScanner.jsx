@@ -1,6 +1,7 @@
 import { BrowserMultiFormatReader } from "@zxing/browser";
 import { BarcodeFormat, DecodeHintType } from "@zxing/library";
 import { useEffect, useRef, useState } from "react";
+import { acquireCamera, cameraPermission } from "../lib/camera";
 import { useLanguage } from "../i18n/LanguageContext";
 
 // ZXing decodes by classic bar-width analysis, which is sensitive to blur/skew.
@@ -23,15 +24,6 @@ ZXING_HINTS.set(DecodeHintType.POSSIBLE_FORMATS, [
 ]);
 ZXING_HINTS.set(DecodeHintType.TRY_HARDER, true);
 
-// Deliberately not requesting an explicit focusMode constraint: on some
-// Android/Chrome + camera-HAL combinations, asking for "continuous" has been seen
-// to select a still-photo AF mode instead of the smoother CONTINUOUS_VIDEO mode
-// Chrome already defaults video capture to when nothing is specified.
-const VIDEO_CONSTRAINTS = {
-  facingMode: "environment",
-  width: { ideal: 1280 },
-  height: { ideal: 720 },
-};
 
 // Continuous camera barcode scanner. Calls onDetect(code) once per newly-seen
 // barcode; holding the same label in frame won't keep re-firing (de-duped, cleared
@@ -65,11 +57,11 @@ export default function BarcodeScanner({ onDetect }) {
     }
 
     async function start() {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: VIDEO_CONSTRAINTS });
-      if (stopped) {
-        stream.getTracks().forEach((t) => t.stop());
-        return;
-      }
+      // Shared, and kept alive between mounts -- see lib/camera. Asking the
+      // browser again on every scanner open is what produced a permission
+      // prompt every time on handsets that do not persist the grant.
+      const stream = await acquireCamera();
+      if (stopped) return;
       const track = stream.getVideoTracks()[0];
       trackRef.current = track;
       try {
@@ -102,10 +94,7 @@ export default function BarcodeScanner({ onDetect }) {
           pollTimer = setTimeout(poll, 150);
         };
         poll();
-        stopRef.current = () => {
-          clearTimeout(pollTimer);
-          stream.getTracks().forEach((t) => t.stop());
-        };
+        stopRef.current = () => clearTimeout(pollTimer);
         return;
       }
 
@@ -120,7 +109,13 @@ export default function BarcodeScanner({ onDetect }) {
       stopRef.current = () => controls.stop();
     }
 
-    start().catch((err) => setError(err.message || t("barcodeScanner.couldNotAccess")));
+    start().catch(async (err) => {
+      const denied =
+        err?.name === "NotAllowedError" ||
+        err?.name === "SecurityError" ||
+        (await cameraPermission()) === "denied";
+      setError(denied ? t("barcodeScanner.blocked") : err.message || t("barcodeScanner.couldNotAccess"));
+    });
 
     return () => {
       stopped = true;

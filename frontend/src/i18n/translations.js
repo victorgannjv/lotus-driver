@@ -133,8 +133,18 @@ export const translations = {
       loadError: "could not load this trip",
       stampError: "could not save that — try again",
     },
+    live: {
+      now: "Right now",
+      left: "{time} left",
+      over: "{time} over",
+      elapsed: "{elapsed} so far · {allowed} allowed",
+      // Neutral on purpose. The allowance is a measure, not a verdict, and a
+      // fair share of the time the wait belongs to the outlet.
+      overNote: "Record a reason at the next step so the time is accounted for.",
+    },
     window: {
       targets: "Arrive by {start} · Leave by {end}",
+      onSchedule: "On schedule",
       arrivedOnTime: "Arrived on time",
       arrivedLate: "Arrived {late} late",
       mustLeaveBy: "Still at the outlet — leave by {time}",
@@ -230,6 +240,7 @@ export const translations = {
       genericFailed: "Failed",
     },
     barcodeScanner: {
+      blocked: "Camera is blocked for this site. Tap the small icon just before the web address, open Permissions or Site settings, set Camera to Allow, then come back.",
       tapToFocus: "Tap the video if it won't focus",
       flashOn: "Flash on",
       flashOff: "Flash off",
@@ -429,8 +440,16 @@ export const translations = {
       loadError: "tidak dapat memuatkan perjalanan ini",
       stampError: "tidak dapat menyimpan — cuba lagi",
     },
+    live: {
+      now: "Sekarang",
+      left: "Tinggal {time}",
+      over: "Lebih {time}",
+      elapsed: "{elapsed} setakat ini · {allowed} dibenarkan",
+      overNote: "Rekodkan sebab pada langkah seterusnya supaya masa itu diambil kira.",
+    },
     window: {
       targets: "Tiba sebelum {start} · Bertolak sebelum {end}",
+      onSchedule: "Mengikut jadual",
       arrivedOnTime: "Tiba tepat pada masa",
       arrivedLate: "Tiba lewat {late}",
       mustLeaveBy: "Masih di outlet — bertolak sebelum {time}",
@@ -526,6 +545,7 @@ export const translations = {
       genericFailed: "Gagal",
     },
     barcodeScanner: {
+      blocked: "Kamera disekat untuk laman ini. Tekan ikon kecil sebelum alamat web, buka Permissions atau Site settings, tetapkan Camera kepada Allow, kemudian kembali.",
       tapToFocus: "Ketik video jika ia tidak fokus",
       flashOn: "Lampu suluh hidup",
       flashOff: "Lampu suluh mati",

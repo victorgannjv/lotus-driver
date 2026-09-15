@@ -103,6 +103,35 @@ def compute_gaps(stamps: dict, targets: dict, warehouse_id: int | None) -> list[
     return out
 
 
+def open_gap(stamps: dict, targets: dict, warehouse_id: int | None, next_cp: str | None) -> dict | None:
+    """The step the driver is inside right now, and how long it is allowed.
+
+    compute_gaps only reports gaps with both ends stamped, which is the right
+    rule for scoring and the wrong one for the screen: while a trip is running
+    the only interval anyone cares about is the one still open. This returns
+    it, with the clock it started from, so the app can count down against the
+    allowance instead of reporting a number that stopped moving.
+    """
+    if next_cp is None:
+        return None
+    for code, from_cp, to_cp, party in GAP_DEFS:
+        if to_cp != next_cp:
+            continue
+        start = stamps.get(from_cp)
+        if start is None:
+            return None
+        return {
+            "gap_code": code,
+            "label": GAP_LABELS[code],
+            "from_checkpoint": from_cp,
+            "to_checkpoint": to_cp,
+            "started_at": fmt(start),
+            "target_minutes": resolve_target(targets, code, warehouse_id),
+            "default_fault_party": party,
+        }
+    return None
+
+
 def compute_time_at_outlet(stamps: dict, targets: dict, warehouse_id: int | None) -> dict | None:
     code, from_cp, to_cp = HEADLINE_GAP
     start, end = stamps.get(from_cp), stamps.get(to_cp)

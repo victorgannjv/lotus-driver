@@ -56,6 +56,13 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
   const [pendingCount, setPendingCount] = useState(false);
   const [pendingReason, setPendingReason] = useState(null); // { checkpoint, gap }
   const [reasons, setReasons] = useState([]);
+  // Drives the countdown. Half a minute is fine for a figure shown in minutes
+  // and costs nothing; the interval is torn down with the component.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, []);
 
   const load = useCallback(() => {
     if (!manifestId) {
@@ -233,37 +240,64 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
 
   const win = state.window;
 
+  // One headline for the window card, picked for where the trip actually is.
+  // Open and on time says nothing alarming; open and already late says so
+  // once; finished reports the departure, which is the figure Lotus bills on.
+  let winHeadline = null;
+  let winTone = "text-emerald-700";
+  if (win) {
+    if (!win.still_open) {
+      winHeadline = win.departed_on_time
+        ? t("window.leftOnTime")
+        : t("window.leftLate", { late: formatDuration(win.departed_late_minutes) });
+      winTone = win.departed_on_time ? "text-emerald-700" : "text-brand-red";
+    } else if (!win.arrived_on_time) {
+      winHeadline = t("window.arrivedLate", { late: formatDuration(win.arrived_late_minutes) });
+      winTone = "text-brand-red";
+    } else {
+      winHeadline = t("window.onSchedule");
+    }
+  }
+
+  // The live countdown. Recomputed on a tick rather than only on a reload,
+  // because the whole value of this card is that the number moves.
+  const og = state.open_gap;
+  let live = null;
+  if (og && og.target_minutes != null && og.started_at) {
+    // The API sends local wall-clock ("2026-09-15 09:41:00"); parsed as local
+    // it lines up with the phone's own clock.
+    const started = new Date(og.started_at.replace(" ", "T"));
+    if (!Number.isNaN(started.getTime())) {
+      const elapsed = Math.max(0, Math.round((now - started.getTime()) / 60000));
+      const leftMins = og.target_minutes - elapsed;
+      live = {
+        label: og.label,
+        elapsed,
+        target: og.target_minutes,
+        leftMins: Math.max(0, leftMins),
+        over: leftMins < 0,
+        overBy: Math.max(0, -leftMins),
+      };
+    }
+  }
+
   return (
     <div>
-      {/* The contracted window comes first: it is what Lotus bills on. The dwell
-          figure below explains a miss, but does not decide one. */}
+      {/* ONE fact per card. The window card said four things at once -- a
+          label, two deadlines, an arrival verdict and a departure verdict --
+          and the driver had to assemble the answer himself. It now carries
+          the single line that is true right now; the live card below says
+          what to do about it. */}
       {win && (
         <div className="mb-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
-          {/* Two deadlines in plain words, instead of a bare time range and
-              phrases like "after the window opened". The reader is a driver
-              deciding what to do next, not an analyst reading a contract:
-              what he needs is the two times he is measured against and
-              whether he made them. */}
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{win.label}</p>
+          <p className={`mt-1 text-lg font-semibold ${winTone}`}>{winHeadline}</p>
           <p className="mt-0.5 text-xs text-slate-500">
             {t("window.targets", { start: win.window_start, end: win.window_end })}
           </p>
-          <p className={`mt-1 text-sm font-semibold ${win.arrived_on_time ? "text-emerald-700" : "text-brand-red"}`}>
-            {win.arrived_on_time
-              ? t("window.arrivedOnTime")
-              : t("window.arrivedLate", { late: formatDuration(win.arrived_late_minutes) })}
-          </p>
-          {win.still_open ? (
-            <p className="mt-0.5 text-xs text-slate-500">
-              {t("window.mustLeaveBy", { time: win.window_end })}
-            </p>
-          ) : (
-            <p className={`mt-0.5 text-xs ${win.departed_on_time ? "text-emerald-700" : "text-brand-red"}`}>
-              {win.departed_on_time
-                ? t("window.leftOnTime")
-                : t("window.leftLate", { late: formatDuration(win.departed_late_minutes) })}
-            </p>
-          )}
+          {/* Only where a claim is actually split, and worded so it does not
+              read as an accusation -- most of the time a share of it is the
+              outlet, and the driver should see that said plainly. */}
           {!win.still_open && !win.departed_on_time && (
             <p className="mt-2 rounded-lg bg-slate-50 px-2.5 py-1.5 text-xs text-slate-600">
               {win.lotus_late_minutes > 0
@@ -277,7 +311,40 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
         </div>
       )}
 
-      {tao && (
+      {/* WHAT IS HAPPENING NOW, while the trip is open. The old second card
+          showed time-at-outlet, a number that stops moving the moment the
+          truck leaves and says nothing at all mid-trip. A driver standing in
+          a loading bay wants one thing: how long has this step got left.
+          Neutral by design -- it counts an allowance, it does not accuse
+          anybody, because a good share of the time the wait is not theirs. */}
+      {live && (
+        <div className={`mb-3 rounded-2xl p-4 shadow-sm ring-1 ${
+          live.over ? "bg-rose-50 ring-rose-200" : "bg-white ring-slate-200"
+        }`}>
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+            {t("live.now")}
+          </p>
+          <p className="mt-0.5 text-sm font-semibold text-brand-black">{live.label}</p>
+          <p className={`mt-1 text-2xl font-semibold ${live.over ? "text-brand-red" : "text-emerald-700"}`}>
+            {live.over
+              ? t("live.over", { time: formatDuration(live.overBy) })
+              : t("live.left", { time: formatDuration(live.leftMins) })}
+          </p>
+          <p className="mt-0.5 text-xs text-slate-500">
+            {t("live.elapsed", {
+              elapsed: formatDuration(live.elapsed),
+              allowed: formatDuration(live.target),
+            })}
+          </p>
+          {live.over && (
+            <p className="mt-2 rounded-lg bg-white/70 px-2.5 py-1.5 text-xs text-slate-600">
+              {t("live.overNote")}
+            </p>
+          )}
+        </div>
+      )}
+
+      {tao && !live && (
         <div className="mb-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{t("trip.timeAtOutlet")}</p>
           <p className={`mt-0.5 text-2xl font-semibold ${tao.over_target ? "text-brand-red" : "text-emerald-700"}`}>
