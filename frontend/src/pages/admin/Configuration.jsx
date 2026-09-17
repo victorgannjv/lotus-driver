@@ -548,12 +548,15 @@ export function Targets() {
 
 /* ----------------------------------------------------------------- driver app */
 
-const CHECKPOINTS = [
-  ["arrived", "Arrived at Lotus"],
-  ["goods_ready", "Lotus goods ready"],
-  ["loaded", "Loaded to truck"],
-  ["departed", "Departed outlet"],
-  ["returned", "Returned to Lotus"],
+// The steps that can demand a photo: the five a driver taps. "Deliveries
+// done" is absent because the server fires it -- there is nobody holding a
+// camera at that moment.
+const PHOTO_STEPS = [
+  ["arrived", "Arrived at Lotus", "Proof the truck was on site, and when"],
+  ["goods_ready", "Lotus goods ready", "Proof of what was staged, and when"],
+  ["loaded", "Loaded to truck", "Proof of what actually left the outlet"],
+  ["departed", "Departed outlet", "Proof of the time the truck pulled out"],
+  ["returned", "Returned to Lotus", "Proof the basket and invoice came back"],
 ];
 
 // The steps a trip can be made of, and what switching one off actually costs.
@@ -574,11 +577,19 @@ const SETTING_UI = {
     label: "Steps a trip is made of",
     help: "Switch one off and the app stops asking for it — the driver goes straight to the next step. Trips that already recorded it keep it, and so does every claim built on them.",
     type: "steps",
+    steps: TRIP_STEPS,
   },
   job_count_quick_picks: { label: "Quick buttons for number of jobs", help: "Shown when the driver is asked how many drops the trip carries.", type: "numbers" },
   job_count_manual_max: { label: "Most jobs a driver can type", help: "A safety limit on the typed box.", type: "number", min: 1, max: 200 },
   allow_add_job_mid_trip: { label: "Let drivers add a job after loading", help: "For when the load changes on the road.", type: "bool" },
-  photo_required_checkpoints: { label: "Steps that need a photo", help: "Ticked: the step will not record without one. Unticked: the driver records it now and can add the photo later, while the trip is still open. Delivery proof photos are always required and are not affected by this.", type: "checkpoints" },
+  photo_required_checkpoints: {
+    label: "Steps that need a photo",
+    help: "On: the step will not record without one. Off: the driver records it now and can add the photo later, while the trip is still open. Delivery proof photos are always required and are not affected by this.",
+    type: "steps",
+    steps: PHOTO_STEPS,
+    needsActive: true,
+    noneNote: "None on — every step can be recorded without a photo.",
+  },
   photo_burn_timestamp: { label: "Print the date and time onto the photo", help: "Written into the picture, so it cannot be argued with.", type: "bool" },
   photo_timestamp_source: { label: "Where the photo's time comes from", help: "A phone with the wrong clock would weaken every photo.", type: "choice",
     options: [["server", "Our server's clock (recommended)"], ["handset", "The driver's phone"]] },
@@ -617,7 +628,7 @@ const SETTING_GROUPS = [
 
 // Module scope on purpose -- see the note on ReasonFields. Declared inside
 // DriverApp this would remount the number box on every keystroke.
-function SettingRow({ s, ui, v, dirty, busy, set, commit }) {
+function SettingRow({ s, ui, v, dirty, busy, set, commit, active = [] }) {
   const k = s.setting_key;
   const isOn = (x) => String(x).toLowerCase() === "true";
 
@@ -672,70 +683,61 @@ function SettingRow({ s, ui, v, dirty, busy, set, commit }) {
         </>
       )}
 
+      {/* ONE LAYOUT FOR BOTH STEP SETTINGS. This one was a horizontal row of
+          checkboxes while the setting above it -- the same five steps, the
+          same on/off question -- was a vertical list of toggles. Two controls
+          asking the same kind of question should not need to be read two
+          different ways. */}
       {ui.type === "steps" && (
         <>
-          <span className="flex w-full min-w-0 flex-col gap-1.5 sm:w-[24rem]">
-            {TRIP_STEPS.map(([code, label, note, locked]) => {
+          <span className="flex w-full min-w-0 flex-col gap-1.5 sm:w-[26rem]">
+            {ui.steps.map(([code, label, note, locked]) => {
               const list = String(v).split(",").map((x) => x.trim()).filter(Boolean);
-              const on = locked || list.includes(code);
+              // A photo rule on a step the app no longer asks for is a
+              // setting with nowhere to apply. Say so rather than offering a
+              // switch that cannot do anything.
+              const stepOff = ui.needsActive && !active.includes(code);
+              const on = !stepOff && (locked || list.includes(code));
               return (
                 <span key={code}
                       className={`flex items-center justify-between gap-3 rounded-lg px-3 py-2 ${
-                        on ? "bg-emerald-50" : "bg-slate-100"
+                        stepOff ? "bg-slate-50" : on ? "bg-emerald-50" : "bg-slate-100"
                       }`}>
                   <span className="min-w-0">
-                    <span className={`block text-sm font-medium ${on ? "text-emerald-900" : "text-slate-500"}`}>
+                    <span className={`block text-sm font-medium ${
+                      stepOff ? "text-slate-400" : on ? "text-emerald-900" : "text-slate-500"
+                    }`}>
                       {label}
                     </span>
-                    <span className="block text-[11px] leading-snug text-slate-500">{note}</span>
+                    <span className="block text-[11px] leading-snug text-slate-400">
+                      {stepOff ? "This step is switched off above" : note}
+                    </span>
                   </span>
-                  {/* Shown greyed and explained rather than hidden. A list that
-                      silently omits two of the six steps reads as a list of
-                      all the steps there are. */}
+                  {/* Locked rows are shown greyed and explained rather than
+                      hidden. A list that silently omits two of the six steps
+                      reads as a list of all the steps there are. */}
                   {locked ? (
                     <span className="shrink-0 text-[10px] font-bold uppercase tracking-widest text-slate-400">
                       Always on
                     </span>
                   ) : (
-                    <Toggle on={on} disabled={busy} label={label}
+                    <Toggle on={on} disabled={busy || stepOff} label={label}
                             onChange={() => set(k, (on ? list.filter((x) => x !== code) : [...list, code]).join(","))} />
                   )}
                 </span>
               );
             })}
+            {/* An all-off list of switches looks like a control that failed
+                to load. Say what none of them on actually means. */}
+            {ui.noneNote && String(v).split(",").filter(Boolean).length === 0 && (
+              <span className="px-1 text-[11px] text-slate-400">{ui.noneNote}</span>
+            )}
           </span>
           <button type="button" className={btnPrimary} disabled={busy || !dirty}
                   onClick={() => commit(k, v)}>Save</button>
         </>
       )}
 
-      {ui.type === "checkpoints" && (
-        <>
-          <span className="flex flex-wrap items-center gap-2">
-            {/* An empty row of boxes looks like a control that failed to load.
-                Say what none of them ticked actually means. */}
-            {String(v).split(",").filter(Boolean).length === 0 && (
-              <span className="text-xs text-slate-400">
-                None — every step can be recorded without a photo
-              </span>
-            )}
-            {CHECKPOINTS.map(([code, label]) => {
-              const list = String(v).split(",").map((x) => x.trim()).filter(Boolean);
-              const on = list.includes(code);
-              return (
-                <label key={code}
-                       className={`flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm ${on ? "bg-emerald-50 text-emerald-900" : "bg-slate-100 text-slate-500"}`}>
-                  <input type="checkbox" checked={on}
-                         onChange={() => set(k, (on ? list.filter((x) => x !== code) : [...list, code]).join(","))} />
-                  {label}
-                </label>
-              );
-            })}
-          </span>
-          <button type="button" className={btnPrimary} disabled={busy || !dirty}
-                  onClick={() => commit(k, v)}>Save</button>
-        </>
-      )}
     </Row>
   );
 }
@@ -753,6 +755,17 @@ export function DriverApp() {
   const byKey = {};
   (rows || []).forEach((s) => { byKey[s.setting_key] = s; });
 
+  // Which steps the app currently asks for, taking an unsaved edit into
+  // account so the photo list greys out the moment a step is switched off
+  // rather than after a reload. A database without the setting yet means
+  // every step is on, matching the server's own default.
+  const activeRaw = draft.active_checkpoints !== undefined
+    ? draft.active_checkpoints
+    : byKey.active_checkpoints?.value;
+  const activeSteps = activeRaw == null
+    ? TRIP_STEPS.map(([code]) => code)
+    : String(activeRaw).split(",").map((x) => x.trim()).filter(Boolean);
+
   return (
     <Panel title="Driver app" blurb="What the app asks drivers for." footer="Changes reach drivers on their next screen — nobody needs to update anything.">
       <Err>{error}</Err>
@@ -767,7 +780,7 @@ export function DriverApp() {
               return (
                 <SettingRow key={k} s={s} ui={SETTING_UI[k]} v={v} busy={busy}
                             dirty={draft[k] !== undefined && String(draft[k]) !== s.value}
-                            set={set} commit={commit} />
+                            set={set} commit={commit} active={activeSteps} />
               );
             })}
           </Section>
