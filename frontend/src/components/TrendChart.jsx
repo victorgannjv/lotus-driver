@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { formatDuration, formatShortDate } from "../lib/duration";
+import { formatDate, formatDuration, formatShortDate } from "../lib/duration";
 
 // Weekly average time at outlet, one line per outlet.
 //
@@ -36,6 +36,34 @@ const SERIES = ["#4a3aa7", "#eb6834", "#1baf7a"];
 // than inventing a colour nobody can read.
 const MAX_SERIES = 3;
 
+// What one point stands for, said in the fewest words that are still true.
+//
+// The axis used to print the week's START date -- "7 Sep" under a point
+// covering the 7th to the 13th. That is a date which is true of one day out
+// of seven, and a reader in a seven-day view quite reasonably read it as a
+// single day. A point names its whole span now, at whatever grain the
+// dashboard is grouping by.
+const MONTHS_LONG = ["January", "February", "March", "April", "May", "June",
+                     "July", "August", "September", "October", "November", "December"];
+
+function bucketLabel(point, bucket, { long = false } = {}) {
+  if (!point) return "";
+  if (bucket === "month") {
+    const m = Number(point.bucket_start.slice(5, 7)) - 1;
+    const name = MONTHS_LONG[m] || "";
+    return long ? name : name.slice(0, 3);
+  }
+  if (bucket === "week") {
+    const a = formatShortDate(point.bucket_start);
+    const b = formatShortDate(point.bucket_end);
+    // "8–14 Sep" inside one month, "29 Sep – 5 Oct" across two.
+    return a.split(" ")[1] === b.split(" ")[1] ? `${a.split(" ")[0]}–${b}` : `${a} – ${b}`;
+  }
+  return long ? formatDate(point.bucket_start) : formatShortDate(point.bucket_start);
+}
+
+const BUCKET_NOUN = { day: "day", week: "week", month: "month" };
+
 const INK = { axis: "#94a3b8", grid: "#e2e8f0", label: "#1e293b", tick: "#64748b" };
 
 // Steps a person reading minutes would choose. 7m and 23m are arithmetically
@@ -68,10 +96,18 @@ function spread(labels, minGap, top, bottom) {
   return sorted;
 }
 
-export default function TrendChart({ trend, target }) {
-  const [hover, setHover] = useState(null); // week index under the pointer
+export default function TrendChart({ trend, target, bucket = "week" }) {
+  const [hover, setHover] = useState(null); // bucket index under the pointer
 
-  const weeks = [...new Set(trend.map((t) => t.week_start))].sort();
+  // One entry per bucket, in order, carrying both ends of the span it covers.
+  const spans = [];
+  const seen = new Set();
+  [...trend].sort((a, b) => a.bucket_start.localeCompare(b.bucket_start)).forEach((t) => {
+    if (seen.has(t.bucket_start)) return;
+    seen.add(t.bucket_start);
+    spans.push({ bucket_start: t.bucket_start, bucket_end: t.bucket_end });
+  });
+  const weeks = spans.map((s) => s.bucket_start);
 
   // Busiest outlets first, so the three that get drawn are the three that
   // carry the most trips rather than whichever came back first.
@@ -84,14 +120,16 @@ export default function TrendChart({ trend, target }) {
   const folded = ranked.slice(MAX_SERIES);
 
   const valueAt = (outlet, week) => {
-    const row = trend.find((t) => t.outlet === outlet && t.week_start === week);
+    const row = trend.find((t) => t.outlet === outlet && t.bucket_start === week);
     return row ? row.avg_at_outlet_minutes : null;
   };
 
   if (weeks.length < 2) {
+    const noun = BUCKET_NOUN[bucket] || "week";
     return (
       <p className="mt-3 text-xs text-slate-400">
-        One week of trips so far. A trend needs at least two — this fills in on its own.
+        Trips on one {noun} only in this period. A trend needs at least two — widen the period
+        above, or come back once there are more.
       </p>
     );
   }
@@ -100,6 +138,9 @@ export default function TrendChart({ trend, target }) {
   const pw = W - L - R, ph = H - T - B;
   const peak = Math.max(0, ...trend.map((t) => t.avg_at_outlet_minutes || 0), target || 0);
   const { max, ticks } = scaleFor(peak);
+  // About eight labels is what fits; past that they overlap and stop being
+  // readable, which is worse than being absent.
+  const labelStep = Math.max(1, Math.ceil(weeks.length / 8));
   const x = (i) => L + (pw * i) / Math.max(1, weeks.length - 1);
   const y = (v) => T + ph - (ph * v) / max;
 
@@ -159,13 +200,22 @@ export default function TrendChart({ trend, target }) {
                     stroke={INK.axis} strokeWidth="2" strokeDasharray="5 4" />
             )}
 
-            {weeks.map((w, i) => (
-              <text key={w} x={x(i)} y={H - 12} textAnchor="middle" fontSize="11"
-                    fill={hover === i ? INK.label : INK.tick}
-                    fontWeight={hover === i ? 600 : 400}>
-                {formatShortDate(w)}
-              </text>
-            ))}
+            {/* Thinned so they never collide: a month of daily points is
+                thirty labels in the width of eight. The first and last always
+                survive, and the one under the pointer is always drawn --
+                otherwise hovering a point whose label was thinned away tells
+                you nothing about where you are. */}
+            {spans.map((sp, i) => {
+              const show = i === 0 || i === spans.length - 1 || i % labelStep === 0 || hover === i;
+              if (!show) return null;
+              return (
+                <text key={sp.bucket_start} x={x(i)} y={H - 12} textAnchor="middle" fontSize="11"
+                      fill={hover === i ? INK.label : INK.tick}
+                      fontWeight={hover === i ? 600 : 400}>
+                  {bucketLabel(sp, bucket)}
+                </text>
+              );
+            })}
 
             {/* The crosshair finds the week; nobody aims at a 2px line. */}
             {hover != null && (
@@ -226,7 +276,7 @@ export default function TrendChart({ trend, target }) {
               }}
             >
               <p className="text-[10px] font-semibold uppercase tracking-widest text-white/60">
-                Week of {formatShortDate(weeks[hover])}
+                {bucketLabel(spans[hover], bucket, { long: true })}
               </p>
               <ul className="mt-1 space-y-0.5">
                 {outlets.map((o, oi) => (
@@ -262,21 +312,28 @@ export default function TrendChart({ trend, target }) {
           <table className="min-w-full text-left text-xs">
             <thead className="text-slate-400">
               <tr>
-                <th className="py-1.5 pr-4 font-medium">Week beginning</th>
+                <th className="py-1.5 pr-4 font-medium">
+                  {bucket === "month" ? "Month" : bucket === "week" ? "Week" : "Day"}
+                </th>
                 {ranked.map((o) => <th key={o} className="py-1.5 pr-4 font-medium">{o}</th>)}
               </tr>
             </thead>
             <tbody className="tabular-nums">
-              {weeks.map((w) => (
+              {spans.map((sp) => {
+                const w = sp.bucket_start;
+                return (
                 <tr key={w} className="border-t border-slate-100">
-                  <td className="py-1.5 pr-4 text-slate-600">{formatShortDate(w)}</td>
+                  <td className="py-1.5 pr-4 whitespace-nowrap text-slate-600">
+                    {bucketLabel(sp, bucket, { long: true })}
+                  </td>
                   {ranked.map((o) => (
                     <td key={o} className="py-1.5 pr-4">
                       {valueAt(o, w) == null ? "—" : formatDuration(valueAt(o, w))}
                     </td>
                   ))}
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "../../api";
 import TrendChart from "../../components/TrendChart";
 import Comparisons from "../../components/Comparisons";
@@ -14,12 +14,71 @@ import { dayParts, formatDuration } from "../../lib/duration";
 // its target (green within / red over). Each block repeats the part of that key
 // it uses, so nothing sends you back to the top.
 
-const PERIODS = [
+// The periods people actually ask for.
+//
+// "Last 30 days" and "Last 90 days" were rolling windows, which read fine as a
+// tab and badly as an answer: a rolling 30 days straddles two months, so no
+// figure under it matches anything in a monthly report, and the trend chart
+// had no natural grain to group by. A named month does -- "September" is a
+// thing both sides of a dispute can look up.
+//
+// Ninety days is gone entirely. Anything longer than a month is a question
+// with its own dates, so it gets a date range instead of a tab pretending to
+// know which ninety days were meant.
+const QUICK_PERIODS = [
   { key: "today", label: "Today" },
   { key: "l7d", label: "Last 7 days" },
-  { key: "l1m", label: "Last 30 days" },
-  { key: "l3m", label: "Last 90 days" },
 ];
+
+const BUCKET_WORD = { day: "day", week: "week", month: "month" };
+
+const MONTH_NAMES = ["January", "February", "March", "April", "May", "June",
+                     "July", "August", "September", "October", "November", "December"];
+
+// The last twelve months, newest first, as { value: "2026-09", label: "September 2026" }.
+function recentMonths(count = 12) {
+  const out = [];
+  const now = new Date();
+  for (let i = 0; i < count; i += 1) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    out.push({
+      value: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
+      label: `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`,
+    });
+  }
+  return out;
+}
+
+const isoDate = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+// A month runs to its last day, or to today when it is the month we are in --
+// asking the server for dates that have not happened yet invites a comparison
+// against an empty future.
+function monthRange(value) {
+  const [y, m] = value.split("-").map(Number);
+  const start = new Date(y, m - 1, 1);
+  const last = new Date(y, m, 0);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return { from: isoDate(start), to: isoDate(last > today ? today : last) };
+}
+
+// One place that turns the chosen period into query parameters, so the tiles,
+// the tables and the chart can never be looking at different spans.
+function periodQuery(range) {
+  const qs = new URLSearchParams();
+  if (range.mode === "month") {
+    const { from, to } = monthRange(range.month);
+    qs.set("date_from", from);
+    qs.set("date_to", to);
+  } else if (range.mode === "custom" && range.from && range.to) {
+    qs.set("date_from", range.from);
+    qs.set("date_to", range.to);
+  } else {
+    qs.set("period", range.mode === "today" ? "today" : "l7d");
+  }
+  return qs;
+}
 
 const PARTY = {
   lotus: { label: "Lotus", bar: "bg-amber-500", chip: "bg-amber-100 text-amber-800", dot: "bg-amber-500" },
@@ -84,7 +143,8 @@ function OwnedBar({ owned }) {
 // line is simply not drawn -- a chart should not imply a bar that is not
 // being applied.
 export default function Dashboard() {
-  const [period, setPeriod] = useState("l7d");
+  const [range, setRange] = useState({ mode: "l7d" });
+  const months = useMemo(() => recentMonths(), []);
   const [warehouses, setWarehouses] = useState([]);
   const [warehouseId, setWarehouseId] = useState("");
   const [data, setData] = useState(null);
@@ -94,16 +154,22 @@ export default function Dashboard() {
     api.get("/admin/warehouses").then((d) => setWarehouses(d.warehouses)).catch(() => {});
   }, []);
 
+  // Depends on the query string, not the range object -- that is rebuilt every
+  // render and would refetch forever as a dependency.
+  const overviewQs = (() => {
+    const qs = periodQuery(range);
+    if (warehouseId) qs.set("warehouse_id", warehouseId);
+    return qs.toString();
+  })();
+
   useEffect(() => {
     setData(null);
     setError(null);
-    const qs = new URLSearchParams({ period });
-    if (warehouseId) qs.set("warehouse_id", warehouseId);
     api
-      .get(`/admin/overview?${qs}`)
+      .get(`/admin/overview?${overviewQs}`)
       .then(setData)
       .catch((err) => setError(err.detail || "could not load the dashboard"));
-  }, [period, warehouseId]);
+  }, [overviewQs]);
 
   const t = data?.totals;
   const maxReason = data?.reasons?.[0]?.minutes || 1;
@@ -120,21 +186,65 @@ export default function Dashboard() {
   return (
     <div>
       <div className="mb-5 flex flex-wrap items-center gap-3">
-        <div className="flex gap-1 rounded-lg bg-slate-200/70 p-1">
-          {PERIODS.map((p) => (
+        <div className="flex flex-wrap gap-1 rounded-lg bg-slate-200/70 p-1">
+          {QUICK_PERIODS.map((p) => (
             <button
               key={p.key}
               type="button"
-              onClick={() => setPeriod(p.key)}
-              aria-pressed={period === p.key}
+              onClick={() => setRange({ mode: p.key })}
+              aria-pressed={range.mode === p.key}
               className={`rounded-md px-3 py-1.5 text-sm font-semibold ${
-                period === p.key ? "bg-white text-brand-black shadow-sm" : "text-slate-500"
+                range.mode === p.key ? "bg-white text-brand-black shadow-sm" : "text-slate-500"
               }`}
             >
               {p.label}
             </button>
           ))}
+          {/* A month is chosen, not toggled, so it is a select that switches
+              the mode as a side effect of picking one -- rather than a tab you
+              press and then a second control you have to find. */}
+          <select
+            value={range.mode === "month" ? range.month : ""}
+            onChange={(e) => setRange({ mode: "month", month: e.target.value })}
+            aria-label="A whole month"
+            className={`rounded-md px-3 py-1.5 text-sm font-semibold ${
+              range.mode === "month" ? "bg-white text-brand-black shadow-sm" : "bg-transparent text-slate-500"
+            }`}
+          >
+            <option value="" disabled>Month…</option>
+            {months.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+          </select>
+          <button
+            type="button"
+            onClick={() => setRange((r) => (r.mode === "custom" ? r : { mode: "custom", from: "", to: "" }))}
+            aria-pressed={range.mode === "custom"}
+            className={`rounded-md px-3 py-1.5 text-sm font-semibold ${
+              range.mode === "custom" ? "bg-white text-brand-black shadow-sm" : "text-slate-500"
+            }`}
+          >
+            Date range
+          </button>
         </div>
+
+        {/* Shown only once that mode is chosen. Both dates are needed before
+            anything is fetched -- a half-entered range would otherwise reload
+            the whole dashboard against a span nobody asked for. */}
+        {range.mode === "custom" && (
+          <span className="flex flex-wrap items-center gap-2 text-sm text-slate-500">
+            <input type="date" value={range.from || ""} max={range.to || undefined}
+                   onChange={(e) => setRange((r) => ({ ...r, from: e.target.value }))}
+                   aria-label="From"
+                   className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+            to
+            <input type="date" value={range.to || ""} min={range.from || undefined}
+                   onChange={(e) => setRange((r) => ({ ...r, to: e.target.value }))}
+                   aria-label="To"
+                   className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+            {(!range.from || !range.to) && (
+              <span className="text-xs text-slate-400">Pick both dates — showing the last 7 days until you do.</span>
+            )}
+          </span>
+        )}
         <select
           value={warehouseId}
           onChange={(e) => setWarehouseId(e.target.value)}
@@ -280,11 +390,17 @@ export default function Dashboard() {
           </section>
 
           <section className="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-            <h2 className="text-base font-semibold text-brand-black">Time at outlet, by week</h2>
+            {/* The grain follows the period: a week of work reads day by day,
+                a quarter reads month by month. It used to be weekly whatever
+                was selected, which is why a seven-day view drew two dots. */}
+            <h2 className="text-base font-semibold text-brand-black">
+              Time at outlet, by {BUCKET_WORD[data.trend_bucket] || "week"}
+            </h2>
             <p className="mt-0.5 text-xs text-slate-500">
-              Weekly average arrival-to-departure per outlet. Each point is the week beginning that date.
+              Average arrival-to-departure per outlet, grouped by {BUCKET_WORD[data.trend_bucket] || "week"}.
+              Each point covers the whole {BUCKET_WORD[data.trend_bucket] || "week"} it is labelled with.
             </p>
-            <TrendChart trend={data.trend} target={data.at_outlet_target} />
+            <TrendChart trend={data.trend} target={data.at_outlet_target} bucket={data.trend_bucket} />
           </section>
 
           <section className="grid grid-cols-1 gap-4 md:grid-cols-2">

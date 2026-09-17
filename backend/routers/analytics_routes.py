@@ -61,6 +61,38 @@ def _range_for(period: str, date_from: str | None, date_to: str | None) -> tuple
     return start, end, start - timedelta(days=span), start - timedelta(days=1)
 
 
+# How the trend chart should group its points, from the span being looked at.
+#
+# It used to be weekly always, whatever the filter said -- so "Last 7 days"
+# drew one or two week-shaped dots and called it a trend. The grain has to
+# follow the question: a week of work is read day by day, a quarter is read
+# month by month, and a point should cover something a person can name.
+def _bucket_for(start: date, end: date) -> str:
+    span = (end - start).days + 1
+    if span <= 45:
+        return "day"
+    if span <= 200:
+        return "week"
+    return "month"
+
+
+def _bucket_start(d: date, bucket: str) -> date:
+    if bucket == "day":
+        return d
+    if bucket == "week":
+        return d - timedelta(days=d.weekday())
+    return d.replace(day=1)
+
+
+def _bucket_end(start: date, bucket: str) -> date:
+    if bucket == "day":
+        return start
+    if bucket == "week":
+        return start + timedelta(days=6)
+    nxt = (start.replace(day=28) + timedelta(days=4)).replace(day=1)
+    return nxt - timedelta(days=1)
+
+
 async def _load_trips(pool, start: date, end: date, warehouse_id: int | None) -> list[dict]:
     where = ["m.work_date BETWEEN %s AND %s", "m.cancelled_at IS NULL"]
     params: list = [start.isoformat(), end.isoformat()]
@@ -390,16 +422,26 @@ async def overview(
             r["occurrences"] += 1
     reason_rows = sorted(reasons.values(), key=lambda r: -r["minutes"])
 
-    # Weekly trend per outlet -- the historical benchmark.
-    weeks: dict = {}
+    # Trend per outlet, grouped at whatever grain the selected span deserves.
+    bucket = _bucket_for(start, end)
+    buckets: dict = {}
     for t in trips:
         d = date.fromisoformat(t["work_date"])
-        wk = (d - timedelta(days=d.weekday())).isoformat()
-        key = (wk, t["warehouse_name"] or "Unassigned")
-        weeks.setdefault(key, []).append(t)
+        b = _bucket_start(d, bucket).isoformat()
+        key = (b, t["warehouse_name"] or "Unassigned")
+        buckets.setdefault(key, []).append(t)
     trend = [
-        {"week_start": wk, "outlet": outlet, "avg_at_outlet_minutes": _avg_at_outlet(v), "trips": len(v)}
-        for (wk, outlet), v in sorted(weeks.items())
+        {
+            "bucket_start": b,
+            # The end as well, because "7 Sep" under a weekly point is a date
+            # that is true of one day out of the seven it stands for. A point
+            # has to say what it covers.
+            "bucket_end": _bucket_end(date.fromisoformat(b), bucket).isoformat(),
+            "outlet": outlet,
+            "avg_at_outlet_minutes": _avg_at_outlet(v),
+            "trips": len(v),
+        }
+        for (b, outlet), v in sorted(buckets.items())
         if _avg_at_outlet(v) is not None
     ]
 
@@ -468,6 +510,7 @@ async def overview(
         "outlets": outlets,
         "reasons": reason_rows,
         "trend": trend,
+        "trend_bucket": bucket,
         "manpower": manpower,
         # Fixed windows, independent of the period filter -- see _comparisons.
         "comparisons": await _comparisons(pool, warehouse_id),

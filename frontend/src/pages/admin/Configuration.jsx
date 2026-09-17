@@ -923,7 +923,11 @@ export function DriversConfig() {
       ) : rows.map((d) => {
         const draft = edit[d.id];
         return (
-          <GridRow key={d.id} cols="md:grid-cols-[minmax(0,1fr)_11rem_9rem_auto]">
+          // The actions column is a FIXED width, not auto. Every GridRow is its
+          // own grid, so an `auto` last column is measured per row -- the one
+          // row that also had a Delete button came out wider and dragged its
+          // outlet and toggle out of line with every other row.
+          <GridRow key={d.id} cols="md:grid-cols-[minmax(0,1fr)_9rem_8.5rem_auto] lg:grid-cols-[minmax(0,1fr)_9rem_8.5rem_24rem]">
             <span>
               <span className="flex flex-wrap items-center gap-2">
                 <span className="text-sm font-medium text-brand-black">{d.name}</span>
@@ -935,9 +939,12 @@ export function DriversConfig() {
                   </span>
                 )}
               </span>
+              {/* The trip count is always printed, including zero. It is the
+                  whole reason Delete appears on one row and not another, and
+                  a rule you cannot see on the row looks like a glitch. */}
               <span className="block text-xs text-slate-400">
                 {d.email}{d.phone ? ` · ${d.phone}` : ""}
-                {d.trips > 0 ? ` · ${d.trips} trip${d.trips === 1 ? "" : "s"}` : ""}
+                {` · ${d.trips === 0 ? "no trips yet" : `${d.trips} trip${d.trips === 1 ? "" : "s"}`}`}
               </span>
             </span>
             {draft ? (
@@ -959,7 +966,12 @@ export function DriversConfig() {
                         { status: next ? "active" : "disabled" }))} />
               Can sign in
             </span>
-            <span className={actionsCell}>
+            {/* Left-aligned, not right. With the buttons pushed to the right
+                edge, a row without Delete started its "Change outlet" 45px
+                further along than a row with one, so the common buttons moved
+                between rows. Anchored left, they form columns and only the
+                conditional button appears or disappears at the end. */}
+            <span className="flex flex-wrap items-center gap-2">
             {draft ? (
               <>
                 <button type="button" className={btnPrimary} disabled={busy}
@@ -993,6 +1005,7 @@ export function DriversConfig() {
                     button that teaches people to ignore buttons. */}
                 {d.trips === 0 && (
                   <button type="button" className={btnDanger} disabled={busy}
+                          title="This account has never run a trip, so deleting it destroys no evidence"
                           onClick={() => confirmed(`Delete ${d.name}? They have no trips, so nothing is lost — but the account goes for good.`)
                             && run(() => api.del(`/admin/config/drivers/${d.id}`))}>
                     Delete
