@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { api } from "../../api";
+import TrendChart from "../../components/TrendChart";
+import Comparisons from "../../components/Comparisons";
 import Icon from "../../components/Icon";
-import { formatDayRelative, formatDuration, formatShortDate } from "../../lib/duration";
+import { formatDayRelative, formatDuration } from "../../lib/duration";
 
 // The monitoring surface. Every figure answers one question: how much time did
 // Lotus cost us, and can we prove it? Nothing here grows as data accumulates --
@@ -81,73 +83,6 @@ function OwnedBar({ owned }) {
 // target is null when time allowances are switched off, and the reference
 // line is simply not drawn -- a chart should not imply a bar that is not
 // being applied.
-function TrendChart({ trend, target }) {
-  const outlets = [...new Set(trend.map((t) => t.outlet))];
-  const weeks = [...new Set(trend.map((t) => t.week_start))].sort();
-  if (weeks.length < 2) {
-    return <p className="mt-3 text-xs text-slate-400">Not enough weeks yet to show a trend.</p>;
-  }
-  const colours = ["#4A3AA7", "#C2185B", "#00695C"];
-  const W = 680, H = 220, L = 54, R = 96, T = 14, B = 30;
-  const pw = W - L - R, ph = H - T - B;
-  const max = Math.max(90, ...trend.map((t) => t.avg_at_outlet_minutes || 0)) * 1.1;
-  const x = (i) => L + (pw * i) / Math.max(1, weeks.length - 1);
-  const y = (v) => T + ph - (ph * v) / max;
-
-  return (
-    <div className="mt-3 overflow-x-auto">
-      <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full min-w-[520px]" role="img"
-           aria-label="Average time at outlet per week, by outlet">
-        {[0, 30, 60, 90].filter((v) => v <= max).map((v) => (
-          <g key={v}>
-            <line x1={L} y1={y(v)} x2={L + pw} y2={y(v)} stroke="#E2E8F0" strokeWidth="1" />
-            <text x={L - 8} y={y(v) + 4} textAnchor="end" fontSize="11" fill="#94A3B8">
-              {formatDuration(v)}
-            </text>
-          </g>
-        ))}
-        {target != null && (
-          <>
-            <line x1={L} y1={y(target)} x2={L + pw} y2={y(target)} stroke="#94A3B8" strokeWidth="2" strokeDasharray="5 4" />
-            <text x={L + 6} y={y(target) - 7} fontSize="11" fill="#94A3B8">
-              allowance {formatDuration(target)}
-            </text>
-          </>
-        )}
-        {weeks.map((w, i) => (
-          <text key={w} x={x(i)} y={H - 10} textAnchor="middle" fontSize="11" fill="#64748B">
-            {formatShortDate(w)}
-          </text>
-        ))}
-        {outlets.map((o, oi) => {
-          const pts = weeks
-            .map((w, i) => {
-              const row = trend.find((t) => t.outlet === o && t.week_start === w);
-              return row ? `${x(i)},${y(row.avg_at_outlet_minutes)}` : null;
-            })
-            .filter(Boolean);
-          if (!pts.length) return null;
-          const last = pts[pts.length - 1].split(",");
-          return (
-            <g key={o}>
-              <polyline points={pts.join(" ")} fill="none" stroke={colours[oi % colours.length]} strokeWidth="2"
-                        strokeLinejoin="round" strokeLinecap="round" />
-              {pts.map((p, i) => {
-                const [cx, cy] = p.split(",");
-                return <circle key={i} cx={cx} cy={cy} r="3.5" fill={colours[oi % colours.length]}
-                               stroke="#fff" strokeWidth="1.5" />;
-              })}
-              <text x={Number(last[0]) + 9} y={Number(last[1]) + 4} fontSize="12" fontWeight="600" fill="#1E293B">
-                {o}
-              </text>
-            </g>
-          );
-        })}
-      </svg>
-    </div>
-  );
-}
-
 export default function Dashboard() {
   const [period, setPeriod] = useState("l7d");
   const [warehouses, setWarehouses] = useState([]);
@@ -324,6 +259,9 @@ export default function Dashboard() {
             <Legend items={[
               ...(target ? [{ label: "Red figure", note: `over the ${target}m allowance`, dot: "bg-brand-red" }] : []),
             ]} />
+            {/* The cut at the end of the table: the same measures, against the
+                last day, the last week and the last four weeks. */}
+            <Comparisons comparisons={data.comparisons} />
           </section>
 
           <section className="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">

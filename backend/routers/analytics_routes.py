@@ -182,6 +182,103 @@ def _avg_at_outlet(trips: list[dict]) -> int | None:
     return round(sum(vals) / len(vals)) if vals else None
 
 
+# ---------------------------------------------------------------------------
+# Day on day, week on week, four weeks on four weeks.
+#
+# The dashboard answered "what happened in the selected period" and stopped
+# there, so every figure on it was a number without a direction. Commercial
+# cannot act on "3m average at outlet" -- they can act on "3m, up from 1m last
+# week, on twice the trips".
+#
+# These windows are FIXED, deliberately independent of the period filter above.
+# A comparison whose meaning changes when someone clicks a tab is a comparison
+# nobody can quote in a meeting.
+#
+# Four weeks, not a calendar month: a delivery operation runs on a weekly
+# rhythm, and 30 days against the previous 30 puts five Saturdays against four
+# without saying so. Equal weekday counts on both sides or the change is partly
+# just the calendar.
+# ---------------------------------------------------------------------------
+COMPARISON_SPANS = [
+    ("wow", "Week on week", 7),
+    ("mom", "4 weeks on 4 weeks", 28),
+]
+
+
+def _comparison_metrics(trips: list[dict]) -> dict:
+    """The measures a commercial reader acts on, for one slice of days."""
+    windowed = [t for t in trips if t["window"] and t["window"]["departed_on_time"] is not None]
+    drivers = {t["driver_id"] for t in trips}
+    return {
+        "trips": len(trips),
+        "orders": sum(t["orders"] for t in trips),
+        "drivers": len(drivers),
+        "trips_per_driver": round(len(trips) / len(drivers), 1) if drivers else None,
+        "avg_at_outlet_minutes": _avg_at_outlet(trips),
+        "missed_window": sum(1 for t in windowed if not t["window"]["departed_on_time"]),
+        "lotus_late_minutes": sum(t["window"]["lotus_late_minutes"] for t in windowed),
+    }
+
+
+async def _comparisons(pool, warehouse_id: int | None) -> list[dict]:
+    """One wide read, sliced six ways -- rather than six round trips for what
+    is the same fifty-six days of trips."""
+    today = local_today()
+    widest = COMPARISON_SPANS[-1][2] * 2
+    rows = await _scored(
+        pool, await _load_trips(pool, today - timedelta(days=widest - 1), today, warehouse_id)
+    )
+
+    by_day: dict = {}
+    for t in rows:
+        by_day.setdefault(t["work_date"], []).append(t)
+
+    def between(a: date, b: date) -> list[dict]:
+        out: list[dict] = []
+        d = a
+        while d <= b:
+            out.extend(by_day.get(d.isoformat(), []))
+            d += timedelta(days=1)
+        return out
+
+    out: list[dict] = []
+
+    # Day on day walks to the last two days that actually ran. A fleet that
+    # does not work Sundays would otherwise report Monday against nothing
+    # every week, which is a calendar fact dressed up as a collapse. Both
+    # dates are labelled, so a skipped day is visible rather than hidden.
+    days_run = sorted(by_day.keys(), reverse=True)
+    if len(days_run) >= 2:
+        cur_day, prev_day = days_run[0], days_run[1]
+        out.append({
+            "key": "dod",
+            "label": "Day on day",
+            "current_label": cur_day,
+            "previous_label": prev_day,
+            # Today is still being worked. Comparing half a day to a whole one
+            # and not saying so is how a dashboard tells a lie by omission.
+            "partial": cur_day == today.isoformat(),
+            "current": _comparison_metrics(by_day[cur_day]),
+            "previous": _comparison_metrics(by_day[prev_day]),
+        })
+
+    for key, label, span in COMPARISON_SPANS:
+        cur_start, cur_end = today - timedelta(days=span - 1), today
+        prev_end = cur_start - timedelta(days=1)
+        prev_start = prev_end - timedelta(days=span - 1)
+        out.append({
+            "key": key,
+            "label": label,
+            "current_label": f"{cur_start.isoformat()}..{cur_end.isoformat()}",
+            "previous_label": f"{prev_start.isoformat()}..{prev_end.isoformat()}",
+            "partial": True,
+            "current": _comparison_metrics(between(cur_start, cur_end)),
+            "previous": _comparison_metrics(between(prev_start, prev_end)),
+        })
+
+    return out
+
+
 @router.get("/overview")
 async def overview(
     request: Request,
@@ -331,6 +428,8 @@ async def overview(
         "reasons": reason_rows,
         "trend": trend,
         "manpower": manpower,
+        # Fixed windows, independent of the period filter -- see _comparisons.
+        "comparisons": await _comparisons(pool, warehouse_id),
         "roster_configured": bool(rostered),
     }
 
