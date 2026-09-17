@@ -409,7 +409,10 @@ export default function Dashboard() {
               Average arrival-to-departure per outlet, grouped by {BUCKET_WORD[data.trend_bucket] || "week"}.
               Each point covers the whole {BUCKET_WORD[data.trend_bucket] || "week"} it is labelled with.
             </p>
-            <TrendChart trend={data.trend} target={data.at_outlet_target} bucket={data.trend_bucket} />
+            {/* The period bounds, so the axis is the span you selected rather
+                than just the days that came back with trips. */}
+            <TrendChart trend={data.trend} target={data.at_outlet_target} bucket={data.trend_bucket}
+                        from={data.period?.from} to={data.period?.to} />
           </section>
 
           <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -444,8 +447,13 @@ export default function Dashboard() {
 
           <section className="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
             <h2 className="text-base font-semibold text-brand-black">Delay by reason code</h2>
+            {/* The minutes mean one of two things and the line says which.
+                With allowances off there is no bar to be over, so the figure
+                is the length of the step the driver explained. */}
             <p className="mt-0.5 text-xs text-slate-500">
-              Delay minutes by recorded reason, ranked by total time lost.
+              {data.reasons_over_allowance
+                ? "Minutes over the allowance, by the reason the driver gave, ranked by total time lost."
+                : "Time spent in the step the driver explained, by reason, ranked by total. Per-step allowances are off, so there is no overage to measure — this is the whole step."}
             </p>
             <div className="mt-4 space-y-2.5">
               {data.reasons.map((r) => (
@@ -463,7 +471,12 @@ export default function Dashboard() {
               ))}
               {data.reasons.length === 0 && (
                 <p className="text-sm text-slate-400">
-                  Nothing coded yet — reasons appear here once drivers start explaining gaps that ran over.
+                  {/* "gaps that ran over" described the old, broken rule --
+                      with allowances off nothing ever ran over, so this line
+                      was telling people to wait for something that could not
+                      happen. Any coded reason lands here now. */}
+                  No reasons recorded in this period — they appear here as soon as drivers start
+                  giving them on their trips.
                 </p>
               )}
             </div>

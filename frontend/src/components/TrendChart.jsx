@@ -64,6 +64,44 @@ function bucketLabel(point, bucket, { long = false } = {}) {
 
 const BUCKET_NOUN = { day: "day", week: "week", month: "month" };
 
+const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const parse = (s) => { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); };
+
+// Every slot in the selected period, in order, whether or not it holds trips.
+//
+// Falls back to the buckets the server sent when the period bounds are not
+// available -- which keeps the chart working rather than blanking it, though
+// the spacing is then only as good as the data is dense.
+function axisFor(from, to, bucket, trend) {
+  if (!from || !to) {
+    const seen = new Map();
+    [...trend]
+      .sort((a, b) => a.bucket_start.localeCompare(b.bucket_start))
+      .forEach((t) => seen.set(t.bucket_start, { bucket_start: t.bucket_start, bucket_end: t.bucket_end }));
+    return [...seen.values()];
+  }
+
+  const end = parse(to);
+  const out = [];
+  let cur = parse(from);
+  if (bucket === "week") cur = new Date(cur.getFullYear(), cur.getMonth(), cur.getDate() - ((cur.getDay() + 6) % 7));
+  if (bucket === "month") cur = new Date(cur.getFullYear(), cur.getMonth(), 1);
+
+  // A hard stop as well as the date test: a bug in the step would otherwise
+  // hang the tab rather than draw a wrong chart.
+  while (cur <= end && out.length < 400) {
+    let last;
+    if (bucket === "day") last = cur;
+    else if (bucket === "week") last = new Date(cur.getFullYear(), cur.getMonth(), cur.getDate() + 6);
+    else last = new Date(cur.getFullYear(), cur.getMonth() + 1, 0);
+    out.push({ bucket_start: iso(cur), bucket_end: iso(last) });
+    if (bucket === "day") cur = new Date(cur.getFullYear(), cur.getMonth(), cur.getDate() + 1);
+    else if (bucket === "week") cur = new Date(cur.getFullYear(), cur.getMonth(), cur.getDate() + 7);
+    else cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
+  }
+  return out;
+}
+
 const INK = { axis: "#94a3b8", grid: "#e2e8f0", label: "#1e293b", tick: "#64748b" };
 
 // Steps a person reading minutes would choose. 7m and 23m are arithmetically
@@ -96,17 +134,21 @@ function spread(labels, minGap, top, bottom) {
   return sorted;
 }
 
-export default function TrendChart({ trend, target, bucket = "week" }) {
-  const [hover, setHover] = useState(null); // bucket index under the pointer
+export default function TrendChart({ trend, target, bucket = "week", from, to }) {
+  const [hover, setHover] = useState(null); // axis slot under the pointer
 
-  // One entry per bucket, in order, carrying both ends of the span it covers.
-  const spans = [];
-  const seen = new Set();
-  [...trend].sort((a, b) => a.bucket_start.localeCompare(b.bucket_start)).forEach((t) => {
-    if (seen.has(t.bucket_start)) return;
-    seen.add(t.bucket_start);
-    spans.push({ bucket_start: t.bucket_start, bucket_end: t.bucket_end });
-  });
+  // THE AXIS IS THE PERIOD, NOT THE ROWS THAT CAME BACK.
+  //
+  // Built from the data, a September with trips on the 11th, 14th, 15th and
+  // 17th drew four points at even spacing -- so a three-day gap looked
+  // exactly like a one-day gap, and picking "September" gave a chart of four
+  // anonymous columns rather than a month. Spacing that does not mean
+  // anything is worse than no spacing at all on a chart about time.
+  //
+  // So the axis runs across the whole selected period at the chosen grain,
+  // every slot in its real place. Days the fleet did not run are empty slots
+  // -- visible as gaps, which is information, not absences to be closed up.
+  const spans = axisFor(from, to, bucket, trend);
   const weeks = spans.map((s) => s.bucket_start);
 
   // Busiest outlets first, so the three that get drawn are the three that
@@ -124,7 +166,11 @@ export default function TrendChart({ trend, target, bucket = "week" }) {
     return row ? row.avg_at_outlet_minutes : null;
   };
 
-  if (weeks.length < 2) {
+  // Counted on the slots that hold trips, not on the axis. The axis now spans
+  // the whole period, so September always has thirty slots -- but one day of
+  // trips inside it is still not a trend.
+  const withData = new Set(trend.map((t) => t.bucket_start));
+  if (weeks.filter((w) => withData.has(w)).length < 2) {
     const noun = BUCKET_NOUN[bucket] || "week";
     return (
       <p className="mt-3 text-xs text-slate-400">

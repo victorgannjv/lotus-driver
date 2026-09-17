@@ -407,20 +407,38 @@ async def overview(
     outlets.sort(key=lambda x: -(x["avg_at_outlet_minutes"] or 0))
 
     # Reason ranking. Only exists because reasons are coded rather than typed.
+    #
+    # THIS PANEL REPORTED NOTHING FOR EVERY REASON EVER CODED. It skipped any
+    # gap that was not `over_target`, and over_target is false for every gap
+    # in the app while per-step allowances are switched off -- which they have
+    # been since V20, because the allowances are not agreed with Lotus. So
+    # drivers coded reasons diligently and the dashboard answered "nothing
+    # coded yet". The reasons were never lost; they are on the checkpoints and
+    # visible in Evidence. They were being filtered out on the way to this
+    # rollup by a condition that could not be true.
+    #
+    # A coded reason counts now, allowance or no allowance. What its MINUTES
+    # mean depends on whether there is a bar to measure against: the overage
+    # where one exists, and otherwise the length of the step the reason
+    # explains. Those are different figures, so the payload says which it is
+    # rather than letting one number quietly change meaning.
     reasons: dict = {}
+    measured_against_allowance = False
     for t in trips:
         for g in t["gaps"]:
-            if not g["over_target"]:
-                continue
             cp = next((c for c in t["checkpoints"] if c["checkpoint"] == g["to_checkpoint"]), None)
             if not cp or not cp.get("reason_label"):
                 continue
             r = reasons.setdefault(cp["reason_label"],
                                    {"label": cp["reason_label"], "fault_party": cp["fault_party"],
                                     "minutes": 0, "occurrences": 0})
-            r["minutes"] += g["over_by_minutes"]
+            if g["target_minutes"] is None:
+                r["minutes"] += g["minutes"]
+            else:
+                measured_against_allowance = True
+                r["minutes"] += g["over_by_minutes"] or 0
             r["occurrences"] += 1
-    reason_rows = sorted(reasons.values(), key=lambda r: -r["minutes"])
+    reason_rows = sorted(reasons.values(), key=lambda r: (-r["minutes"], -r["occurrences"]))
 
     # Trend per outlet, grouped at whatever grain the selected span deserves.
     bucket = _bucket_for(start, end)
@@ -509,6 +527,10 @@ async def overview(
         "window": window_stats,
         "outlets": outlets,
         "reasons": reason_rows,
+        # Whether the minutes beside each reason are time OVER an allowance or
+        # the whole length of the step. Same column, two different meanings --
+        # the screen has to be able to say which.
+        "reasons_over_allowance": measured_against_allowance,
         "trend": trend,
         "trend_bucket": bucket,
         "manpower": manpower,
