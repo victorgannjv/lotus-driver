@@ -36,6 +36,12 @@ const OWNER = {
 // trip was fine, or the trip ran late and nobody said why. The second is money
 // we cannot claim because the reason was never logged, so it gets its own chip
 // and its own colour -- it is a work queue, not an empty cell.
+// A colour chip inline in a sentence, so the key reads as prose rather than
+// as a second table of its own.
+function Swatch({ tone }) {
+  return <span className={`mr-1 inline-block h-2.5 w-2.5 rounded-sm align-middle ${tone}`} />;
+}
+
 function OwnerChip({ owner, lateSteps }) {
   const o = OWNER[owner];
   if (o) return <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${o.chip}`}>{o.label}</span>;
@@ -394,6 +400,39 @@ export default function Evidence() {
           and photo, and the reason given for a delay. This is what a late-delivery charge from
           Lotus gets argued with.
         </p>
+        {/* The colour key, at the top and folded away.
+            It sat at the FOOT of the page as seven entries on one flat list,
+            wrapping over three lines -- and it was really two different
+            colour systems jammed together: the edge down the side of a row,
+            and the Owner column. Grouped by where you actually see each one,
+            it is two lines, and it is above the rows it explains rather than
+            below them. */}
+        <details className="mt-2 text-xs text-slate-500">
+          <summary className="cursor-pointer font-medium text-slate-500 hover:text-brand-black">
+            What the colours mean
+          </summary>
+          <ul className="mt-1.5 space-y-1.5 border-l-2 border-slate-200 pl-3">
+            <li>
+              <b className="font-semibold text-slate-600">The edge down each row.</b>{" "}
+              <Swatch tone="bg-brand-red" /> over its time limit
+              <span className="px-1.5 text-slate-300">·</span>
+              <Swatch tone="bg-emerald-600" /> every step inside it
+            </li>
+            <li>
+              <b className="font-semibold text-slate-600">The Owner column.</b>{" "}
+              <Swatch tone="bg-amber-500" /> Lotus, recoverable
+              <span className="px-1.5 text-slate-300">·</span>
+              <Swatch tone="bg-blue-600" /> Ninja Van, absorbed by us
+              <span className="px-1.5 text-slate-300">·</span>
+              <Swatch tone="bg-emerald-500" /> external, not attributable
+              <span className="px-1.5 text-slate-300">·</span>
+              <Swatch tone="bg-orange-500" /> no reason given, so unattributable
+              <span className="px-1.5 text-slate-300">·</span>
+              <Swatch tone="bg-slate-300" /> on time, nothing to explain
+            </li>
+          </ul>
+        </details>
+
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <input
             type="search"
@@ -463,17 +502,6 @@ export default function Evidence() {
           </div>
 
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm">
-            {/* Says what every colour on this page means, in the words someone
-                would use to explain it out loud. */}
-            <div className="flex max-w-3xl flex-wrap gap-x-4 gap-y-1.5 text-xs text-slate-500">
-              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-brand-red" /><b className="text-slate-700">Red edge</b> — a step ran over its time limit</span>
-              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-emerald-600" /><b className="text-slate-700">Green edge</b> — every step inside its time limit</span>
-              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-amber-500" /><b className="text-slate-700">Lotus</b> — outlet delay, recoverable</span>
-              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-blue-600" /><b className="text-slate-700">Ninja Van</b> — our delay, absorbed</span>
-              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-emerald-500" /><b className="text-slate-700">External</b> — traffic or weather, not attributable</span>
-              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-orange-500" /><b className="text-slate-700">No reason given</b> — exceeded, but unexplained, so unattributable</span>
-              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-slate-300" /><b className="text-slate-700">On time</b> — nothing to explain</span>
-            </div>
             <div className="flex items-center gap-3">
               <button type="button" disabled={page <= 1}
                       onClick={() => patch({ page: page - 1, trip: "" }, { keepPage: true })}
