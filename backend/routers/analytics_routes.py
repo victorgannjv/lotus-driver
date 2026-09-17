@@ -249,7 +249,7 @@ def _by_trip_of_day(trips: list[dict]) -> tuple[list[dict], int]:
             continue
         s = by_slot.setdefault(slot, {"slot_no": slot, "arrivals": [], "departures": [],
                                       "at_outlet": [], "trips": 0, "windowed": [], "label": None,
-                                      "window_start": None, "window_end": None})
+                                      "window_start": None, "window_end": None, "detail": []})
         s["trips"] += 1
         arrived = _clock_minutes(_checkpoint_at(t, "arrived"))
         departed = _clock_minutes(_checkpoint_at(t, "departed"))
@@ -257,6 +257,19 @@ def _by_trip_of_day(trips: list[dict]) -> tuple[list[dict], int]:
             s["arrivals"].append(arrived)
         if departed is not None:
             s["departures"].append(departed)
+        # The trips behind the average, so the average can be checked rather
+        # than believed. A mean hides its spread completely: six arrivals
+        # averaging 11:40 is equally true of six trucks at 11:40 and of five
+        # at nine with one at half past one, and those are different problems.
+        s["detail"].append({
+            "trip_id": t["id"],
+            "work_date": t["work_date"],
+            "driver": t["driver_name"],
+            "outlet": t["warehouse_name"],
+            "arrived": _hhmm(arrived),
+            "departed": _hhmm(departed),
+            "at_outlet_minutes": t["time_at_outlet"]["minutes"] if t["time_at_outlet"] else None,
+        })
         if t["time_at_outlet"]:
             s["at_outlet"].append(t["time_at_outlet"]["minutes"])
         w = t.get("window")
@@ -283,6 +296,17 @@ def _by_trip_of_day(trips: list[dict]) -> tuple[list[dict], int]:
             "avg_departure": _hhmm(_mean(s["departures"])),
             "arrivals_recorded": len(s["arrivals"]),
             "departures_recorded": len(s["departures"]),
+            # The spread, alongside the middle. Printed only where it is not
+            # the same figure twice.
+            "arrival_earliest": _hhmm(min(s["arrivals"])) if s["arrivals"] else None,
+            "arrival_latest": _hhmm(max(s["arrivals"])) if s["arrivals"] else None,
+            "departure_earliest": _hhmm(min(s["departures"])) if s["departures"] else None,
+            "departure_latest": _hhmm(max(s["departures"])) if s["departures"] else None,
+            # Newest first and capped: this exists to be spot-checked, not
+            # scrolled, and a quarter of trips would be thousands of rows.
+            "detail": sorted(s["detail"], key=lambda d: (d["work_date"], d["trip_id"]),
+                             reverse=True)[:100],
+            "detail_truncated": max(0, len(s["detail"]) - 100),
             "avg_at_outlet_minutes": round(_mean(s["at_outlet"])) if s["at_outlet"] else None,
             # TWO denominators, not one. Whether a truck ARRIVED in time is
             # known the moment it arrives; whether it LEFT in time cannot be

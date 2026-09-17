@@ -38,6 +38,20 @@ function Variance({ minutes, boundary, grace = 0 }) {
   );
 }
 
+// The spread behind the mean.
+//
+// A mean on its own is what makes a reader distrust a dashboard: six arrivals
+// averaging 11:40 is equally true of six trucks at 11:40 and of five at nine
+// with one at half past one, and those are completely different days. Anyone
+// who spot-checks a single early trip against the average alone has no way to
+// tell which they are looking at.
+function Spread({ earliest, latest }) {
+  if (!earliest || !latest || earliest === latest) return null;
+  return (
+    <span className="block text-[11px] text-slate-400">{earliest} to {latest}</span>
+  );
+}
+
 // n of N, red only when something actually missed. A bare "3 / 6" gives no
 // clue which direction is good.
 function OnTime({ ok, total }) {
@@ -124,6 +138,7 @@ export default function TripOfDay({ rows, unnumbered, from, to }) {
                     )}
                   </span>
                   <Variance minutes={r.avg_arrival_variance} boundary="opens" grace={r.grace_minutes} />
+                  <Spread earliest={r.arrival_earliest} latest={r.arrival_latest} />
                 </td>
 
                 <td className="py-3 pr-5">
@@ -136,6 +151,7 @@ export default function TripOfDay({ rows, unnumbered, from, to }) {
                     )}
                   </span>
                   <Variance minutes={r.avg_departure_variance} boundary="closes" grace={r.grace_minutes} />
+                  <Spread earliest={r.departure_earliest} latest={r.departure_latest} />
                 </td>
 
                 <td className="py-3 pr-5 tabular-nums text-slate-600">
@@ -152,6 +168,55 @@ export default function TripOfDay({ rows, unnumbered, from, to }) {
           </tbody>
         </table>
       </div>
+
+      {/* The working, on demand. The averages above are checkable now rather
+          than takeable on trust -- which is what someone sample-checking a
+          figure against one trip they remember actually needs. */}
+      <details className="mt-3">
+        <summary className="cursor-pointer text-xs font-medium text-slate-500 hover:text-brand-black">
+          Show the trips behind these averages
+        </summary>
+        <div className="mt-2 overflow-x-auto">
+          <table className="min-w-full text-left text-xs">
+            <thead className="text-slate-400">
+              <tr>
+                <th className="py-1.5 pr-4 font-medium">Run</th>
+                <th className="py-1.5 pr-4 font-medium">Date</th>
+                <th className="py-1.5 pr-4 font-medium">Driver</th>
+                <th className="py-1.5 pr-4 font-medium">Outlet</th>
+                <th className="py-1.5 pr-4 font-medium">Arrived</th>
+                <th className="py-1.5 pr-4 font-medium">Left</th>
+                <th className="py-1.5 font-medium">At outlet</th>
+              </tr>
+            </thead>
+            <tbody className="tabular-nums">
+              {rows.flatMap((r) => (r.detail || []).map((d) => (
+                <tr key={`${r.slot_no}-${d.trip_id}`} className="border-t border-slate-100">
+                  <td className="py-1.5 pr-4 text-slate-500">{r.label}</td>
+                  <td className="py-1.5 pr-4 whitespace-nowrap text-slate-600">{formatDate(d.work_date)}</td>
+                  <td className="py-1.5 pr-4 text-slate-600">{d.driver}</td>
+                  <td className="py-1.5 pr-4 text-slate-500">{d.outlet || "—"}</td>
+                  <td className="py-1.5 pr-4 font-medium text-brand-black">{d.arrived || "—"}</td>
+                  {/* A trip still at the outlet says so. A dash here would
+                      read as a missing stamp rather than a truck that has
+                      not left yet. */}
+                  <td className="py-1.5 pr-4 font-medium text-brand-black">
+                    {d.departed || <span className="font-normal text-slate-400">still there</span>}
+                  </td>
+                  <td className="py-1.5 text-slate-600">
+                    {d.at_outlet_minutes == null ? "—" : formatDuration(d.at_outlet_minutes)}
+                  </td>
+                </tr>
+              )))}
+            </tbody>
+          </table>
+          {rows.some((r) => r.detail_truncated > 0) && (
+            <p className="mt-2 text-xs text-slate-400">
+              Showing the 100 most recent trips per run. Narrow the period above to see the rest.
+            </p>
+          )}
+        </div>
+      </details>
 
       {/* No Lotus/ours split here. Whose fault a missed window was is a
           different question from when the truck came and went, it is already
