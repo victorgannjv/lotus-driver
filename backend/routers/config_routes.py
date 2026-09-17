@@ -488,15 +488,25 @@ async def update_driver(driver_id: int, body: DriverUpdate, request: Request, ad
     what decides which bar their trips are scored against."""
     if body.status is not None and body.status not in ("active", "disabled"):
         raise HTTPException(status_code=422, detail="status must be active or disabled")
+    # A name is what identifies this person on every screen in the app and on
+    # every photo caption their trips produce. Whitespace is not a name.
+    if body.name is not None and not body.name.strip():
+        raise HTTPException(status_code=422, detail="a name is required")
+
+    # Driven by which fields the caller actually SENT, not by which came out
+    # non-null. Read the old way, `warehouse_id: null` meant "leave it alone",
+    # so the "Not set" option in the outlet picker silently did nothing --
+    # there was no way to take an outlet back off a driver once given.
+    provided = body.model_fields_set
     fields, params = [], []
-    if body.warehouse_id is not None:
-        fields.append("warehouse_id = %s")
-        params.append(body.warehouse_id)
-    for name in ("status", "name", "phone"):
-        val = getattr(body, name)
-        if val is not None:
-            fields.append(f"{name} = %s")
-            params.append(val)
+    for field in ("warehouse_id", "status", "name", "phone"):
+        if field not in provided:
+            continue
+        val = getattr(body, field)
+        if field in ("name", "phone") and val is not None:
+            val = val.strip() or None   # a cleared phone is NULL, not ""
+        fields.append(f"{field} = %s")
+        params.append(val)
     if not fields:
         raise HTTPException(status_code=422, detail="nothing to update")
     pool = get_pool(request)
@@ -505,8 +515,10 @@ async def update_driver(driver_id: int, body: DriverUpdate, request: Request, ad
         if await cur.fetchone() is None:
             raise HTTPException(status_code=404, detail="driver not found")
         await cur.execute(f"UPDATE users SET {', '.join(fields)} WHERE id = %s", tuple(params + [driver_id]))
+    # Logs what was SENT, including a field deliberately cleared -- filtering
+    # on "is not None" hid exactly the changes worth recording.
     await audit(pool, admin, "driver", driver_id, "update", f"Updated driver {driver_id}",
-                after={k: v for k, v in body.model_dump().items() if v is not None})
+                after={k: v for k, v in body.model_dump().items() if k in provided})
     return {"id": driver_id}
 
 

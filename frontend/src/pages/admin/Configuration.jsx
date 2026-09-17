@@ -928,28 +928,50 @@ export function DriversConfig() {
           // row that also had a Delete button came out wider and dragged its
           // outlet and toggle out of line with every other row.
           <GridRow key={d.id} cols="md:grid-cols-[minmax(0,1fr)_9rem_8.5rem_auto] lg:grid-cols-[minmax(0,1fr)_9rem_8.5rem_24rem]">
-            <span>
-              <span className="flex flex-wrap items-center gap-2">
-                <span className="text-sm font-medium text-brand-black">{d.name}</span>
-                {/* An account created from here looks identical to a working
-                    one until the driver follows the link. Say which it is. */}
-                {!d.signed_up && (
-                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800">
-                    No password set
-                  </span>
-                )}
-              </span>
-              {/* The trip count is always printed, including zero. It is the
-                  whole reason Delete appears on one row and not another, and
-                  a rule you cannot see on the row looks like a glitch. */}
-              <span className="block text-xs text-slate-400">
-                {d.email}{d.phone ? ` · ${d.phone}` : ""}
-                {` · ${d.trips === 0 ? "no trips yet" : `${d.trips} trip${d.trips === 1 ? "" : "s"}`}`}
-              </span>
-            </span>
+            {/* The name and phone are editable now. They were display-only,
+                so a driver who signed themselves up as "victor" or typed
+                their name in caps was that forever -- and the name is what
+                appears on every screen and in every photo caption their
+                trips produce.
+
+                The email is shown but not editable: it is the identity they
+                sign in with and the address an invite goes to, so changing it
+                is a different job from tidying a name. */}
             {draft ? (
-              <select className={input} value={draft.warehouse_id ?? ""}
-                      onChange={(e) => setEdit((v) => ({ ...v, [d.id]: { warehouse_id: e.target.value } }))}>
+              <span className="flex flex-col gap-2">
+                <input className={input} value={draft.name} placeholder="Name"
+                       aria-label={`Name for ${d.name}`}
+                       onChange={(e) => setEdit((v) => ({ ...v, [d.id]: { ...draft, name: e.target.value } }))} />
+                <input className={input} value={draft.phone} placeholder="Phone (optional)"
+                       aria-label={`Phone for ${d.name}`}
+                       onChange={(e) => setEdit((v) => ({ ...v, [d.id]: { ...draft, phone: e.target.value } }))} />
+                <span className="text-xs text-slate-400">{d.email} — sign-in email, not editable here</span>
+              </span>
+            ) : (
+              <span>
+                <span className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-medium text-brand-black">{d.name}</span>
+                  {/* An account created from here looks identical to a working
+                      one until the driver follows the link. Say which it is. */}
+                  {!d.signed_up && (
+                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800">
+                      No password set
+                    </span>
+                  )}
+                </span>
+                {/* The trip count is always printed, including zero. It is the
+                    whole reason Delete appears on one row and not another, and
+                    a rule you cannot see on the row looks like a glitch. */}
+                <span className="block text-xs text-slate-400">
+                  {d.email}{d.phone ? ` · ${d.phone}` : ""}
+                  {` · ${d.trips === 0 ? "no trips yet" : `${d.trips} trip${d.trips === 1 ? "" : "s"}`}`}
+                </span>
+              </span>
+            )}
+            {draft ? (
+              <select className={`${input} self-start`} value={draft.warehouse_id ?? ""}
+                      aria-label={`Outlet for ${d.name}`}
+                      onChange={(e) => setEdit((v) => ({ ...v, [d.id]: { ...draft, warehouse_id: e.target.value } }))}>
                 <option value="">Not set</option>
                 {outlets.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
               </select>
@@ -974,10 +996,16 @@ export function DriversConfig() {
             <span className="flex flex-wrap items-center gap-2">
             {draft ? (
               <>
-                <button type="button" className={btnPrimary} disabled={busy}
+                <button type="button" className={btnPrimary} disabled={busy || !draft.name.trim()}
                         onClick={async () => {
-                          const ok = await run(() => api.put(`/admin/config/drivers/${d.id}`,
-                            { warehouse_id: draft.warehouse_id ? Number(draft.warehouse_id) : null }));
+                          const ok = await run(() => api.put(`/admin/config/drivers/${d.id}`, {
+                            name: draft.name.trim(),
+                            // "" rather than null: the server turns an empty
+                            // string into NULL, and null would be read as
+                            // "leave the phone alone" and never clear it.
+                            phone: draft.phone.trim(),
+                            warehouse_id: draft.warehouse_id ? Number(draft.warehouse_id) : null,
+                          }));
                           if (ok) setEdit((v) => ({ ...v, [d.id]: undefined }));
                         }}>Save</button>
                 <button type="button" className={btn} onClick={() => setEdit((v) => ({ ...v, [d.id]: undefined }))}>Cancel</button>
@@ -985,8 +1013,11 @@ export function DriversConfig() {
             ) : (
               <>
                 <button type="button" className={btn}
-                        onClick={() => setEdit((v) => ({ ...v, [d.id]: { warehouse_id: d.warehouse_id ?? "" } }))}>
-                  Change outlet
+                        onClick={() => setEdit((v) => ({
+                          ...v,
+                          [d.id]: { name: d.name || "", phone: d.phone || "", warehouse_id: d.warehouse_id ?? "" },
+                        }))}>
+                  Edit
                 </button>
                 <button type="button" className={btn} disabled={busy || d.status !== "active"}
                         title={d.status === "active"
