@@ -294,8 +294,21 @@ def _by_trip_of_day(trips: list[dict]) -> tuple[list[dict], int]:
             "arrived_on_time": sum(1 for x in w if x["arrived_on_time"]),
             "departures_with_window": sum(1 for x in w if x["departed_on_time"] is not None),
             "departed_on_time": sum(1 for x in w if x["departed_on_time"]),
-            "lotus_late_minutes": sum(x["lotus_late_minutes"] for x in w),
-            "njv_late_minutes": sum(x["njv_late_minutes"] for x in w),
+            # How far off the contracted times those averages landed, signed:
+            # negative is before, positive is after. Sent rather than left to
+            # the screen to subtract, because grace minutes live on the
+            # schedule and the arithmetic has to agree with the on-time counts
+            # sitting next to it.
+            "avg_arrival_variance": (
+                round(_mean([x["arrival_variance_minutes"] for x in w]))
+                if w else None
+            ),
+            "avg_departure_variance": (
+                round(_mean([x["departure_variance_minutes"] for x in w
+                             if x["departure_variance_minutes"] is not None]))
+                if any(x["departure_variance_minutes"] is not None for x in w) else None
+            ),
+            "grace_minutes": w[0]["grace_minutes"] if w else 0,
         })
     return rows, unnumbered
 
