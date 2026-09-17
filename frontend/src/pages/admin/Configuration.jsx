@@ -187,7 +187,7 @@ const PARTY_SECTIONS = [
   { party: "njv", title: "Our side (Ninja Van)",
     blurb: "Delay attributable to Ninja Van. Recorded accurately so the Lotus figures stand up to scrutiny." },
   { party: "external", title: "Outside anyone's control",
-    blurb: "Left out of both columns — neither claimed nor conceded." },
+    blurb: "Left out of both columns. We do not claim it back, and we do not count it as ours either." },
 ];
 
 export function ReasonCodes() {
@@ -462,7 +462,7 @@ export function Targets() {
     <Panel
       title="Time limits"
       blurb="How long each step may take before it is flagged as late."
-      footer="Time limits explain WHY a run was late. The delivery windows decide WHETHER it was — those work on their own and are unaffected by anything on this page."
+      footer="Time limits explain WHY a run was late. The delivery windows decide WHETHER it was late at all, and they work on their own. Nothing on this page changes them."
     >
       <Err>{error}</Err>
 
@@ -477,8 +477,8 @@ export function Targets() {
             </span>
             <span className="mt-0.5 block text-xs text-slate-500">
               {enabled
-                ? "On — steps over their limit are flagged, the driver is asked why, and the time is attributed."
-                : "Off — no step is flagged, no reason is demanded, and lateness comes only from the delivery windows. Drivers can still add a reason whenever they want to."}
+                ? "On: a step over its limit is flagged, the driver is asked why, and the time is charged to whoever the reason points at."
+                : "Off: no step is flagged and no reason is asked for. Being late comes only from the delivery windows. Drivers can still add a reason any time they want to."}
             </span>
           </span>
           {enabled === null ? (
@@ -576,12 +576,12 @@ const TRIP_STEPS = [
 const SETTING_UI = {
   job_tracking_enabled: {
     label: "Record drops and parcels",
-    help: "Off leaves the app recording checkpoint times only — no drop count, no drop list, no parcel scanning, and no “Deliveries done” step. Trips that already recorded drops keep them.",
+    help: "Off leaves the app recording checkpoint times only. No drop count, no drop list, no parcel scanning, and no “Deliveries done” step. Trips that already recorded drops keep them.",
     type: "bool",
   },
   active_checkpoints: {
     label: "Steps a trip is made of",
-    help: "Switch one off and the app stops asking for it — the driver goes straight to the next step. Trips that already recorded it keep it, and so does every claim built on them.",
+    help: "Switch one off and the app stops asking for it. The driver goes straight to the next step. Trips that already recorded it keep it, and so does every claim built on them.",
     type: "steps",
     steps: TRIP_STEPS,
   },
@@ -594,12 +594,12 @@ const SETTING_UI = {
     type: "steps",
     steps: PHOTO_STEPS,
     needsActive: true,
-    noneNote: "None on — every step can be recorded without a photo.",
+    noneNote: "None on. Every step can be recorded without a photo.",
   },
   photo_burn_timestamp: { label: "Print the date and time onto the photo", help: "Written into the picture, so it cannot be argued with.", type: "bool" },
   photo_timestamp_source: { label: "Where the photo's time comes from", help: "A phone with the wrong clock would weaken every photo.", type: "choice",
     options: [["server", "Our server's clock (recommended)"], ["handset", "The driver's phone"]] },
-  photo_capture_gps: { label: "Record location with each photo", help: "Supporting detail — the time matters more.", type: "bool" },
+  photo_capture_gps: { label: "Record location with each photo", help: "Useful backup, but the time matters more.", type: "bool" },
   reason_prompt_on_breach: { label: "Ask why when a step runs late", help: "Off means late steps are recorded but never explained.", type: "bool" },
   default_language: { label: "Language the app opens in", help: "Drivers can still switch it themselves.", type: "choice",
     options: [["en", "English"], ["ms", "Bahasa Malaysia"]] },
@@ -612,7 +612,7 @@ const SETTING_UI = {
 const SETTING_GROUPS = [
   {
     title: "Steps in a trip",
-    blurb: "Which checkpoints the driver app asks for. Change it whenever the run changes — drivers pick it up on their next screen, with nothing to install.",
+    blurb: "Which checkpoints the driver app asks for. Change it whenever the run changes. Drivers pick it up on their next screen, with nothing to install.",
     keys: ["active_checkpoints"],
   },
   {
@@ -790,7 +790,7 @@ export function DriverApp() {
     : String(activeRaw).split(",").map((x) => x.trim()).filter(Boolean);
 
   return (
-    <Panel title="Driver app" blurb="What the app asks drivers for." footer="Changes reach drivers on their next screen — nobody needs to update anything.">
+    <Panel title="Driver app" blurb="What the app asks drivers for." footer="Changes reach drivers on their next screen. Nobody needs to update anything.">
       <Err>{error}</Err>
       {!rows ? <p className="text-sm text-slate-500">Loading…</p> : SETTING_GROUPS.map((g) => {
         const items = g.keys.map((k) => byKey[k]).filter((s) => s && SETTING_UI[s.setting_key]);
@@ -833,8 +833,8 @@ function InviteLink({ invite, onDone }) {
         {invite.name} can now set their password
       </p>
       <p className="mt-0.5 text-xs text-emerald-800">
-        Emailed to {invite.email}. Send them this link as well if that inbox is not one they read —
-        it works once and expires in seven days.
+        Emailed to {invite.email}. Send them this link as well if that inbox is not one they read.
+        It works once and expires in seven days.
       </p>
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <input
@@ -880,8 +880,8 @@ function NewDriverForm({ outlets, busy, onCancel, onCreate }) {
     >
       <p className="text-sm font-semibold text-brand-black">Add a driver</p>
       {/* No password field, deliberately. The account is created without one
-          and the driver sets their own from the link — so nobody else ever
-          knows it, and there is no shared password to be passed around. */}
+          and the driver sets their own from the link, so nobody else ever
+          knows it and there is no shared password going round. */}
       <p className="mt-0.5 text-xs text-slate-500">
         They set their own password from a link, so there is nothing for you to make up or pass on.
       </p>
@@ -988,7 +988,7 @@ export function DriversConfig() {
                 <input className={input} value={draft.phone} placeholder="Phone (optional)"
                        aria-label={`Phone for ${d.name}`}
                        onChange={(e) => setEdit((v) => ({ ...v, [d.id]: { ...draft, phone: e.target.value } }))} />
-                <span className="text-xs text-slate-400">{d.email} — sign-in email, not editable here</span>
+                <span className="text-xs text-slate-400">{d.email} (sign-in email, cannot be changed here)</span>
               </span>
             ) : (
               <span>
@@ -1129,7 +1129,7 @@ export function AdminsConfig() {
           Add an admin
         </button>
       )}
-      footer="Sign-in is through Google — adding someone puts them on the allowlist, it does not create a password. The last active admin cannot be removed."
+      footer="Sign-in is through Google. Adding someone lets that Google account in; it does not create a password. The last active admin cannot be removed."
     >
       <Err>{error}</Err>
       {adding && (
@@ -1239,7 +1239,7 @@ export function Roster() {
   });
 
   const needsOutlet = (d) => {
-    setError(`${d.name} has no outlet yet — set one on the Drivers tab first, since the outlet decides which delivery windows their trips are measured against.`);
+    setError(`${d.name} has no outlet yet. Set one on the Drivers tab first, because the outlet decides which delivery windows their trips are measured against.`);
   };
 
   const toggle = (driver, date) => {
@@ -1304,7 +1304,7 @@ export function Roster() {
       {!drivers || !rows ? (
         <p className="text-sm text-slate-500">Loading…</p>
       ) : drivers.length === 0 ? (
-        <p className="text-sm text-slate-500">No active drivers yet — they appear here once they sign up.</p>
+        <p className="text-sm text-slate-500">No active drivers yet. They appear here once they sign up.</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -1421,7 +1421,7 @@ export function ActivityLog() {
           {Object.entries(ENTITY_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </select>
       }
-      footer="Changing a window or a time limit re-scores past trips, so this is how you answer “why does last month read differently now?” — and how a claim survives Lotus asking whether the bar moved after the fact."
+      footer="Changing a window or a time limit also changes the figures for past trips. This log is how you answer “why does last month read differently now?”, and how a claim holds up if Lotus asks whether the bar was moved afterwards."
     >
       <Err>{error}</Err>
 
@@ -1480,7 +1480,7 @@ export function OutletsConfig() {
           Add an outlet
         </button>
       )}
-      footer="Removing an outlet keeps its history and any trips already recorded against it — it just stops appearing when a driver picks where they work."
+      footer="Removing an outlet keeps its history and any trips already recorded against it. It just stops appearing when a driver picks where they work."
     >
       <Err>{error}</Err>
 
@@ -1601,20 +1601,20 @@ export function SampleData() {
             loaded ? "bg-amber-50 text-amber-900 ring-1 ring-amber-200" : "bg-slate-50 text-slate-600"
           }`}>
             {loaded
-              ? `Sample data is loaded — ${state.trips} trips across ${state.drivers} sample drivers. Every figure on the dashboard and in Evidence currently includes it.`
+              ? `Sample data is loaded: ${state.trips} trips across ${state.drivers} sample drivers. Every figure on the dashboard and in Evidence currently includes it.`
               : "No sample data is loaded. Everything you see is real."}
           </div>
 
           <Section
             title="What it puts in"
-            blurb="Four weeks of trips written through the same tables a driver's phone writes to — so the walkthrough exercises the real scoring, not a mock."
+            blurb="Four weeks of trips written into the same tables a driver's phone writes to, so a walkthrough uses the real calculations rather than a mock-up."
           >
             <ul className="space-y-1.5 py-2 text-sm text-slate-600">
               <li>· Six sample drivers, named with “(sample)” and spread across your real outlets.</li>
               <li>· About three trips a day each, aligned to the contracted delivery windows.</li>
               <li>· Roughly a third run over target, with delay reasons attached where they do.</li>
               <li>· One outlet performs noticeably worse than the others, so the outlet breakdown has something to point at.</li>
-              <li>· The same numbers every time — you can rehearse on Monday and present on Thursday against identical figures.</li>
+              <li>· The same numbers every time, so you can rehearse on Monday and present on Thursday against identical figures.</li>
             </ul>
           </Section>
 

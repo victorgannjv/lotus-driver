@@ -65,7 +65,7 @@ export default function Jobs() {
         <h2 className="text-base font-semibold text-brand-black">Orders</h2>
         <p className="mt-0.5 text-xs text-slate-500">
           Every parcel scanned, and how it ended. Search a tracking number when someone asks about
-          one delivery — the row opens the full trail for that parcel.
+          one delivery. Click the row to see the full trail for that parcel.
         </p>
         <div className="mt-3 flex flex-wrap items-end gap-3">
         <label className="text-sm">

@@ -396,9 +396,9 @@ export default function Evidence() {
             switched off. The legend at the foot already explains the colours;
             this line only has to answer "what is this page". */}
         <p className="mt-0.5 text-xs text-slate-500">
-          Look up any trip and pull up the proof behind it — every checkpoint with its time, place
-          and photo, and the reason given for a delay. This is what a late-delivery charge from
-          Lotus gets argued with.
+          Look up any trip and see the proof behind it: every checkpoint with its time, place and
+          photo, and the reason given for a delay. This is what you use to argue a late-delivery
+          charge from Lotus.
         </p>
         {/* The colour key, at the top and folded away.
             It sat at the FOOT of the page as seven entries on one flat list,
@@ -420,13 +420,13 @@ export default function Evidence() {
             </li>
             <li>
               <b className="font-semibold text-slate-600">The Owner column.</b>{" "}
-              <Swatch tone="bg-amber-500" /> Lotus, recoverable
+              <Swatch tone="bg-amber-500" /> Lotus, we can claim it back
               <span className="px-1.5 text-slate-300">·</span>
-              <Swatch tone="bg-blue-600" /> Ninja Van, absorbed by us
+              <Swatch tone="bg-blue-600" /> Ninja Van, we cover it
               <span className="px-1.5 text-slate-300">·</span>
-              <Swatch tone="bg-emerald-500" /> external, not attributable
+              <Swatch tone="bg-emerald-500" /> outside causes, nobody to bill
               <span className="px-1.5 text-slate-300">·</span>
-              <Swatch tone="bg-orange-500" /> no reason given, so unattributable
+              <Swatch tone="bg-orange-500" /> no reason given, so nobody to bill
               <span className="px-1.5 text-slate-300">·</span>
               <Swatch tone="bg-slate-300" /> on time, nothing to explain
             </li>

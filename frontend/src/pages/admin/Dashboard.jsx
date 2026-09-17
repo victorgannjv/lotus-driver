@@ -104,7 +104,7 @@ function Legend({ items }) {
           <span className={`h-2.5 w-2.5 rounded-sm ${i.dot}`} />
           <span>
             <b className="font-semibold text-slate-700">{i.label}</b>
-            {i.note ? ` — ${i.note}` : ""}
+            {i.note ? `: ${i.note}` : ""}
           </span>
         </span>
       ))}
@@ -140,7 +140,9 @@ function OwnedBar({ owned }) {
 // line is simply not drawn -- a chart should not imply a bar that is not
 // being applied.
 export default function Dashboard() {
-  const [range, setRange] = useState({ mode: "l7d" });
+  // Today, not the last seven days. The dashboard is opened to see how the
+  // fleet is running right now; a week is the question you ask second.
+  const [range, setRange] = useState({ mode: "today" });
   // What the app actually holds, so the pickers can only offer that.
   const [span, setSpan] = useState(null);
   const [warehouses, setWarehouses] = useState([]);
@@ -250,7 +252,7 @@ export default function Dashboard() {
                    className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
             {(!range.from || !range.to) && (
               <span className="text-xs text-slate-400">
-                Pick both dates — showing the last 7 days until you do.
+                Pick both dates. Until you do, this shows today.
                 {span?.first_date && ` Trips run from ${formatDate(span.first_date)} to ${formatDate(span.last_date)}.`}
               </span>
             )}
@@ -292,8 +294,8 @@ export default function Dashboard() {
                 A run that reaches the outlet after its window has opened is counted against Ninja Van.
               </NoteItem>
               <NoteItem term="Still there at closing is the outlet's.">
-                Time after the window closes is counted against Lotus — but our own late arrival is
-                deducted first, so a claim never bills them for a start we were late to.
+                Time after the window closes is charged to Lotus. Our own late arrival is taken off
+                first, so we never bill them for a start we were late to.
               </NoteItem>
               {target ? (
                 <NoteItem term="Steps over their limit.">
@@ -308,10 +310,10 @@ export default function Dashboard() {
               )}
             </>}
           >
-            Every figure comes from checkpoints drivers stamp on their phones — nothing is typed in by
+            Every figure comes from checkpoints drivers stamp on their phones. Nothing is typed in by
             hand. {target
-              ? "Lateness is judged against the delivery window for the run and the time limit on each step."
-              : "Lateness is judged against the contracted delivery window for each run."}
+              ? "Being late is measured two ways: against the delivery window for the run, and against the time limit on each step."
+              : "Being late is measured against the delivery window agreed for each run."}
           </SectionNote>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {/* Two sources, one row. The per-step limits are off, so
@@ -364,7 +366,7 @@ export default function Dashboard() {
               value={formatDuration(target ? t.owned_minutes.njv : win.late_minutes_njv ?? 0)}
               sub={target
                 ? "Same measure, where the driver's reason points at Ninja Van"
-                : "Minutes a run arrived after its delivery window opened — counted first, before any Lotus delay"}
+                : "Minutes a run arrived after its delivery window opened. Counted first, before any Lotus delay."}
             />
           </div>
 
@@ -376,11 +378,11 @@ export default function Dashboard() {
             <SectionNote
               more={<>
                 <NoteItem term="Why it is here.">
-                  It answers the staffing question before the outlet one — a slow day with two drivers
-                  out is ours, not Lotus's, and this is where you can tell.
+                  It answers the staffing question before the outlet one. A slow day with two drivers
+                  off is ours, not Lotus's, and this is where you can tell.
                 </NoteItem>
                 <NoteItem term="On duty.">
-                  Counted from trips actually run, not from a roster. A driver who was scheduled and did
+                  Counted from trips actually run, not from the roster. A driver who was rostered but did
                   not drive does not appear.
                 </NoteItem>
               </>}
@@ -454,9 +456,9 @@ export default function Dashboard() {
               more={<>
                 <NoteItem term="Each point.">
                   Covers the whole {BUCKET_WORD[data.trend_bucket] || "week"} it is labelled with, in its real
-                  place on the timeline — a gap means the fleet did not run, not that it scored zero.
+                  place on the timeline. A gap means nobody ran that day, not that the time was zero.
                 </NoteItem>
-                <NoteItem term="The grain follows the period.">
+                <NoteItem term="The grouping follows the period.">
                   Day by day for a week or a month, week by week beyond that, month by month for a long
                   range. Change the period above and this regroups.
                 </NoteItem>
@@ -513,16 +515,16 @@ export default function Dashboard() {
               more={<>
                 <NoteItem term="What the minutes are.">
                   {data.reasons_over_allowance
-                    ? "The time a step ran past its limit — the overage, not the whole step."
-                    : "The whole length of the step the reason explains. With per-step time limits off there is no bar to be over, so there is no overage to measure."}
+                    ? "Only the extra time a step ran past its limit, not the whole step."
+                    : "The whole length of the step the reason explains. With per-step time limits off, there is no limit to go over, so there is no extra time to count."}
                 </NoteItem>
                 <NoteItem term="Where they come from.">
-                  A driver picks a coded reason against a step. Nothing here is typed free-hand, which is
-                  what makes these totals addable in the first place.
+                  A driver picks a reason from a set list against a step. Nobody types their own wording,
+                  which is what lets these be added up at all.
                 </NoteItem>
                 <NoteItem term="The colours.">
-                  Who the reason points at — amber Lotus, blue Ninja Van, green external. That tagging
-                  lives on the reason code, in Settings › Delay reasons.
+                  Who the reason points at: amber for Lotus, blue for Ninja Van, green for outside causes.
+                  You set that on each reason in Settings, under Delay reasons.
                 </NoteItem>
               </>}
             >
@@ -548,8 +550,8 @@ export default function Dashboard() {
                       with the limits off nothing ever ran over, so this line
                       was telling people to wait for something that could not
                       happen. Any coded reason lands here now. */}
-                  No reasons recorded in this period — they appear here as soon as drivers start
-                  giving them on their trips.
+                  No reasons recorded in this period. They appear here as soon as drivers start giving
+                  them on their trips.
                 </p>
               )}
             </div>

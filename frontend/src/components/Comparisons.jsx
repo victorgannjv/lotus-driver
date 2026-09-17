@@ -28,10 +28,10 @@ const ROWS = [
   // base to compare against, which is what these rows are. Earlier is better
   // on all four: an earlier arrival is a truck in position, an earlier
   // departure is less time held at the outlet.
-  { key: "trip1_arrival", label: "1st trip — arrived", good: "down", time: true },
-  { key: "trip1_departure", label: "1st trip — left", good: "down", time: true },
-  { key: "trip2_arrival", label: "2nd trip — arrived", good: "down", time: true },
-  { key: "trip2_departure", label: "2nd trip — left", good: "down", time: true },
+  { key: "trip1_arrival", label: "1st trip: arrived", good: "down", time: true },
+  { key: "trip1_departure", label: "1st trip: left", good: "down", time: true },
+  { key: "trip2_arrival", label: "2nd trip: arrived", good: "down", time: true },
+  { key: "trip2_departure", label: "2nd trip: left", good: "down", time: true },
 ];
 
 // Minutes since midnight -> "12:05".
@@ -146,7 +146,7 @@ export default function Comparisons({ comparisons }) {
       <div className="mt-5 border-t border-slate-200 pt-4">
         <h3 className="text-sm font-semibold text-brand-black">Against the same stretch before</h3>
         <p className="mt-1 text-xs text-slate-500">
-          Nothing to compare against yet — there are no trips in any of the earlier windows. Day on
+          Nothing to compare against yet. There are no trips in any of the earlier periods. Day on
           day appears after two days of trips, week on week after two weeks, month on month after
           two months.
         </p>
@@ -159,17 +159,17 @@ export default function Comparisons({ comparisons }) {
       <h3 className="text-sm font-semibold text-brand-black">Against the same stretch before</h3>
       <SectionNote
         more={<>
-          <NoteItem term="Like for like.">
-            This week so far against the same days last week; this month so far against the same dates
-            last month. Four days against a full seven would report a collapse every Wednesday.
+          <NoteItem term="Same days on both sides.">
+            This week so far against the same days last week. This month so far against the same dates
+            last month. Four days against a full seven would show a drop every Wednesday.
           </NoteItem>
-          <NoteItem term="Fixed windows.">
-            These do not follow the period picker at the top. A comparison whose meaning changes when
+          <NoteItem term="These periods are fixed.">
+            They do not follow the period buttons at the top. A comparison that changes meaning when
             someone clicks a tab is one nobody can quote in a meeting.
           </NoteItem>
           <NoteItem term="Earlier is better on the times.">
-            An earlier arrival is a truck in position; an earlier departure is less time held at the
-            outlet.
+            Arriving earlier means the truck is ready sooner. Leaving earlier means less time stuck at
+            the outlet.
           </NoteItem>
         </>}
       >
@@ -238,7 +238,7 @@ export default function Comparisons({ comparisons }) {
 
       {usable.some((c) => c.partial) && (
         <p className="mt-2 text-xs text-slate-400">
-          The current side of each pair ends today, a day still being worked, so it is short by
+          The newer side of each pair ends today, which is still being worked, so it is short by
           however much of today is left.
         </p>
       )}

@@ -102,17 +102,17 @@ export default function TripOfDay({ rows, unnumbered, from, to }) {
       <SectionNote
         more={<>
           <NoteItem term="Two different boundaries.">
-            Arrival is measured against the time the window <b>opens</b>; departure against the time it
-            <b> closes</b>. The columns say which is which.
+            Arrival is measured against the time the window <b>opens</b>. Departure is measured against
+            the time it <b>closes</b>. The columns say which is which.
           </NoteItem>
           <NoteItem term="Why the runs are split.">
-            The first run and the second have different contracted windows and behave nothing alike —
-            the first waits for goods to be picked, the second collects what is already staged.
-            Averaged together, neither question gets answered.
+            The first run and the second have different agreed windows and behave nothing alike. The
+            first waits for goods to be picked, the second collects what is already packed. Averaged
+            together, you cannot answer either question.
           </NoteItem>
-          <NoteItem term="Two denominators.">
-            Whether a truck arrived in time is known the moment it arrives; whether it left in time
-            cannot be judged until it has. A run still at the outlet counts in the first, not the second.
+          <NoteItem term="Why the two counts differ.">
+            You know whether a truck arrived in time the moment it arrives. You cannot know whether it
+            left in time until it has left. A run still at the outlet counts in the first, not the second.
           </NoteItem>
         </>}
       >
@@ -205,7 +205,7 @@ export default function TripOfDay({ rows, unnumbered, from, to }) {
           Show the trips behind these averages
         </summary>
         <p className="mt-2 text-xs text-slate-400">
-          Any row opens that trip in Evidence — its checkpoints, times, places and photos.
+          Click any row to open that trip in Evidence, with its checkpoints, times, places and photos.
         </p>
         <div className="mt-1 overflow-x-auto">
           <table className="min-w-full text-left text-xs">

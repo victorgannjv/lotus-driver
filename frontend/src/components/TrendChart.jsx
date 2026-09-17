@@ -174,8 +174,8 @@ export default function TrendChart({ trend, target, bucket = "week", from, to })
     const noun = BUCKET_NOUN[bucket] || "week";
     return (
       <p className="mt-3 text-xs text-slate-400">
-        Trips on one {noun} only in this period. A trend needs at least two — widen the period
-        above, or come back once there are more.
+        Trips on only one {noun} in this period. A trend needs at least two, so widen the period
+        above or come back when there are more.
       </p>
     );
   }
