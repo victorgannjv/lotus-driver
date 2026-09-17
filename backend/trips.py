@@ -306,8 +306,31 @@ def active_checkpoints(settings: dict) -> list[str]:
     """
     chosen = set(setting_list(settings, "active_checkpoints"))
     if not chosen:
-        return list(CHECKPOINT_ORDER)
-    return [cp for cp in CHECKPOINT_ORDER if cp in chosen or cp in LOCKED_CHECKPOINTS]
+        active = list(CHECKPOINT_ORDER)
+    else:
+        active = [cp for cp in CHECKPOINT_ORDER if cp in chosen or cp in LOCKED_CHECKPOINTS]
+
+    # `deliveries_done` is fired by the server when the last drop closes. With
+    # the drops layer switched off there are no drops to close, so it would
+    # sit unstamped on every trip forever -- a step the timeline draws, the
+    # driver cannot act on, and nothing will ever fill in. It is locked
+    # against the checkpoint setting, not against this one.
+    if not job_tracking_enabled(settings):
+        active = [cp for cp in active if cp != "deliveries_done"]
+    return active
+
+
+def job_tracking_enabled(settings: dict) -> bool:
+    """Whether the app asks for drops and parcels at all.
+
+    A trip records two things at once: when the truck was at the outlet, and
+    what it carried. The Lotus dispute rests almost entirely on the first.
+    During adoption the second can be switched off -- the drop count sheet and
+    the parcel scanning are the longest part of the flow and the easiest place
+    for a driver still learning it to give up -- and switched back on later
+    without a deploy. Default on, so an unmigrated database behaves as before.
+    """
+    return setting_bool(settings, "job_tracking_enabled", True)
 
 
 def trip_end(stamps: dict, ended_cp: str):

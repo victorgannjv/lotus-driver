@@ -26,6 +26,7 @@ from trips import (
     DRIVER_CHECKPOINTS,
     active_checkpoints,
     final_checkpoint,
+    job_tracking_enabled,
     stampable_checkpoints,
     load_schedules,
     schedule_variance,
@@ -87,7 +88,9 @@ async def _trip_state(pool, trip: dict) -> dict:
     mid = trip["id"]
     cps = (await fetch_checkpoints(pool, [mid])).get(mid, {})
     targets = await load_targets(pool)
-    active = active_checkpoints(await load_settings(pool))
+    trip_settings = await load_settings(pool)
+    active = active_checkpoints(trip_settings)
+    tracking = job_tracking_enabled(trip_settings)
     stamps = stamps_from(cps)
     gaps = compute_gaps(stamps, targets, trip["warehouse_id"])
 
@@ -178,6 +181,10 @@ async def _trip_state(pool, trip: dict) -> dict:
         # already been recorded.
         "active_checkpoints": active,
         "final_checkpoint": final_checkpoint(active),
+        # Whether this fleet is recording drops and parcels at all. Sent with
+        # the trip rather than only in the settings, so a screen already open
+        # follows the switch on its next refresh.
+        "job_tracking": tracking,
     }
 
 
@@ -196,6 +203,7 @@ async def driver_app_settings(request: Request, driver=Depends(get_current_drive
         # shape of the run on the first screen, and it has to be the shape
         # that is actually configured.
         "active_checkpoints": active_checkpoints(s),
+        "job_tracking_enabled": job_tracking_enabled(s),
         "photo_required_checkpoints": setting_list(s, "photo_required_checkpoints"),
         "photo_burn_timestamp": setting_bool(s, "photo_burn_timestamp", True),
         "photo_timestamp_source": s.get("photo_timestamp_source", "server"),
@@ -439,6 +447,8 @@ async def set_job_count(
     pool = get_pool(request)
     trip = await _owned_trip(pool, driver["id"], manifest_id)
     settings = await load_settings(pool)
+    if not job_tracking_enabled(settings):
+        raise HTTPException(status_code=409, detail="drops and parcels are switched off for this app")
     max_jobs = int(settings.get("job_count_manual_max", "40"))
     if job_count < 1 or job_count > max_jobs:
         raise HTTPException(status_code=422, detail=f"job count must be between 1 and {max_jobs}")
@@ -473,6 +483,8 @@ async def amend_job_count(
     pool = get_pool(request)
     trip = await _owned_trip(pool, driver["id"], manifest_id)
     settings = await load_settings(pool)
+    if not job_tracking_enabled(settings):
+        raise HTTPException(status_code=409, detail="drops and parcels are switched off for this app")
     max_jobs = int(settings.get("job_count_manual_max", "40"))
     if job_count < 1 or job_count > max_jobs:
         raise HTTPException(status_code=422, detail=f"job count must be between 1 and {max_jobs}")
@@ -513,6 +525,8 @@ async def add_job(manifest_id: int, request: Request, driver=Depends(get_current
     pool = get_pool(request)
     trip = await _owned_trip(pool, driver["id"], manifest_id)
     settings = await load_settings(pool)
+    if not job_tracking_enabled(settings):
+        raise HTTPException(status_code=409, detail="drops and parcels are switched off for this app")
     if not setting_bool(settings, "allow_add_job_mid_trip", True):
         raise HTTPException(status_code=409, detail="adding a job mid-trip is switched off")
     async with pool.acquire() as conn, conn.cursor() as cur:

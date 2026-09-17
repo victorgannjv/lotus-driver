@@ -90,6 +90,18 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
   // handler would throw the moment it was called.
   const active = state?.active_checkpoints || settings?.active_checkpoints || STEPS;
 
+  // Whether this fleet records drops and parcels at all.
+  //
+  // With it off the app is a checkpoint recorder and nothing else: no drop
+  // count, no drop list, no parcel scanning. The dispute with Lotus rests on
+  // the timings, and during adoption the load layer is the longest part of
+  // the flow and the easiest place for a driver still learning it to stop.
+  //
+  // Read from the trip while one is running and from the app settings before
+  // it starts, same as the step list, and defaulting to ON so an app that
+  // has not fetched settings yet behaves as it always has.
+  const jobsTracked = state?.job_tracking ?? settings?.job_tracking_enabled ?? true;
+
   // Where the "how many drops?" question belongs: at the loading bay while
   // that step exists, otherwise as soon as the trip starts.
   const countAnchor = active.includes("loaded") ? "loaded" : "arrived";
@@ -166,7 +178,7 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
       const next = await api.postForm(`/trips/${manifestId}/checkpoints`, fd);
       setState(next);
       setPendingPhoto(null);
-      if (checkpoint === countAnchor && next.trip.expected_job_count == null) {
+      if (jobsTracked && checkpoint === countAnchor && next.trip.expected_job_count == null) {
         setPendingCount(true);
       } else if (next.reason_required_for) {
         openReason(checkpoint, next);
@@ -288,7 +300,7 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
 
   // What the one big button does right now.
   let action = null;
-  if (nextJob && readyToDeliver) {
+  if (jobsTracked && nextJob && readyToDeliver) {
     action = {
       label: t("trip.completeJob", { n: nextJob.seq, total: state.jobs.length }),
       run: () => setPendingPhoto({
@@ -308,7 +320,7 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
 
   // The job count can be set or changed for as long as the trip is open. It
   // is not a one-shot question asked at the loading bay.
-  const canSetJobs = stamped.has(countAnchor) && !tripOver;
+  const canSetJobs = jobsTracked && stamped.has(countAnchor) && !tripOver;
   const jobsMissing = canSetJobs && state.jobs.length === 0;
 
   const win = state.window;
@@ -455,11 +467,11 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
             {starting ? t("home.oneSec") : action.label}
           </button>
           <p className="mt-2 text-center text-xs text-slate-400">
-            {nextJob && readyToDeliver ? t("trip.jobCtaHint") : t("trip.ctaHint")}
+            {jobsTracked && nextJob && readyToDeliver ? t("trip.jobCtaHint") : t("trip.ctaHint")}
           </p>
           {/* A job is a drop; a scan is one parcel inside it. Both are needed,
               so say which is which instead of leaving two similar buttons. */}
-          {nextJob && readyToDeliver && (
+          {jobsTracked && nextJob && readyToDeliver && (
             <Link
               to="/driver/scans/complete"
               className="mt-3 flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-medium text-brand-black shadow-sm ring-1 ring-slate-200"
@@ -592,7 +604,7 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
                     : t("trip.setJobCount")}
                 </button>
               )}
-              {cp === "deliveries_done" && state.jobs.length > 0 && (
+              {cp === "deliveries_done" && jobsTracked && state.jobs.length > 0 && (
                 <ul className="mt-2 space-y-1.5">
                   {state.jobs.map((j) => {
                     const expanded = openJob === j.id;
@@ -679,7 +691,7 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
           floating at the bottom of the screen where it competed with the one
           real next action. Parcels are scanned IN between goods-ready and
           loaded... */}
-      {stamped.has(scanAnchor) && !readyToDeliver && (
+      {jobsTracked && stamped.has(scanAnchor) && !readyToDeliver && (
         <Link
           to={`/driver/manifests/${manifestId}/register`}
           className="mt-2 flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-medium text-brand-black shadow-sm ring-1 ring-slate-200"

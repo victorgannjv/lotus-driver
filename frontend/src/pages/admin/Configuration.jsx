@@ -573,6 +573,11 @@ const TRIP_STEPS = [
 ];
 
 const SETTING_UI = {
+  job_tracking_enabled: {
+    label: "Record drops and parcels",
+    help: "Off leaves the app recording checkpoint times only — no drop count, no drop list, no parcel scanning, and no “Deliveries done” step. Trips that already recorded drops keep them.",
+    type: "bool",
+  },
   active_checkpoints: {
     label: "Steps a trip is made of",
     help: "Switch one off and the app stops asking for it — the driver goes straight to the next step. Trips that already recorded it keep it, and so does every claim built on them.",
@@ -610,9 +615,12 @@ const SETTING_GROUPS = [
     keys: ["active_checkpoints"],
   },
   {
-    title: "Counting the jobs",
-    blurb: "What the app accepts when a driver says how many drops a trip carries.",
-    keys: ["job_count_quick_picks", "job_count_manual_max", "allow_add_job_mid_trip"],
+    title: "Drops and parcels",
+    blurb: "Whether the app tracks what the truck carried, and what it accepts when a driver says how many drops a trip has.",
+    keys: ["job_tracking_enabled", "job_count_quick_picks", "job_count_manual_max", "allow_add_job_mid_trip"],
+    // Everything under the master switch is unreachable while it is off, so
+    // the rows say so rather than offering settings with nowhere to land.
+    governedBy: "job_tracking_enabled",
   },
   {
     title: "Photo evidence",
@@ -628,24 +636,31 @@ const SETTING_GROUPS = [
 
 // Module scope on purpose -- see the note on ReasonFields. Declared inside
 // DriverApp this would remount the number box on every keystroke.
-function SettingRow({ s, ui, v, dirty, busy, set, commit, active = [] }) {
+function SettingRow({ s, ui, v, dirty, busy, set, commit, active = [], off = false }) {
   const k = s.setting_key;
   const isOn = (x) => String(x).toLowerCase() === "true";
+  const locked = off || busy;
 
   return (
     <Row>
       <span className="min-w-[18rem] flex-1">
-        <span className="block text-sm font-medium text-brand-black">{ui.label}</span>
-        <span className="mt-0.5 block text-xs text-slate-500">{ui.help}</span>
+        <span className={`block text-sm font-medium ${off ? "text-slate-400" : "text-brand-black"}`}>
+          {ui.label}
+        </span>
+        <span className="mt-0.5 block text-xs text-slate-500">
+          {/* A setting that cannot take effect says why, rather than sitting
+              there looking adjustable. */}
+          {off ? "Not used while drops and parcels are switched off." : ui.help}
+        </span>
       </span>
 
       {ui.type === "bool" && (
-        <Toggle on={isOn(v)} disabled={busy} label={ui.label}
+        <Toggle on={isOn(v)} disabled={locked} label={ui.label}
                 onChange={(next) => { set(k, String(next)); commit(k, next); }} />
       )}
 
       {ui.type === "choice" && (
-        <select className={input} value={v} disabled={busy}
+        <select className={input} value={v} disabled={locked}
                 onChange={(e) => { set(k, e.target.value); commit(k, e.target.value); }}>
           {ui.options.map(([val, label]) => <option key={val} value={val}>{label}</option>)}
         </select>
@@ -654,8 +669,8 @@ function SettingRow({ s, ui, v, dirty, busy, set, commit, active = [] }) {
       {ui.type === "number" && (
         <>
           <input type="number" min={ui.min} max={ui.max} className={`${input} w-24`} value={v}
-                 onChange={(e) => set(k, e.target.value)} />
-          <button type="button" className={btnPrimary} disabled={busy || !dirty}
+                 disabled={locked} onChange={(e) => set(k, e.target.value)} />
+          <button type="button" className={btnPrimary} disabled={locked || !dirty}
                   onClick={() => commit(k, v)}>Save</button>
         </>
       )}
@@ -666,11 +681,12 @@ function SettingRow({ s, ui, v, dirty, busy, set, commit, active = [] }) {
             {String(v).split(",").filter(Boolean).map((n, i, arr) => (
               <span key={i} className="flex items-center gap-1.5 rounded-lg bg-slate-100 px-2.5 py-1.5 text-sm">
                 {n.trim()}
-                <button type="button" aria-label={`Remove ${n}`} className="text-slate-400 hover:text-rose-600"
+                <button type="button" aria-label={`Remove ${n}`} disabled={locked}
+                        className="text-slate-400 hover:text-rose-600 disabled:opacity-40"
                         onClick={() => set(k, arr.filter((_, j) => j !== i).join(","))}>×</button>
               </span>
             ))}
-            <button type="button" className={btn}
+            <button type="button" className={btn} disabled={locked}
                     onClick={() => {
                       const n = parseInt(window.prompt("Add a number"), 10);
                       if (!Number.isNaN(n) && n > 0) {
@@ -778,6 +794,12 @@ export function DriverApp() {
       {!rows ? <p className="text-sm text-slate-500">Loading…</p> : SETTING_GROUPS.map((g) => {
         const items = g.keys.map((k) => byKey[k]).filter((s) => s && SETTING_UI[s.setting_key]);
         if (items.length === 0) return null;
+        // Reads the unsaved edit, so the rows below grey out the moment the
+        // master switch is flipped rather than after a reload.
+        const governing = g.governedBy
+          ? (draft[g.governedBy] !== undefined ? draft[g.governedBy] : byKey[g.governedBy]?.value)
+          : null;
+        const groupOff = g.governedBy && String(governing).toLowerCase() === "false";
         return (
           <Section key={g.title} title={g.title} blurb={g.blurb}>
             {items.map((s) => {
@@ -786,7 +808,8 @@ export function DriverApp() {
               return (
                 <SettingRow key={k} s={s} ui={SETTING_UI[k]} v={v} busy={busy}
                             dirty={draft[k] !== undefined && String(draft[k]) !== s.value}
-                            set={set} commit={commit} active={activeSteps} />
+                            set={set} commit={commit} active={activeSteps}
+                            off={groupOff && k !== g.governedBy} />
               );
             })}
           </Section>
