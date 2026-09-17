@@ -165,6 +165,11 @@ async def _scored(pool, rows: list[dict]) -> list[dict]:
             **{k: r[k] for k in ("id", "driver_id", "driver_name", "warehouse_id", "warehouse_name")},
             "window": window,
             "missed_window": bool(window and window.get("departed_late_minutes")),
+            # Which run of the day this was -- stamped at trip start, so a
+            # cancelled or re-ordered later trip can never retro-change it.
+            # Read for the window above but never passed on, which is why
+            # nothing downstream could split first runs from second ones.
+            "schedule_slot_no": r.get("schedule_slot_no"),
             "work_date": str(r["work_date"]),
             "day_closed_at": fmt(r["day_closed_at"]),
             "expected_job_count": r["expected_job_count"],
@@ -191,6 +196,108 @@ async def _scored(pool, rows: list[dict]) -> list[dict]:
             "ended_at": fmt(trip_end(stamps, ended_cp)),
         })
     return out
+
+
+def _checkpoint_at(trip: dict, checkpoint: str) -> str | None:
+    """A checkpoint's local wall-clock stamp, "YYYY-MM-DD HH:MM:SS"."""
+    cp = next((c for c in trip["checkpoints"] if c["checkpoint"] == checkpoint), None)
+    return (cp or {}).get("occurred_at")
+
+
+def _clock_minutes(stamp: str | None) -> int | None:
+    """Minutes since midnight, from an already-local stamp. Averaging times of
+    day only means anything within one day, which is what a shift is."""
+    if not stamp or len(stamp) < 16:
+        return None
+    try:
+        return int(stamp[11:13]) * 60 + int(stamp[14:16])
+    except ValueError:
+        return None
+
+
+def _hhmm(total) -> str | None:
+    if total is None:
+        return None
+    total = int(round(total))
+    return f"{(total // 60) % 24:02d}:{total % 60:02d}"
+
+
+def _mean(values: list[int]) -> float | None:
+    return sum(values) / len(values) if values else None
+
+
+# ---------------------------------------------------------------------------
+# Arrival and departure, split by which run of the day it was.
+#
+# The two figures a claim actually turns on: when the truck got to the outlet
+# and when it got out, for the first trip and for the second. They were in the
+# data all along -- every trip is stamped with its slot at the moment it
+# starts -- but every screen averaged all runs together, which hides the thing
+# worth seeing. A first run and a second run are measured against DIFFERENT
+# contracted windows and behave nothing alike; one mean across both answers
+# neither question.
+# ---------------------------------------------------------------------------
+def _by_trip_of_day(trips: list[dict]) -> tuple[list[dict], int]:
+    by_slot: dict = {}
+    unnumbered = 0
+    for t in trips:
+        slot = t.get("schedule_slot_no")
+        if slot is None:
+            # Trips from before slots were stamped. Counted and reported
+            # rather than dropped, so the rows below always add up.
+            unnumbered += 1
+            continue
+        s = by_slot.setdefault(slot, {"slot_no": slot, "arrivals": [], "departures": [],
+                                      "at_outlet": [], "trips": 0, "windowed": [], "label": None,
+                                      "window_start": None, "window_end": None})
+        s["trips"] += 1
+        arrived = _clock_minutes(_checkpoint_at(t, "arrived"))
+        departed = _clock_minutes(_checkpoint_at(t, "departed"))
+        if arrived is not None:
+            s["arrivals"].append(arrived)
+        if departed is not None:
+            s["departures"].append(departed)
+        if t["time_at_outlet"]:
+            s["at_outlet"].append(t["time_at_outlet"]["minutes"])
+        w = t.get("window")
+        if w:
+            s["label"] = s["label"] or w.get("label")
+            s["window_start"] = s["window_start"] or w.get("window_start")
+            s["window_end"] = s["window_end"] or w.get("window_end")
+            s["windowed"].append(w)
+
+    rows = []
+    for slot in sorted(by_slot):
+        s = by_slot[slot]
+        w = s["windowed"]
+        rows.append({
+            "slot_no": slot,
+            "label": s["label"] or f"Trip {slot}",
+            "window_start": s["window_start"],
+            "window_end": s["window_end"],
+            "trips": s["trips"],
+            # The two headline figures, as a time of day rather than a
+            # duration -- "arrived 09:48 on average" is the sentence someone
+            # says out loud in a meeting with Lotus.
+            "avg_arrival": _hhmm(_mean(s["arrivals"])),
+            "avg_departure": _hhmm(_mean(s["departures"])),
+            "arrivals_recorded": len(s["arrivals"]),
+            "departures_recorded": len(s["departures"]),
+            "avg_at_outlet_minutes": round(_mean(s["at_outlet"])) if s["at_outlet"] else None,
+            # TWO denominators, not one. Whether a truck ARRIVED in time is
+            # known the moment it arrives; whether it LEFT in time cannot be
+            # judged until it has. Scoring both against the trips that have
+            # departed threw away the arrival verdict on every run still
+            # sitting at the outlet -- which is exactly the run someone is
+            # looking at the dashboard to ask about.
+            "arrivals_with_window": len(w),
+            "arrived_on_time": sum(1 for x in w if x["arrived_on_time"]),
+            "departures_with_window": sum(1 for x in w if x["departed_on_time"] is not None),
+            "departed_on_time": sum(1 for x in w if x["departed_on_time"]),
+            "lotus_late_minutes": sum(x["lotus_late_minutes"] for x in w),
+            "njv_late_minutes": sum(x["njv_late_minutes"] for x in w),
+        })
+    return rows, unnumbered
 
 
 def _owned_minutes(trips: list[dict]) -> dict:
@@ -385,6 +492,8 @@ async def overview(
     avg, prev_avg = _avg_at_outlet(trips), _avg_at_outlet(prev)
     breached = sum(1 for t in trips if t["over_target"])
 
+    trip_of_day, unnumbered = _by_trip_of_day(trips)
+
     # Per-outlet breakdown -- the zoom that shows Puchong and Shah Alam are not
     # the same problem, and shouldn't be averaged into one number.
     by_outlet: dict = {}
@@ -525,6 +634,8 @@ async def overview(
             "orders": sum(t["orders"] for t in trips),
         },
         "window": window_stats,
+        "trip_of_day": trip_of_day,
+        "trips_unnumbered": unnumbered,
         "outlets": outlets,
         "reasons": reason_rows,
         # Whether the minutes beside each reason are time OVER an allowance or

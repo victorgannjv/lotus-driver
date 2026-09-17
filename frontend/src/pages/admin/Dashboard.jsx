@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../../api";
 import TrendChart from "../../components/TrendChart";
 import Comparisons from "../../components/Comparisons";
+import TripOfDay from "../../components/TripOfDay";
 import Icon from "../../components/Icon";
 import { dayParts, formatDate, formatDuration } from "../../lib/duration";
 
@@ -335,6 +336,8 @@ export default function Dashboard() {
                 : "Minutes a run arrived after its delivery window opened — counted first, before any Lotus delay"}
             />
           </div>
+
+          <TripOfDay rows={data.trip_of_day} unnumbered={data.trips_unnumbered} />
 
           <section className="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
             <h2 className="text-base font-semibold text-brand-black">Manpower</h2>
