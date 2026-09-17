@@ -910,7 +910,7 @@ export function DriversConfig() {
           </button>
         )
       }
-      footer="The outlet decides which delivery windows and allowances a driver's trips are measured against. Turning someone off stops them signing in but keeps their trips — those are the evidence behind past claims, so an account that has run any cannot be deleted."
+      footer="The outlet decides which delivery windows and allowances a driver's trips are measured against. Turning sign-in off stops someone using the app but keeps their trips, which are the evidence behind past claims; removing the account takes those trips with it, and every dashboard figure that counted them."
     >
       <Err>{error}</Err>
       <InviteLink invite={invite} onDone={() => setInvite(null)} />
@@ -1000,17 +1000,36 @@ export function DriversConfig() {
                         }}>
                   Send sign-in link
                 </button>
-                {/* Offered only where it can actually work. A delete button
-                    that refuses on every driver who has ever driven is a
-                    button that teaches people to ignore buttons. */}
-                {d.trips === 0 && (
-                  <button type="button" className={btnDanger} disabled={busy}
-                          title="This account has never run a trip, so deleting it destroys no evidence"
-                          onClick={() => confirmed(`Delete ${d.name}? They have no trips, so nothing is lost — but the account goes for good.`)
-                            && run(() => api.del(`/admin/config/drivers/${d.id}`))}>
-                    Delete
-                  </button>
-                )}
+                {/* On every row. It was withheld from anyone who had driven,
+                    on the grounds that their trips are dispute evidence --
+                    but which accounts are worth keeping is the account
+                    list's call, not this button's, and during adoption most
+                    of the list is test accounts whose trips are test trips.
+
+                    What goes with it is stated in numbers first, and an
+                    account with trips also has to have its name typed. One
+                    misclick should not be able to remove fourteen trips'
+                    worth of figures from the dashboard. */}
+                <button type="button" className={btnDanger} disabled={busy}
+                        title={d.trips === 0
+                          ? "This account has never run a trip"
+                          : `Also removes ${d.trips} trip${d.trips === 1 ? "" : "s"} and their evidence`}
+                        onClick={() => {
+                          if (d.trips === 0) {
+                            if (!confirmed(`Remove ${d.name}? They have run no trips, so nothing else goes with them. This cannot be undone.`)) return;
+                          } else {
+                            const typed = window.prompt(
+                              `Remove ${d.name}?\n\n`
+                              + `This also removes ${d.trips} trip${d.trips === 1 ? "" : "s"} and `
+                              + `${d.orders} parcel${d.orders === 1 ? "" : "s"}, with their checkpoints and proof photos. `
+                              + `Those trips disappear from the dashboard and from Evidence, and every figure that counted them changes.\n\n`
+                              + `This cannot be undone. Type the driver's name to confirm:`);
+                            if ((typed || "").trim().toLowerCase() !== d.name.trim().toLowerCase()) return;
+                          }
+                          run(() => api.del(`/admin/config/drivers/${d.id}`));
+                        }}>
+                  Delete
+                </button>
               </>
             )}
             </span>

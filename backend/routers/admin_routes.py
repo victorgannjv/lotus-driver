@@ -62,11 +62,12 @@ def _serialize_driver(row: dict) -> dict:
         "warehouse_id": row["warehouse_id"],
         "warehouse_name": row["warehouse_name"],
         "created_at": fmt(row["created_at"]),
-        # Two facts the drivers list could not show, and both change what an
-        # admin can do with the row: an account with trips can never be
-        # deleted (they are the evidence), and an account that has never set a
-        # password has not actually been onboarded, however active it looks.
+        # What deleting this account would take with it, and whether the
+        # person has ever actually got into the app. The counts are not
+        # decoration: they are what the delete confirmation quotes back, so
+        # nobody removes fourteen trips' worth of evidence by misclick.
         "trips": int(row.get("trips") or 0),
+        "orders": int(row.get("orders") or 0),
         "signed_up": bool(row.get("has_password")),
     }
 
@@ -119,7 +120,9 @@ async def list_drivers(request: Request, admin=Depends(get_current_admin)):
         await cur.execute(
             "SELECT u.id, u.name, u.email, u.phone, u.status, u.warehouse_id, w.name AS warehouse_name, "
             "u.created_at, u.password_hash IS NOT NULL AS has_password, "
-            "(SELECT COUNT(*) FROM manifests m WHERE m.driver_id = u.id) AS trips "
+            "(SELECT COUNT(*) FROM manifests m WHERE m.driver_id = u.id) AS trips, "
+            "(SELECT COUNT(*) FROM delivery_jobs dj WHERE dj.manifest_id IN "
+            " (SELECT m2.id FROM manifests m2 WHERE m2.driver_id = u.id)) AS orders "
             "FROM users u LEFT JOIN warehouses w ON w.id = u.warehouse_id "
             "WHERE u.role = 'driver' ORDER BY u.created_at DESC"
         )

@@ -510,22 +510,101 @@ async def update_driver(driver_id: int, body: DriverUpdate, request: Request, ad
     return {"id": driver_id}
 
 
+# Everything that points at a driver, in the order it has to go.
+#
+# A driver is not just a row in `users`. Their trips hang off them, their
+# drops and parcels hang off the trips, the scans hang off the parcels, and
+# the proof photos hang off all of it -- nine tables, every one with a foreign
+# key that will refuse the delete until the rows above it are gone.
+#
+# Order is not a preference here. `delivery_events` before `delivery_jobs`
+# before `trip_job` before `manifests`, because each holds a key into the
+# next; get it wrong and the database rejects the statement halfway through.
+#
+# Photos are handled last and carefully: the ones this driver uploaded are
+# removed only once nothing references them any more, and any that something
+# else still points at are simply unlinked from the person. A dangling
+# reference would be worse than a kept blob.
+async def _purge_driver(pool, driver_id: int) -> None:
+    mids = "SELECT id FROM manifests WHERE driver_id = %s"
+    async with pool.acquire() as conn:
+        # autocommit is on for the pool, so a multi-table delete needs an
+        # explicit transaction -- a failure halfway through would otherwise
+        # leave a driver who is half deleted, which is worse than either end.
+        await conn.begin()
+        try:
+            async with conn.cursor() as cur:
+                # Which photos are theirs, captured before the links go.
+                await cur.execute("SELECT id FROM photos WHERE uploaded_by = %s", (driver_id,))
+                photo_ids = [r[0] for r in await cur.fetchall()]
+
+                await cur.execute(
+                    f"DELETE FROM delivery_events WHERE driver_id = %s OR job_id IN "
+                    f"(SELECT id FROM delivery_jobs WHERE manifest_id IN ({mids}))",
+                    (driver_id, driver_id),
+                )
+                await cur.execute(
+                    f"DELETE FROM trip_photo WHERE manifest_id IN ({mids}) OR trip_job_id IN "
+                    f"(SELECT id FROM trip_job WHERE manifest_id IN ({mids}))",
+                    (driver_id, driver_id),
+                )
+                await cur.execute(f"DELETE FROM delivery_jobs WHERE manifest_id IN ({mids})", (driver_id,))
+                await cur.execute(f"DELETE FROM trip_job WHERE manifest_id IN ({mids})", (driver_id,))
+                await cur.execute(f"DELETE FROM trip_checkpoint WHERE manifest_id IN ({mids})", (driver_id,))
+                # Checkpoints on OTHER drivers' trips that this person stamped
+                # or re-coded: the trip stays, the name comes off it.
+                await cur.execute("UPDATE trip_checkpoint SET created_by = NULL WHERE created_by = %s", (driver_id,))
+                await cur.execute("UPDATE trip_checkpoint SET recoded_by = NULL WHERE recoded_by = %s", (driver_id,))
+                await cur.execute(
+                    "UPDATE manifests SET warehouse_arrived_photo_id = NULL WHERE driver_id = %s", (driver_id,)
+                )
+                await cur.execute("DELETE FROM manifests WHERE driver_id = %s", (driver_id,))
+                await cur.execute("DELETE FROM shift_roster WHERE driver_id = %s", (driver_id,))
+                await cur.execute("DELETE FROM password_reset_tokens WHERE user_id = %s", (driver_id,))
+                # The activity log keeps its entries -- the email is written
+                # into each row, so the history still reads correctly once the
+                # id it pointed at is gone.
+                await cur.execute("UPDATE config_audit SET actor_id = NULL WHERE actor_id = %s", (driver_id,))
+
+                if photo_ids:
+                    marks = ",".join(["%s"] * len(photo_ids))
+                    await cur.execute(
+                        f"DELETE FROM photos WHERE id IN ({marks}) "
+                        "AND id NOT IN (SELECT photo_id FROM trip_checkpoint WHERE photo_id IS NOT NULL) "
+                        "AND id NOT IN (SELECT photo_id FROM trip_job WHERE photo_id IS NOT NULL) "
+                        "AND id NOT IN (SELECT photo_id FROM trip_photo) "
+                        "AND id NOT IN (SELECT warehouse_arrived_photo_id FROM manifests "
+                        "               WHERE warehouse_arrived_photo_id IS NOT NULL) "
+                        "AND id NOT IN (SELECT photo_id FROM delivery_events WHERE photo_id IS NOT NULL)",
+                        tuple(photo_ids),
+                    )
+                    # Anything that survived is still in use somewhere; unlink
+                    # it so the user row can go.
+                    await cur.execute("UPDATE photos SET uploaded_by = NULL WHERE uploaded_by = %s", (driver_id,))
+
+                await cur.execute("DELETE FROM users WHERE id = %s AND role = 'driver'", (driver_id,))
+            await conn.commit()
+        except Exception:
+            await conn.rollback()
+            raise
+
+
 @router.delete("/drivers/{driver_id}")
 async def delete_driver(driver_id: int, request: Request, admin=Depends(get_current_admin)):
-    """Delete a driver account outright -- and refuse when that would destroy
-    evidence.
+    """Delete a driver account and everything recorded under it.
 
-    A driver who has run trips cannot be deleted at any price. Those trips are
-    what a claim against Lotus is built from and every one of them points back
-    at this row; removing it would leave the evidence unattributable, which is
-    the same as not having it. Turning sign-in off is the answer there, and the
-    message says so rather than just failing.
+    This is a real delete, on any driver, with no exception for one who has
+    driven. It was refused for those at first on the grounds that their trips
+    are dispute evidence; that call belongs to whoever runs the account list,
+    not to this function, and during adoption the list fills with test
+    accounts whose trips are test trips.
 
-    A driver with no trips is a typo, a duplicate, or someone who never
-    started. Keeping those forever makes the list harder to read for no gain.
-
-    This endpoint used to be the deactivate button -- DELETE that disabled a
-    row. The toggle now says what it means (PUT status), so DELETE can too.
+    What goes with them is not small, so the caller is told the count BEFORE
+    confirming and the activity log records it afterwards: the trips, their
+    drops, the parcels scanned into them, the checkpoint stamps, and the proof
+    photos nothing else references. Every figure on the dashboard and every
+    row in Evidence that came from those trips goes with them, because those
+    screens compute from the rows rather than from a stored total.
     """
     pool = get_pool(request)
     async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
@@ -533,25 +612,25 @@ async def delete_driver(driver_id: int, request: Request, admin=Depends(get_curr
         row = await cur.fetchone()
         if row is None:
             raise HTTPException(status_code=404, detail="driver not found")
-        await cur.execute("SELECT COUNT(*) AS n FROM manifests WHERE driver_id = %s", (driver_id,))
-        trips = (await cur.fetchone())["n"]
-
-    if trips:
-        plural = "s" if trips != 1 else ""
-        raise HTTPException(
-            status_code=409,
-            detail=f"{row['name']} has {trips} trip{plural} on record, which is evidence behind "
-                   "past claims. Turn their sign-in off instead.",
+        await cur.execute(
+            "SELECT (SELECT COUNT(*) FROM manifests WHERE driver_id = %s) AS trips, "
+            "(SELECT COUNT(*) FROM delivery_jobs WHERE manifest_id IN "
+            "  (SELECT id FROM manifests WHERE driver_id = %s)) AS orders",
+            (driver_id, driver_id),
         )
+        counts = await cur.fetchone()
 
-    async with pool.acquire() as conn, conn.cursor() as cur:
-        # The only rows that can point at a driver with no trips.
-        await cur.execute("DELETE FROM password_reset_tokens WHERE user_id = %s", (driver_id,))
-        await cur.execute("DELETE FROM shift_roster WHERE driver_id = %s", (driver_id,))
-        await cur.execute("DELETE FROM users WHERE id = %s AND role = 'driver'", (driver_id,))
-    await audit(pool, admin, "driver", driver_id, "delete",
-                f"Deleted driver {row['name']} ({row['email']}) -- no trips on record")
-    return {"id": driver_id, "deleted": True}
+    await _purge_driver(pool, driver_id)
+
+    await audit(
+        pool, admin, "driver", driver_id, "delete",
+        f"Deleted driver {row['name']} ({row['email']}) with {counts['trips']} trip(s) "
+        f"and {counts['orders']} parcel(s)",
+        before={"name": row["name"], "email": row["email"],
+                "trips": counts["trips"], "orders": counts["orders"]},
+    )
+    return {"id": driver_id, "deleted": True,
+            "trips": counts["trips"], "orders": counts["orders"]}
 
 
 @router.delete("/admins/{admin_id}")
