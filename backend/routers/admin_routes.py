@@ -62,6 +62,12 @@ def _serialize_driver(row: dict) -> dict:
         "warehouse_id": row["warehouse_id"],
         "warehouse_name": row["warehouse_name"],
         "created_at": fmt(row["created_at"]),
+        # Two facts the drivers list could not show, and both change what an
+        # admin can do with the row: an account with trips can never be
+        # deleted (they are the evidence), and an account that has never set a
+        # password has not actually been onboarded, however active it looks.
+        "trips": int(row.get("trips") or 0),
+        "signed_up": bool(row.get("has_password")),
     }
 
 
@@ -111,7 +117,9 @@ async def list_drivers(request: Request, admin=Depends(get_current_admin)):
     pool = get_pool(request)
     async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
         await cur.execute(
-            "SELECT u.id, u.name, u.email, u.phone, u.status, u.warehouse_id, w.name AS warehouse_name, u.created_at "
+            "SELECT u.id, u.name, u.email, u.phone, u.status, u.warehouse_id, w.name AS warehouse_name, "
+            "u.created_at, u.password_hash IS NOT NULL AS has_password, "
+            "(SELECT COUNT(*) FROM manifests m WHERE m.driver_id = u.id) AS trips "
             "FROM users u LEFT JOIN warehouses w ON w.id = u.warehouse_id "
             "WHERE u.role = 'driver' ORDER BY u.created_at DESC"
         )

@@ -183,26 +183,31 @@ def _avg_at_outlet(trips: list[dict]) -> int | None:
 
 
 # ---------------------------------------------------------------------------
-# Day on day, week on week, four weeks on four weeks.
+# Day on day, week on week, month on month.
 #
 # The dashboard answered "what happened in the selected period" and stopped
 # there, so every figure on it was a number without a direction. Commercial
 # cannot act on "3m average at outlet" -- they can act on "3m, up from 1m last
 # week, on twice the trips".
 #
+# Each window is NAMED THE WAY PEOPLE SAY IT -- W38, September -- and runs to
+# today against the same slice of the period before: this week so far against
+# the same days last week, this month so far against the same days last month.
+#
+# That "same slice" is the whole trick. Four days of this week against seven of
+# last week would report a collapse every Wednesday, and 17 days of September
+# against the whole of August would do it once a month. Comparing like spans is
+# what makes the arrow mean something.
+#
 # These windows are FIXED, deliberately independent of the period filter above.
 # A comparison whose meaning changes when someone clicks a tab is a comparison
 # nobody can quote in a meeting.
-#
-# Four weeks, not a calendar month: a delivery operation runs on a weekly
-# rhythm, and 30 days against the previous 30 puts five Saturdays against four
-# without saying so. Equal weekday counts on both sides or the change is partly
-# just the calendar.
 # ---------------------------------------------------------------------------
-COMPARISON_SPANS = [
-    ("wow", "Week on week", 7),
-    ("mom", "4 weeks on 4 weeks", 28),
-]
+
+# Fixed, not locale-derived: the frontend hardcodes the same three-letter names
+# for exactly the reason a shared dashboard should read the same to everyone.
+MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+               "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
 
 def _comparison_metrics(trips: list[dict]) -> dict:
@@ -220,13 +225,22 @@ def _comparison_metrics(trips: list[dict]) -> dict:
     }
 
 
+def _month_start(d: date) -> date:
+    return d.replace(day=1)
+
+
+def _last_day_of(month_start: date) -> int:
+    nxt = (month_start.replace(day=28) + timedelta(days=4)).replace(day=1)
+    return (nxt - timedelta(days=1)).day
+
+
 async def _comparisons(pool, warehouse_id: int | None) -> list[dict]:
     """One wide read, sliced six ways -- rather than six round trips for what
-    is the same fifty-six days of trips."""
+    is the same couple of months of trips."""
     today = local_today()
-    widest = COMPARISON_SPANS[-1][2] * 2
+    # Far enough back to cover the 1st of last month on any date.
     rows = await _scored(
-        pool, await _load_trips(pool, today - timedelta(days=widest - 1), today, warehouse_id)
+        pool, await _load_trips(pool, today - timedelta(days=75), today, warehouse_id)
     )
 
     by_day: dict = {}
@@ -253,28 +267,55 @@ async def _comparisons(pool, warehouse_id: int | None) -> list[dict]:
         out.append({
             "key": "dod",
             "label": "Day on day",
+            "current_prefix": None,
+            "previous_prefix": None,
             "current_label": cur_day,
             "previous_label": prev_day,
             # Today is still being worked. Comparing half a day to a whole one
-            # and not saying so is how a dashboard tells a lie by omission.
+            # and not saying so is how a dashboard lies by omission.
             "partial": cur_day == today.isoformat(),
             "current": _comparison_metrics(by_day[cur_day]),
             "previous": _comparison_metrics(by_day[prev_day]),
         })
 
-    for key, label, span in COMPARISON_SPANS:
-        cur_start, cur_end = today - timedelta(days=span - 1), today
-        prev_end = cur_start - timedelta(days=1)
-        prev_start = prev_end - timedelta(days=span - 1)
-        out.append({
-            "key": key,
-            "label": label,
-            "current_label": f"{cur_start.isoformat()}..{cur_end.isoformat()}",
-            "previous_label": f"{prev_start.isoformat()}..{prev_end.isoformat()}",
-            "partial": True,
-            "current": _comparison_metrics(between(cur_start, cur_end)),
-            "previous": _comparison_metrics(between(prev_start, prev_end)),
-        })
+    # Week on week, named by ISO week. This week from Monday to today, against
+    # the same weekdays of the week before -- Monday to the same weekday.
+    week_start = today - timedelta(days=today.weekday())
+    prev_week_start = week_start - timedelta(days=7)
+    prev_week_end = prev_week_start + timedelta(days=today.weekday())
+    out.append({
+        "key": "wow",
+        "label": "Week on week",
+        "current_prefix": f"W{week_start.isocalendar()[1]}",
+        "previous_prefix": f"W{prev_week_start.isocalendar()[1]}",
+        "current_label": f"{week_start.isoformat()}..{today.isoformat()}",
+        "previous_label": f"{prev_week_start.isoformat()}..{prev_week_end.isoformat()}",
+        "partial": today.weekday() != 6,
+        "current": _comparison_metrics(between(week_start, today)),
+        "previous": _comparison_metrics(between(prev_week_start, prev_week_end)),
+    })
+
+    # Month on month, named by the month. This month to date, against the same
+    # run of dates last month -- 1st to the 17th against the 1st to the 17th.
+    # A short previous month clamps to its last day (31 March has no 31
+    # February), and because the label prints the real span, the shorter side
+    # is visible rather than silently assumed.
+    month_start = _month_start(today)
+    prev_month_start = _month_start(month_start - timedelta(days=1))
+    prev_month_end = prev_month_start.replace(
+        day=min(today.day, _last_day_of(prev_month_start))
+    )
+    out.append({
+        "key": "mom",
+        "label": "Month on month",
+        "current_prefix": MONTH_NAMES[month_start.month - 1],
+        "previous_prefix": MONTH_NAMES[prev_month_start.month - 1],
+        "current_label": f"{month_start.isoformat()}..{today.isoformat()}",
+        "previous_label": f"{prev_month_start.isoformat()}..{prev_month_end.isoformat()}",
+        "partial": today.day != _last_day_of(month_start),
+        "current": _comparison_metrics(between(month_start, today)),
+        "previous": _comparison_metrics(between(prev_month_start, prev_month_end)),
+    })
 
     return out
 

@@ -122,9 +122,12 @@ function useList(path, key) {
     api.get(path).then((d) => setRows(d[key])).catch((e) => setError(e.detail || "Could not load this list."));
   }, [path, key]);
   useEffect(load, [load]);
+  // Hands back whatever the call returned, not just true -- creating a driver
+  // answers with a sign-in link that has to reach the screen. Still truthy for
+  // every existing caller that only checks whether it worked.
   const run = useCallback(async (fn) => {
     setBusy(true); setError(null);
-    try { await fn(); load(); return true; }
+    try { const out = await fn(); load(); return out ?? true; }
     catch (e) { setError(e.detail || "Could not save that change."); return false; }
     finally { setBusy(false); }
   }, [load]);
@@ -776,31 +779,166 @@ export function DriverApp() {
 
 /* --------------------------------------------------------------------- people */
 
+// A link an admin can hand over, because email is not how this fleet actually
+// passes things to each other. Shown once, on screen, with a copy button.
+function InviteLink({ invite, onDone }) {
+  const [copied, setCopied] = useState(false);
+  if (!invite) return null;
+  return (
+    <div className="mb-4 rounded-lg bg-emerald-50 px-4 py-3 ring-1 ring-emerald-200">
+      <p className="text-sm font-semibold text-emerald-900">
+        {invite.name} can now set their password
+      </p>
+      <p className="mt-0.5 text-xs text-emerald-800">
+        Emailed to {invite.email}. Send them this link as well if that inbox is not one they read —
+        it works once and expires in seven days.
+      </p>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <input
+          readOnly
+          value={invite.link}
+          onFocus={(e) => e.target.select()}
+          className="min-w-0 flex-1 rounded-lg border border-emerald-200 bg-white px-3 py-2 text-xs text-slate-700"
+        />
+        <button
+          type="button"
+          className={btn}
+          onClick={async () => {
+            try {
+              await navigator.clipboard.writeText(invite.link);
+              setCopied(true);
+              setTimeout(() => setCopied(false), 2000);
+            } catch {
+              // Clipboard is blocked outside a secure context; the field is
+              // selectable, so say that rather than failing silently.
+              setCopied(false);
+            }
+          }}
+        >
+          {copied ? "Copied" : "Copy link"}
+        </button>
+        <button type="button" className={btn} onClick={onDone}>Done</button>
+      </div>
+    </div>
+  );
+}
+
+// Module scope, like ReasonFields above: declared inside DriversConfig this is
+// a new component type every render, and the inputs lose focus mid-word.
+function NewDriverForm({ outlets, busy, onCancel, onCreate }) {
+  const [draft, setDraft] = useState({ name: "", email: "", phone: "", warehouse_id: "" });
+  const set = (k) => (e) => setDraft((d) => ({ ...d, [k]: e.target.value }));
+  const ready = draft.name.trim() && draft.email.trim();
+
+  return (
+    <form
+      className="mb-4 rounded-lg bg-slate-50 px-4 py-4 ring-1 ring-slate-200"
+      onSubmit={(e) => { e.preventDefault(); if (ready) onCreate(draft); }}
+    >
+      <p className="text-sm font-semibold text-brand-black">Add a driver</p>
+      {/* No password field, deliberately. The account is created without one
+          and the driver sets their own from the link — so nobody else ever
+          knows it, and there is no shared password to be passed around. */}
+      <p className="mt-0.5 text-xs text-slate-500">
+        They set their own password from a link, so there is nothing for you to make up or pass on.
+      </p>
+      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <label className="text-xs font-medium text-slate-600">
+          Name
+          <input className={`${input} mt-1 w-full`} value={draft.name} onChange={set("name")}
+                 placeholder="Full name" autoFocus />
+        </label>
+        <label className="text-xs font-medium text-slate-600">
+          Email
+          <input className={`${input} mt-1 w-full`} type="email" value={draft.email}
+                 onChange={set("email")} placeholder="name@ninjavan.co" />
+        </label>
+        <label className="text-xs font-medium text-slate-600">
+          Phone <span className="font-normal text-slate-400">(optional)</span>
+          <input className={`${input} mt-1 w-full`} value={draft.phone} onChange={set("phone")} />
+        </label>
+        <label className="text-xs font-medium text-slate-600">
+          Outlet
+          <select className={`${input} mt-1 w-full`} value={draft.warehouse_id} onChange={set("warehouse_id")}>
+            <option value="">Set later</option>
+            {outlets.filter((o) => o.is_active).map((o) => (
+              <option key={o.id} value={o.id}>{o.name}</option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <div className="mt-3 flex items-center gap-2">
+        <button type="submit" className={btnPrimary} disabled={busy || !ready}>Create account</button>
+        <button type="button" className={btn} onClick={onCancel}>Cancel</button>
+      </div>
+    </form>
+  );
+}
+
 export function DriversConfig() {
   const { rows, error, busy, run } = useList("/admin/drivers", "drivers");
   const [outlets, setOutlets] = useState([]);
   const [edit, setEdit] = useState({});
+  const [adding, setAdding] = useState(false);
+  const [invite, setInvite] = useState(null);
 
   useEffect(() => {
     api.get("/admin/warehouses").then((d) => setOutlets(d.warehouses)).catch(() => {});
   }, []);
 
+  async function createDriver(draft) {
+    const res = await run(() => api.post("/admin/config/drivers", {
+      name: draft.name.trim(),
+      email: draft.email.trim(),
+      phone: draft.phone.trim() || null,
+      warehouse_id: draft.warehouse_id ? Number(draft.warehouse_id) : null,
+    }));
+    if (res && res.invite_link) {
+      setAdding(false);
+      setInvite({ name: draft.name.trim(), email: draft.email.trim(), link: res.invite_link });
+    }
+  }
+
   return (
     <Panel
       title="Drivers"
       blurb="Who can sign into the driver app, and where they work from."
-      footer="The outlet decides which delivery windows and allowances a driver's trips are measured against. Turning someone off stops them signing in but keeps their trips — those are the evidence behind past claims."
+      action={
+        !adding && (
+          <button type="button" className={btnPrimary} onClick={() => { setAdding(true); setInvite(null); }}>
+            Add driver
+          </button>
+        )
+      }
+      footer="The outlet decides which delivery windows and allowances a driver's trips are measured against. Turning someone off stops them signing in but keeps their trips — those are the evidence behind past claims, so an account that has run any cannot be deleted."
     >
       <Err>{error}</Err>
+      <InviteLink invite={invite} onDone={() => setInvite(null)} />
+      {adding && (
+        <NewDriverForm outlets={outlets} busy={busy} onCancel={() => setAdding(false)} onCreate={createDriver} />
+      )}
+
       {!rows ? <p className="text-sm text-slate-500">Loading…</p> : rows.length === 0 ? (
-        <p className="text-sm text-slate-500">No drivers have signed up yet.</p>
+        <p className="text-sm text-slate-500">No drivers yet. Add one, or let them sign up in the app.</p>
       ) : rows.map((d) => {
         const draft = edit[d.id];
         return (
           <GridRow key={d.id} cols="md:grid-cols-[minmax(0,1fr)_11rem_9rem_auto]">
             <span>
-              <span className="block text-sm font-medium text-brand-black">{d.name}</span>
-              <span className="block text-xs text-slate-400">{d.email}{d.phone ? ` · ${d.phone}` : ""}</span>
+              <span className="flex flex-wrap items-center gap-2">
+                <span className="text-sm font-medium text-brand-black">{d.name}</span>
+                {/* An account created from here looks identical to a working
+                    one until the driver follows the link. Say which it is. */}
+                {!d.signed_up && (
+                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800">
+                    No password set
+                  </span>
+                )}
+              </span>
+              <span className="block text-xs text-slate-400">
+                {d.email}{d.phone ? ` · ${d.phone}` : ""}
+                {d.trips > 0 ? ` · ${d.trips} trip${d.trips === 1 ? "" : "s"}` : ""}
+              </span>
             </span>
             {draft ? (
               <select className={input} value={draft.warehouse_id ?? ""}
@@ -814,10 +952,11 @@ export function DriversConfig() {
               </span>
             )}
             <span className="flex items-center gap-2 text-sm text-slate-500">
+              {/* PUT, not DELETE. This switch always meant "status", and
+                  wiring it to DELETE left no verb for actually deleting. */}
               <Toggle on={d.status === "active"} disabled={busy} label={`Sign-in for ${d.name}`}
-                      onChange={(next) => run(() => next
-                        ? api.put(`/admin/config/drivers/${d.id}`, { status: "active" })
-                        : api.del(`/admin/config/drivers/${d.id}`))} />
+                      onChange={(next) => run(() => api.put(`/admin/config/drivers/${d.id}`,
+                        { status: next ? "active" : "disabled" }))} />
               Can sign in
             </span>
             <span className={actionsCell}>
@@ -832,10 +971,34 @@ export function DriversConfig() {
                 <button type="button" className={btn} onClick={() => setEdit((v) => ({ ...v, [d.id]: undefined }))}>Cancel</button>
               </>
             ) : (
-              <button type="button" className={btn}
-                      onClick={() => setEdit((v) => ({ ...v, [d.id]: { warehouse_id: d.warehouse_id ?? "" } }))}>
-                Change outlet
-              </button>
+              <>
+                <button type="button" className={btn}
+                        onClick={() => setEdit((v) => ({ ...v, [d.id]: { warehouse_id: d.warehouse_id ?? "" } }))}>
+                  Change outlet
+                </button>
+                <button type="button" className={btn} disabled={busy || d.status !== "active"}
+                        title={d.status === "active"
+                          ? "A one-time link for them to set a password"
+                          : "Turn sign-in back on first"}
+                        onClick={async () => {
+                          const res = await run(() => api.post(`/admin/config/drivers/${d.id}/invite`));
+                          if (res && res.invite_link) {
+                            setInvite({ name: d.name, email: d.email, link: res.invite_link });
+                          }
+                        }}>
+                  Send sign-in link
+                </button>
+                {/* Offered only where it can actually work. A delete button
+                    that refuses on every driver who has ever driven is a
+                    button that teaches people to ignore buttons. */}
+                {d.trips === 0 && (
+                  <button type="button" className={btnDanger} disabled={busy}
+                          onClick={() => confirmed(`Delete ${d.name}? They have no trips, so nothing is lost — but the account goes for good.`)
+                            && run(() => api.del(`/admin/config/drivers/${d.id}`))}>
+                    Delete
+                  </button>
+                )}
+              </>
             )}
             </span>
           </GridRow>

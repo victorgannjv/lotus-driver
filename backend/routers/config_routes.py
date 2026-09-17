@@ -11,6 +11,8 @@ Every list here is soft-edited: a reason code is deactivated rather than deleted
 on the same row so history re-scores consistently.
 """
 import json
+import sys
+from datetime import datetime, timedelta, timezone
 
 from asyncmy.cursors import DictCursor
 
@@ -19,8 +21,9 @@ from clocks import fmt, fmt_time, parse_hhmm
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 
-from auth import get_current_admin
+from auth import generate_reset_token, get_current_admin
 from db import get_pool
+from mailer import send_password_reset_email
 
 router = APIRouter()
 
@@ -372,6 +375,112 @@ class DriverUpdate(BaseModel):
     phone: str | None = None
 
 
+class DriverIn(BaseModel):
+    name: str
+    email: str
+    phone: str | None = None
+    warehouse_id: int | None = None
+
+
+# An invite lives longer than a password reset.
+#
+# RESET_TOKEN_TTL is an hour, which is right for "I forgot my password" -- the
+# person is at the screen waiting for the mail. An invite is handed over by an
+# admin, often on WhatsApp at the end of a shift, and an hour means it has
+# expired before the driver reads it. A week is long enough to be useful and
+# short enough that an unused invite does not sit live forever.
+INVITE_TTL = timedelta(days=7)
+
+
+async def _issue_invite(pool, request: Request, user_id: int, email: str) -> str:
+    """A one-time link that lets the driver set their own password.
+
+    The admin never types or sees a password. The account is created WITHOUT
+    one (password_hash NULL, which login already refuses), so until the driver
+    follows this link there is no credential to leak, share or reuse -- and
+    nobody but the driver ever knows it.
+
+    The link is returned as well as emailed. SMTP may not be configured, the
+    address may be one the driver cannot read at work, and this fleet passes
+    things to each other on WhatsApp -- an invite an admin cannot hand over is
+    an invite that does not arrive.
+    """
+    raw_token, token_hash, _ = generate_reset_token()
+    expires_at = datetime.now(timezone.utc).replace(tzinfo=None) + INVITE_TTL
+    async with pool.acquire() as conn, conn.cursor() as cur:
+        await cur.execute(
+            "INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES (%s, %s, %s)",
+            (user_id, token_hash, expires_at),
+        )
+    link = f"{str(request.base_url).rstrip('/')}/driver/reset-password?token={raw_token}"
+    try:
+        send_password_reset_email(email, link)
+    except Exception as exc:  # noqa: BLE001 -- the link is returned and still usable
+        print(f"[invite] could not email {email}: {exc}", file=sys.stderr)
+    return link
+
+
+@router.post("/drivers", status_code=201)
+async def create_driver(body: DriverIn, request: Request, admin=Depends(get_current_admin)):
+    """Create a driver account from the admin side.
+
+    Drivers could only ever sign themselves up, which is fine until someone
+    joins mid-week and there is no way to get them onto the app. This creates
+    the account and hands back a set-your-password link.
+    """
+    name = (body.name or "").strip()
+    email = (body.email or "").strip().lower()
+    if not name:
+        raise HTTPException(status_code=422, detail="a name is required")
+    if "@" not in email or "." not in email.split("@")[-1]:
+        raise HTTPException(status_code=422, detail="that does not look like an email address")
+
+    pool = get_pool(request)
+    async with pool.acquire() as conn, conn.cursor() as cur:
+        # Scoped to role='driver', matching signup: an email on the admin
+        # allowlist is a separate identity and must not block a driver account.
+        await cur.execute("SELECT id FROM users WHERE email = %s AND role = 'driver'", (email,))
+        if await cur.fetchone() is not None:
+            raise HTTPException(status_code=409, detail="a driver with this email already exists")
+        if body.warehouse_id is not None:
+            await cur.execute(
+                "SELECT id FROM warehouses WHERE id = %s AND is_active = 1", (body.warehouse_id,)
+            )
+            if await cur.fetchone() is None:
+                raise HTTPException(status_code=422, detail="that outlet doesn't exist or is no longer active")
+        await cur.execute(
+            "INSERT INTO users (role, email, phone, password_hash, name, status, warehouse_id) "
+            "VALUES ('driver', %s, %s, NULL, %s, 'active', %s)",
+            (email, (body.phone or "").strip() or None, name, body.warehouse_id),
+        )
+        driver_id = cur.lastrowid
+
+    link = await _issue_invite(pool, request, driver_id, email)
+    await audit(pool, admin, "driver", driver_id, "create", f"Added driver {name} ({email})",
+                after={"name": name, "email": email, "warehouse_id": body.warehouse_id})
+    return {"id": driver_id, "invite_link": link}
+
+
+@router.post("/drivers/{driver_id}/invite")
+async def resend_invite(driver_id: int, request: Request, admin=Depends(get_current_admin)):
+    """A fresh set-password link -- the first expired, or went to an inbox the
+    driver never opens. Also how a driver who has forgotten their password gets
+    back in without anyone else learning what it was."""
+    pool = get_pool(request)
+    async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
+        await cur.execute(
+            "SELECT email, status FROM users WHERE id = %s AND role = 'driver'", (driver_id,)
+        )
+        row = await cur.fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="driver not found")
+    if row["status"] != "active":
+        raise HTTPException(status_code=409, detail="turn sign-in back on for this driver first")
+    link = await _issue_invite(pool, request, driver_id, row["email"])
+    await audit(pool, admin, "driver", driver_id, "update", f"Sent a new sign-in link to {row['email']}")
+    return {"id": driver_id, "invite_link": link}
+
+
 @router.put("/drivers/{driver_id}")
 async def update_driver(driver_id: int, body: DriverUpdate, request: Request, admin=Depends(get_current_admin)):
     """Reassigning a driver's outlet matters beyond tidiness: gap targets and
@@ -402,14 +511,47 @@ async def update_driver(driver_id: int, body: DriverUpdate, request: Request, ad
 
 
 @router.delete("/drivers/{driver_id}")
-async def disable_driver(driver_id: int, request: Request, admin=Depends(get_current_admin)):
-    """Disabled, never deleted -- their trips are dispute evidence and the rows
-    point back at this user."""
+async def delete_driver(driver_id: int, request: Request, admin=Depends(get_current_admin)):
+    """Delete a driver account outright -- and refuse when that would destroy
+    evidence.
+
+    A driver who has run trips cannot be deleted at any price. Those trips are
+    what a claim against Lotus is built from and every one of them points back
+    at this row; removing it would leave the evidence unattributable, which is
+    the same as not having it. Turning sign-in off is the answer there, and the
+    message says so rather than just failing.
+
+    A driver with no trips is a typo, a duplicate, or someone who never
+    started. Keeping those forever makes the list harder to read for no gain.
+
+    This endpoint used to be the deactivate button -- DELETE that disabled a
+    row. The toggle now says what it means (PUT status), so DELETE can too.
+    """
     pool = get_pool(request)
+    async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
+        await cur.execute("SELECT name, email FROM users WHERE id = %s AND role = 'driver'", (driver_id,))
+        row = await cur.fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="driver not found")
+        await cur.execute("SELECT COUNT(*) AS n FROM manifests WHERE driver_id = %s", (driver_id,))
+        trips = (await cur.fetchone())["n"]
+
+    if trips:
+        plural = "s" if trips != 1 else ""
+        raise HTTPException(
+            status_code=409,
+            detail=f"{row['name']} has {trips} trip{plural} on record, which is evidence behind "
+                   "past claims. Turn their sign-in off instead.",
+        )
+
     async with pool.acquire() as conn, conn.cursor() as cur:
-        await cur.execute("UPDATE users SET status = 'disabled' WHERE id = %s AND role = 'driver'", (driver_id,))
-    await audit(pool, admin, "driver", driver_id, "update", f"Turned off sign-in for driver {driver_id}")
-    return {"id": driver_id, "status": "disabled"}
+        # The only rows that can point at a driver with no trips.
+        await cur.execute("DELETE FROM password_reset_tokens WHERE user_id = %s", (driver_id,))
+        await cur.execute("DELETE FROM shift_roster WHERE driver_id = %s", (driver_id,))
+        await cur.execute("DELETE FROM users WHERE id = %s AND role = 'driver'", (driver_id,))
+    await audit(pool, admin, "driver", driver_id, "delete",
+                f"Deleted driver {row['name']} ({row['email']}) -- no trips on record")
+    return {"id": driver_id, "deleted": True}
 
 
 @router.delete("/admins/{admin_id}")

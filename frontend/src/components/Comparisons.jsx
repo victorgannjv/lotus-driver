@@ -42,6 +42,15 @@ function periodLabel(raw) {
   return sameMonth ? `${left.split(" ")[0]}–${right}` : `${left} – ${right}`;
 }
 
+// "Sep" + "1–17 Sep" -> "Sep 1–17". The month is already the name of the
+// window; printing it again at the end of the range is the same word twice.
+// Week prefixes (W38) never match a month, so those keep their "14–17 Sep".
+function withPrefix(prefix, raw) {
+  const label = periodLabel(raw);
+  if (!prefix) return label;
+  return label.endsWith(` ${prefix}`) ? `${prefix} ${label.slice(0, -prefix.length - 1)}` : `${prefix} ${label}`;
+}
+
 function Delta({ row, current, previous }) {
   // No prior figure is not a fall to zero. A first week has nothing to be
   // compared against and should say so rather than imply a collapse.
@@ -70,8 +79,9 @@ export default function Comparisons({ comparisons }) {
     <div className="mt-5 border-t border-slate-200 pt-4">
       <h3 className="text-sm font-semibold text-brand-black">Against the same stretch before</h3>
       <p className="mt-0.5 text-xs text-slate-500">
-        Fixed windows, so these read the same whichever period is selected above. Four weeks rather
-        than a calendar month, so both sides hold the same number of each weekday.
+        Each window runs to today and is measured against the same slice of the one before — this
+        week so far against the same days last week, this month so far against the same dates last
+        month. Fixed, so they read the same whichever period is selected above.
       </p>
 
       <div className="mt-3 overflow-x-auto">
@@ -87,11 +97,15 @@ export default function Comparisons({ comparisons }) {
               {comparisons.map((c) => (
                 <th key={c.key} className="py-2 pr-6 align-bottom font-medium">
                   <span className="block text-slate-400">{c.label}</span>
-                  <span className="mt-1 block whitespace-nowrap text-sm normal-case tracking-normal text-brand-black">
-                    {periodLabel(c.current_label)}
+                  {/* The name people say -- W38, Sep -- leads, with the dates
+                      it actually covers behind it. A week number alone is
+                      unverifiable; a date range alone makes the reader count
+                      back to work out which week it was. */}
+                  <span className="mt-1 block whitespace-nowrap text-sm font-semibold normal-case tracking-normal text-brand-black">
+                    {withPrefix(c.current_prefix, c.current_label)}
                   </span>
                   <span className="block whitespace-nowrap text-xs font-normal normal-case tracking-normal text-slate-400">
-                    vs {periodLabel(c.previous_label)}
+                    vs {withPrefix(c.previous_prefix, c.previous_label)}
                   </span>
                 </th>
               ))}
@@ -121,7 +135,7 @@ export default function Comparisons({ comparisons }) {
 
       {comparisons.some((c) => c.partial) && (
         <p className="mt-2 text-xs text-slate-400">
-          Windows ending today include a day still being worked, so the latest side is short by
+          The current side of each pair ends today, a day still being worked, so it is short by
           however much of today is left.
         </p>
       )}
