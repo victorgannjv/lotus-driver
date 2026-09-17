@@ -413,22 +413,22 @@ export default function Evidence() {
           </summary>
           <ul className="mt-1.5 space-y-1.5 border-l-2 border-slate-200 pl-3">
             <li>
-              <b className="font-semibold text-slate-600">The edge down each row.</b>{" "}
-              <Swatch tone="bg-brand-red" /> over its time limit
+              <b className="font-semibold text-slate-600">The edge down each row:</b>{" "}
+              <Swatch tone="bg-brand-red" /> Over its time limit
               <span className="px-1.5 text-slate-300">·</span>
-              <Swatch tone="bg-emerald-600" /> every step inside it
+              <Swatch tone="bg-emerald-600" /> Every step inside it
             </li>
             <li>
-              <b className="font-semibold text-slate-600">The Owner column.</b>{" "}
+              <b className="font-semibold text-slate-600">The Owner column:</b>{" "}
               <Swatch tone="bg-amber-500" /> Lotus, we can claim it back
               <span className="px-1.5 text-slate-300">·</span>
               <Swatch tone="bg-blue-600" /> Ninja Van, we cover it
               <span className="px-1.5 text-slate-300">·</span>
-              <Swatch tone="bg-emerald-500" /> outside causes, nobody to bill
+              <Swatch tone="bg-emerald-500" /> Outside causes, nobody to bill
               <span className="px-1.5 text-slate-300">·</span>
-              <Swatch tone="bg-orange-500" /> no reason given, so nobody to bill
+              <Swatch tone="bg-orange-500" /> No reason given, so nobody to bill
               <span className="px-1.5 text-slate-300">·</span>
-              <Swatch tone="bg-slate-300" /> on time, nothing to explain
+              <Swatch tone="bg-slate-300" /> On time, nothing to explain
             </li>
           </ul>
         </details>

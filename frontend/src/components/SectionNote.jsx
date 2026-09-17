@@ -27,11 +27,14 @@ export default function SectionNote({ children, more, label = "How this is worke
   );
 }
 
-// One bullet: a bolded term, then the sentence that earns it.
+// One bullet: a bolded label, a colon, then the sentence that earns it.
+//
+// The colon is rendered here rather than typed into each `term`, so the
+// format cannot drift from one bullet to the next as they are edited.
 export function NoteItem({ term, children }) {
   return (
     <li>
-      {term && <b className="font-semibold text-slate-600">{term}</b>} {children}
+      {term && <b className="font-semibold text-slate-600">{term}:</b>} {children}
     </li>
   );
 }

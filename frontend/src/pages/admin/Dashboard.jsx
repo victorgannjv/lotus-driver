@@ -286,24 +286,24 @@ export default function Dashboard() {
           <SectionNote
             label="How these are worked out"
             more={<>
-              <NoteItem term="The steps.">
+              <NoteItem term="The steps">
                 Arrived · goods ready · loaded · departed · returned. The app subtracts one stamp from
                 the next to get how long each took.
               </NoteItem>
-              <NoteItem term="Arriving late is ours.">
+              <NoteItem term="Arriving late is ours">
                 A run that reaches the outlet after its window has opened is counted against Ninja Van.
               </NoteItem>
-              <NoteItem term="Still there at closing is the outlet's.">
+              <NoteItem term="Still there at closing is the outlet's">
                 Time after the window closes is charged to Lotus. Our own late arrival is taken off
                 first, so we never bill them for a start we were late to.
               </NoteItem>
               {target ? (
-                <NoteItem term="Steps over their limit.">
+                <NoteItem term="Steps over their limit">
                   A step that runs longer than its time limit is a delay too, and the reason the driver
                   gives decides whether those minutes sit with Lotus, with us, or with neither.
                 </NoteItem>
               ) : (
-                <NoteItem term="Why the limits are off.">
+                <NoteItem term="Why the limits are off">
                   The per-step figures are internal working assumptions, not terms agreed with Lotus.
                   Until they are, no step is judged on its own length.
                 </NoteItem>
@@ -377,11 +377,11 @@ export default function Dashboard() {
             <h2 className="text-base font-semibold text-brand-black">Manpower</h2>
             <SectionNote
               more={<>
-                <NoteItem term="Why it is here.">
+                <NoteItem term="Why it is here">
                   It answers the staffing question before the outlet one. A slow day with two drivers
                   off is ours, not Lotus's, and this is where you can tell.
                 </NoteItem>
-                <NoteItem term="On duty.">
+                <NoteItem term="On duty">
                   Counted from trips actually run, not from the roster. A driver who was rostered but did
                   not drive does not appear.
                 </NoteItem>
@@ -438,7 +438,7 @@ export default function Dashboard() {
               </table>
             </div>
             <Legend items={[
-              ...(target ? [{ label: "Red figure", note: `over the ${target}m limit`, dot: "bg-brand-red" }] : []),
+              ...(target ? [{ label: "Red figure", note: `Over the ${target}m limit`, dot: "bg-brand-red" }] : []),
             ]} />
             {/* The cut at the end of the table: the same measures, against the
                 last day, the last week and the last four weeks. */}
@@ -454,15 +454,15 @@ export default function Dashboard() {
             </h2>
             <SectionNote
               more={<>
-                <NoteItem term="Each point.">
+                <NoteItem term="Each point">
                   Covers the whole {BUCKET_WORD[data.trend_bucket] || "week"} it is labelled with, in its real
                   place on the timeline. A gap means nobody ran that day, not that the time was zero.
                 </NoteItem>
-                <NoteItem term="The grouping follows the period.">
+                <NoteItem term="The grouping follows the period">
                   Day by day for a week or a month, week by week beyond that, month by month for a long
                   range. Change the period above and this regroups.
                 </NoteItem>
-                <NoteItem term="Three outlets at most.">
+                <NoteItem term="Three outlets at most">
                   A fourth line cannot be told from the others by colour, so the busiest three are drawn
                   and the rest are named under the chart.
                 </NoteItem>
@@ -495,9 +495,9 @@ export default function Dashboard() {
                 </dl>
                 <OwnedBar owned={o.owned_minutes} />
                 <Legend items={[
-                  { label: "Lotus", note: "recoverable", dot: PARTY.lotus.dot },
-                  { label: "Ninja Van", note: "absorbed by us", dot: PARTY.njv.dot },
-                  { label: "External", note: "not attributable", dot: PARTY.external.dot },
+                  { label: "Lotus", note: "We can claim it back", dot: PARTY.lotus.dot },
+                  { label: "Ninja Van", note: "We cover it", dot: PARTY.njv.dot },
+                  { label: "External", note: "Nobody to bill", dot: PARTY.external.dot },
                 ]} />
               </div>
             ))}
@@ -513,17 +513,17 @@ export default function Dashboard() {
                 is the length of the step the driver explained. */}
             <SectionNote
               more={<>
-                <NoteItem term="What the minutes are.">
+                <NoteItem term="What the minutes are">
                   {data.reasons_over_allowance
                     ? "Only the extra time a step ran past its limit, not the whole step."
                     : "The whole length of the step the reason explains. With per-step time limits off, there is no limit to go over, so there is no extra time to count."}
                 </NoteItem>
-                <NoteItem term="Where they come from.">
+                <NoteItem term="Where they come from">
                   A driver picks a reason from a set list against a step. Nobody types their own wording,
                   which is what lets these be added up at all.
                 </NoteItem>
-                <NoteItem term="The colours.">
-                  Who the reason points at: amber for Lotus, blue for Ninja Van, green for outside causes.
+                <NoteItem term="The colours">
+                  Amber for Lotus, blue for Ninja Van, green for outside causes.
                   You set that on each reason in Settings, under Delay reasons.
                 </NoteItem>
               </>}
@@ -556,9 +556,9 @@ export default function Dashboard() {
               )}
             </div>
             <Legend items={[
-              { label: "Lotus", note: "recoverable", dot: PARTY.lotus.dot },
-              { label: "Ninja Van", note: "absorbed by us", dot: PARTY.njv.dot },
-              { label: "External", note: "not attributable", dot: PARTY.external.dot },
+              { label: "Lotus", note: "We can claim it back", dot: PARTY.lotus.dot },
+              { label: "Ninja Van", note: "We cover it", dot: PARTY.njv.dot },
+              { label: "External", note: "Nobody to bill", dot: PARTY.external.dot },
             ]} />
           </section>
         </div>

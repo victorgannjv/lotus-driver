@@ -159,15 +159,15 @@ export default function Comparisons({ comparisons }) {
       <h3 className="text-sm font-semibold text-brand-black">Against the same stretch before</h3>
       <SectionNote
         more={<>
-          <NoteItem term="Same days on both sides.">
+          <NoteItem term="Same days on both sides">
             This week so far against the same days last week. This month so far against the same dates
             last month. Four days against a full seven would show a drop every Wednesday.
           </NoteItem>
-          <NoteItem term="These periods are fixed.">
+          <NoteItem term="These periods are fixed">
             They do not follow the period buttons at the top. A comparison that changes meaning when
             someone clicks a tab is one nobody can quote in a meeting.
           </NoteItem>
-          <NoteItem term="Earlier is better on the times.">
+          <NoteItem term="Earlier is better on the times">
             Arriving earlier means the truck is ready sooner. Leaving earlier means less time stuck at
             the outlet.
           </NoteItem>

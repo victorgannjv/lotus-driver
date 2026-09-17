@@ -101,16 +101,16 @@ export default function TripOfDay({ rows, unnumbered, from, to }) {
           day-on-day and week-on-week rows in the Manpower section above. */}
       <SectionNote
         more={<>
-          <NoteItem term="Two different boundaries.">
+          <NoteItem term="Two different boundaries">
             Arrival is measured against the time the window <b>opens</b>. Departure is measured against
             the time it <b>closes</b>. The columns say which is which.
           </NoteItem>
-          <NoteItem term="Why the runs are split.">
+          <NoteItem term="Why the runs are split">
             The first run and the second have different agreed windows and behave nothing alike. The
             first waits for goods to be picked, the second collects what is already packed. Averaged
             together, you cannot answer either question.
           </NoteItem>
-          <NoteItem term="Why the two counts differ.">
+          <NoteItem term="Why the two counts differ">
             You know whether a truck arrived in time the moment it arrives. You cannot know whether it
             left in time until it has left. A run still at the outlet counts in the first, not the second.
           </NoteItem>
