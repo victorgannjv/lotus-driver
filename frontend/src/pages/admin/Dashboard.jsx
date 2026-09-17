@@ -337,7 +337,8 @@ export default function Dashboard() {
             />
           </div>
 
-          <TripOfDay rows={data.trip_of_day} unnumbered={data.trips_unnumbered} />
+          <TripOfDay rows={data.trip_of_day} unnumbered={data.trips_unnumbered}
+                     from={data.period?.from} to={data.period?.to} />
 
           <section className="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
             <h2 className="text-base font-semibold text-brand-black">Manpower</h2>

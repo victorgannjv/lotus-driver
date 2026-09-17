@@ -1,4 +1,4 @@
-import { formatDuration } from "../lib/duration";
+import { formatDate, formatDuration, formatShortDate } from "../lib/duration";
 
 // Arrival and departure, split by which run of the day it was.
 //
@@ -49,16 +49,33 @@ function OnTime({ ok, total }) {
   );
 }
 
-export default function TripOfDay({ rows, unnumbered }) {
+// "1–17 Sep", or "Thu 17 Sep" when the period is a single day. An average
+// has to name the days it averaged.
+function spanLabel(from, to) {
+  if (!from || !to) return null;
+  if (from === to) return formatDate(from);
+  const a = formatShortDate(from);
+  const b = formatShortDate(to);
+  return a.split(" ")[1] === b.split(" ")[1] ? `${a.split(" ")[0]}–${b}` : `${a} – ${b}`;
+}
+
+export default function TripOfDay({ rows, unnumbered, from, to }) {
   if (!rows || rows.length === 0) return null;
+  const span = spanLabel(from, to);
 
   return (
     <section className="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
       <h2 className="text-base font-semibold text-brand-black">Arrival and departure, by run of the day</h2>
+      {/* NAME THE DAYS. An average with no base is a number nobody can
+          check: these are means across whatever period is selected at the
+          top of the page, and that has to be said here rather than inferred
+          from a control several sections away. Whether the figures are
+          getting better or worse is a different question, answered by the
+          day-on-day and week-on-week rows in the Manpower section above. */}
       <p className="mt-0.5 text-xs text-slate-500">
-        Each run has its own contracted window, so they are counted separately. Arrival is measured
+        Averages across {span ? <b className="text-slate-600">{span}</b> : "the selected period"}.
+        Each run has its own contracted window, so they are counted separately — arrival is measured
         against the time that window <b>opens</b>, departure against the time it <b>closes</b>.
-        Times are averages across the period.
       </p>
 
       <div className="mt-3 overflow-x-auto">

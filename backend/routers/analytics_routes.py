@@ -362,11 +362,33 @@ MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
                "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
 
+def _slot_clock(trips: list[dict], slot: int, checkpoint: str) -> int | None:
+    """Average time of day, in minutes since midnight, that a given run of the
+    day hit a given checkpoint. None when that run did not happen, or did not
+    reach that step, in this slice."""
+    vals = [
+        _clock_minutes(_checkpoint_at(t, checkpoint))
+        for t in trips if t.get("schedule_slot_no") == slot
+    ]
+    vals = [v for v in vals if v is not None]
+    return round(_mean(vals)) if vals else None
+
+
 def _comparison_metrics(trips: list[dict]) -> dict:
     """The measures a commercial reader acts on, for one slice of days."""
     windowed = [t for t in trips if t["window"] and t["window"]["departed_on_time"] is not None]
     drivers = {t["driver_id"] for t in trips}
     return {
+        # Arrival and departure per run of the day, carried through the same
+        # windows as every other measure. The table further down averages
+        # across the whole selected period, which answers "what does a
+        # typical first trip look like" and cannot answer "is it getting
+        # worse" -- that needs today against yesterday, this week against
+        # last, this month against last, which is what this block is.
+        "trip1_arrival": _slot_clock(trips, 1, "arrived"),
+        "trip1_departure": _slot_clock(trips, 1, "departed"),
+        "trip2_arrival": _slot_clock(trips, 2, "arrived"),
+        "trip2_departure": _slot_clock(trips, 2, "departed"),
         "trips": len(trips),
         "orders": sum(t["orders"] for t in trips),
         "drivers": len(drivers),

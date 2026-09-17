@@ -21,13 +21,35 @@ const ROWS = [
   { key: "avg_at_outlet_minutes", label: "Avg time at outlet", good: "down", duration: true },
   { key: "missed_window", label: "Missed their window", good: "down" },
   { key: "lotus_late_minutes", label: "Delay caused by Lotus", good: "down", duration: true },
+  // Arrival and departure per run of the day. The table below this one
+  // averages the whole selected period, which says what a typical first trip
+  // looks like and cannot say whether it is getting worse -- that needs a
+  // base to compare against, which is what these rows are. Earlier is better
+  // on all four: an earlier arrival is a truck in position, an earlier
+  // departure is less time held at the outlet.
+  { key: "trip1_arrival", label: "1st trip — arrived", good: "down", time: true },
+  { key: "trip1_departure", label: "1st trip — left", good: "down", time: true },
+  { key: "trip2_arrival", label: "2nd trip — arrived", good: "down", time: true },
+  { key: "trip2_departure", label: "2nd trip — left", good: "down", time: true },
 ];
+
+// Minutes since midnight -> "12:05".
+const clock = (m) => `${String(Math.floor(m / 60) % 24).padStart(2, "0")}:${String(Math.round(m) % 60).padStart(2, "0")}`;
 
 function show(row, value) {
   if (value == null) return "—";
+  if (row.time) return clock(value);
   if (row.duration) return formatDuration(value);
   if (row.decimals) return value.toFixed(row.decimals);
   return String(value);
+}
+
+// The CHANGE in a time of day is a length, not a time. "12:05 vs 11:40" is
+// twenty-five minutes later, not "00:25" -- printing a clock face there would
+// read as an arrival at twenty-five past midnight.
+function showDelta(row, value) {
+  if (row.time) return formatDuration(value);
+  return show(row, value);
 }
 
 // "2026-09-11..2026-09-17" -> "11–17 Sep"; a single date -> "Thu 17 Sep".
@@ -97,7 +119,8 @@ function Delta({ row, current, previous }) {
     <span className={`text-sm font-semibold ${better ? "text-emerald-700" : "text-brand-red"}`}>
       {/* The arrow says which way, the colour says whether that is good. Both,
           because colour alone is not a signal everyone receives. */}
-      {diff > 0 ? "▲" : "▼"} {show(row, Math.abs(diff))}
+      {diff > 0 ? "▲" : "▼"} {showDelta(row, Math.abs(diff))}
+      {row.time && <span className="font-normal"> {diff > 0 ? "later" : "earlier"}</span>}
     </span>
   );
 }
@@ -167,7 +190,9 @@ export default function Comparisons({ comparisons }) {
             </tr>
           </thead>
           <tbody>
-            {ROWS.map((row) => (
+            {ROWS.filter((row) => usable.some(
+              (c) => c.current[row.key] != null || c.previous[row.key] != null,
+            )).map((row) => (
               <tr key={row.key} className="border-t border-slate-100 align-top">
                 <td className="py-2.5 pr-4 text-slate-600">{row.label}</td>
                 {usable.map((c) => (
