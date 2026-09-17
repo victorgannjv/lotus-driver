@@ -698,10 +698,16 @@ function SettingRow({ s, ui, v, dirty, busy, set, commit, active = [] }) {
               // switch that cannot do anything.
               const stepOff = ui.needsActive && !active.includes(code);
               const on = !stepOff && (locked || list.includes(code));
+              // TWO backgrounds, not three. An unavailable row used to get its
+              // own slate-50, one step lighter than the plain-off slate-100
+              // beside it -- close enough that it read as a rendering fault
+              // rather than a distinction, and it said nothing the greyed
+              // label, the note and the dimmed switch were not already saying
+              // three times over.
               return (
                 <span key={code}
                       className={`flex items-center justify-between gap-3 rounded-lg px-3 py-2 ${
-                        stepOff ? "bg-slate-50" : on ? "bg-emerald-50" : "bg-slate-100"
+                        on ? "bg-emerald-50" : "bg-slate-100"
                       }`}>
                   <span className="min-w-0">
                     <span className={`block text-sm font-medium ${
