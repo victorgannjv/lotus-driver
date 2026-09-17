@@ -1,3 +1,5 @@
+import { useNavigate } from "react-router-dom";
+import Icon from "./Icon";
 import { formatDate, formatDuration, formatShortDate } from "../lib/duration";
 
 // Arrival and departure, split by which run of the day it was.
@@ -74,8 +76,18 @@ function spanLabel(from, to) {
 }
 
 export default function TripOfDay({ rows, unnumbered, from, to }) {
+  const navigate = useNavigate();
   if (!rows || rows.length === 0) return null;
   const span = spanLabel(from, to);
+
+  // A row in the breakdown is a door to that trip.
+  //
+  // Not an underlined link on the date or the driver: the whole row is the
+  // target, because every cell in it belongs to the same trip and there is
+  // no second place a click could sensibly go. Evidence already opens one
+  // trip expanded from its URL, so this lands on the full checkpoint trail
+  // -- times, places, photos, reasons -- rather than a summary of it.
+  const openTrip = (tripId) => navigate(`/admin/evidence?trip=${tripId}`);
 
   return (
     <section className="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
@@ -176,7 +188,10 @@ export default function TripOfDay({ rows, unnumbered, from, to }) {
         <summary className="cursor-pointer text-xs font-medium text-slate-500 hover:text-brand-black">
           Show the trips behind these averages
         </summary>
-        <div className="mt-2 overflow-x-auto">
+        <p className="mt-2 text-xs text-slate-400">
+          Any row opens that trip in Evidence — its checkpoints, times, places and photos.
+        </p>
+        <div className="mt-1 overflow-x-auto">
           <table className="min-w-full text-left text-xs">
             <thead className="text-slate-400">
               <tr>
@@ -186,12 +201,28 @@ export default function TripOfDay({ rows, unnumbered, from, to }) {
                 <th className="py-1.5 pr-4 font-medium">Outlet</th>
                 <th className="py-1.5 pr-4 font-medium">Arrived</th>
                 <th className="py-1.5 pr-4 font-medium">Left</th>
-                <th className="py-1.5 font-medium">At outlet</th>
+                <th className="py-1.5 pr-4 font-medium">At outlet</th>
+                <th className="py-1.5 font-medium sr-only">Open</th>
               </tr>
             </thead>
             <tbody className="tabular-nums">
               {rows.flatMap((r) => (r.detail || []).map((d) => (
-                <tr key={`${r.slot_no}-${d.trip_id}`} className="border-t border-slate-100">
+                <tr
+                  key={`${r.slot_no}-${d.trip_id}`}
+                  className="group cursor-pointer border-t border-slate-100 hover:bg-slate-50"
+                  role="link"
+                  tabIndex={0}
+                  title={`Open trip T-${d.trip_id} in Evidence`}
+                  onClick={() => openTrip(d.trip_id)}
+                  // Enter and Space, because a row given a tab stop that does
+                  // nothing on the keyboard is worse than one with no tab stop.
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      openTrip(d.trip_id);
+                    }
+                  }}
+                >
                   <td className="py-1.5 pr-4 text-slate-500">{r.label}</td>
                   <td className="py-1.5 pr-4 whitespace-nowrap text-slate-600">{formatDate(d.work_date)}</td>
                   <td className="py-1.5 pr-4 text-slate-600">{d.driver}</td>
@@ -203,8 +234,14 @@ export default function TripOfDay({ rows, unnumbered, from, to }) {
                   <td className="py-1.5 pr-4 font-medium text-brand-black">
                     {d.departed || <span className="font-normal text-slate-400">still there</span>}
                   </td>
-                  <td className="py-1.5 text-slate-600">
+                  <td className="py-1.5 pr-4 text-slate-600">
                     {d.at_outlet_minutes == null ? "—" : formatDuration(d.at_outlet_minutes)}
+                  </td>
+                  {/* The affordance. Faint until the row is under the pointer,
+                      so fourteen of them do not read as fourteen buttons. */}
+                  <td className="py-1.5 text-right">
+                    <Icon name="chevron"
+                          className="inline h-3 w-3 text-slate-300 group-hover:text-brand-red" />
                   </td>
                 </tr>
               )))}
