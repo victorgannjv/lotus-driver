@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../../api";
 import TrendChart from "../../components/TrendChart";
 import Comparisons from "../../components/Comparisons";
 import Icon from "../../components/Icon";
-import { dayParts, formatDuration } from "../../lib/duration";
+import { dayParts, formatDate, formatDuration } from "../../lib/duration";
 
 // The monitoring surface. Every figure answers one question: how much time did
 // Lotus cost us, and can we prove it? Nothing here grows as data accumulates --
@@ -35,18 +35,13 @@ const BUCKET_WORD = { day: "day", week: "week", month: "month" };
 const MONTH_NAMES = ["January", "February", "March", "April", "May", "June",
                      "July", "August", "September", "October", "November", "December"];
 
-// The last twelve months, newest first, as { value: "2026-09", label: "September 2026" }.
-function recentMonths(count = 12) {
-  const out = [];
-  const now = new Date();
-  for (let i = 0; i < count; i += 1) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    out.push({
-      value: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
-      label: `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`,
-    });
-  }
-  return out;
+// "2026-09" -> "September 2026". The months themselves come from the server,
+// which knows which ones hold trips; counting twelve back from today offered
+// November 2025 on an app that did not exist then, and every one of those
+// options answered with an empty dashboard.
+function monthLabel(value) {
+  const [y, m] = value.split("-").map(Number);
+  return `${MONTH_NAMES[m - 1]} ${y}`;
 }
 
 const isoDate = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -144,7 +139,8 @@ function OwnedBar({ owned }) {
 // being applied.
 export default function Dashboard() {
   const [range, setRange] = useState({ mode: "l7d" });
-  const months = useMemo(() => recentMonths(), []);
+  // What the app actually holds, so the pickers can only offer that.
+  const [span, setSpan] = useState(null);
   const [warehouses, setWarehouses] = useState([]);
   const [warehouseId, setWarehouseId] = useState("");
   const [data, setData] = useState(null);
@@ -152,6 +148,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     api.get("/admin/warehouses").then((d) => setWarehouses(d.warehouses)).catch(() => {});
+    api.get("/admin/data-range").then(setSpan).catch(() => {});
   }, []);
 
   // Depends on the query string, not the range object -- that is rebuilt every
@@ -207,12 +204,13 @@ export default function Dashboard() {
             value={range.mode === "month" ? range.month : ""}
             onChange={(e) => setRange({ mode: "month", month: e.target.value })}
             aria-label="A whole month"
-            className={`rounded-md px-3 py-1.5 text-sm font-semibold ${
+            disabled={!span?.months?.length}
+            className={`rounded-md px-3 py-1.5 text-sm font-semibold disabled:opacity-50 ${
               range.mode === "month" ? "bg-white text-brand-black shadow-sm" : "bg-transparent text-slate-500"
             }`}
           >
             <option value="" disabled>Month…</option>
-            {months.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+            {(span?.months || []).map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}
           </select>
           <button
             type="button"
@@ -229,19 +227,30 @@ export default function Dashboard() {
         {/* Shown only once that mode is chosen. Both dates are needed before
             anything is fetched -- a half-entered range would otherwise reload
             the whole dashboard against a span nobody asked for. */}
+        {/* Bounded by the days that actually hold trips, so the browser's own
+            calendar greys out everything before the first run and after the
+            last one. Picking a date with nothing behind it and getting an
+            empty dashboard back reads as a broken dashboard. */}
         {range.mode === "custom" && (
           <span className="flex flex-wrap items-center gap-2 text-sm text-slate-500">
-            <input type="date" value={range.from || ""} max={range.to || undefined}
+            <input type="date" value={range.from || ""}
+                   min={span?.first_date || undefined}
+                   max={range.to || span?.last_date || undefined}
                    onChange={(e) => setRange((r) => ({ ...r, from: e.target.value }))}
                    aria-label="From"
                    className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
             to
-            <input type="date" value={range.to || ""} min={range.from || undefined}
+            <input type="date" value={range.to || ""}
+                   min={range.from || span?.first_date || undefined}
+                   max={span?.last_date || undefined}
                    onChange={(e) => setRange((r) => ({ ...r, to: e.target.value }))}
                    aria-label="To"
                    className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
             {(!range.from || !range.to) && (
-              <span className="text-xs text-slate-400">Pick both dates — showing the last 7 days until you do.</span>
+              <span className="text-xs text-slate-400">
+                Pick both dates — showing the last 7 days until you do.
+                {span?.first_date && ` Trips run from ${formatDate(span.first_date)} to ${formatDate(span.last_date)}.`}
+              </span>
             )}
           </span>
         )}

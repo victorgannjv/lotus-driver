@@ -105,6 +105,31 @@ function Delta({ row, current, previous }) {
 export default function Comparisons({ comparisons }) {
   if (!comparisons || comparisons.length === 0) return null;
 
+  // A window with no trips before it is not a comparison.
+  //
+  // September against an August this app did not exist for produced "▲ 34
+  // (34 vs 0)" -- which reads as growth and is really just the difference
+  // between existing and not. Every figure in that column was a number
+  // measured against nothing, and a column of those next to two real ones
+  // makes the real ones look like the same kind of claim.
+  //
+  // So the column is dropped and the reason is printed. Missing beats wrong.
+  const usable = comparisons.filter((c) => (c.previous?.trips || 0) > 0);
+  const empty = comparisons.filter((c) => (c.previous?.trips || 0) === 0);
+
+  if (usable.length === 0) {
+    return (
+      <div className="mt-5 border-t border-slate-200 pt-4">
+        <h3 className="text-sm font-semibold text-brand-black">Against the same stretch before</h3>
+        <p className="mt-1 text-xs text-slate-500">
+          Nothing to compare against yet — there are no trips in any of the earlier windows. Day on
+          day appears after two days of trips, week on week after two weeks, month on month after
+          two months.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="mt-5 border-t border-slate-200 pt-4">
       <h3 className="text-sm font-semibold text-brand-black">Against the same stretch before</h3>
@@ -124,7 +149,7 @@ export default function Comparisons({ comparisons }) {
                   and a dash to work out which end is now. Stacked, the period
                   being reported is the dark line and what it is measured
                   against sits under it, and the eye never has to parse. */}
-              {comparisons.map((c) => (
+              {usable.map((c) => (
                 <th key={c.key} className="py-2 pr-6 align-bottom font-medium">
                   <span className="block text-slate-400">{c.label}</span>
                   {/* The name people say -- W38, Sep -- leads, with the dates
@@ -145,7 +170,7 @@ export default function Comparisons({ comparisons }) {
             {ROWS.map((row) => (
               <tr key={row.key} className="border-t border-slate-100 align-top">
                 <td className="py-2.5 pr-4 text-slate-600">{row.label}</td>
-                {comparisons.map((c) => (
+                {usable.map((c) => (
                   <td key={c.key} className="py-2.5 pr-6">
                     <Delta row={row} current={c.current[row.key]} previous={c.previous[row.key]} />
                     {/* Both figures underneath, because a change with no
@@ -163,7 +188,16 @@ export default function Comparisons({ comparisons }) {
         </table>
       </div>
 
-      {comparisons.some((c) => c.partial) && (
+      {/* Named, not silently absent. A column that vanishes without a word
+          looks like something failed to load. */}
+      {empty.length > 0 && (
+        <p className="mt-2 text-xs text-slate-400">
+          {empty.map((c) => c.label).join(" and ")} {empty.length === 1 ? "is" : "are"} not shown:
+          no trips in {empty.map((c) => periodLabel(c.previous_label)).join(" or ")} to compare against.
+        </p>
+      )}
+
+      {usable.some((c) => c.partial) && (
         <p className="mt-2 text-xs text-slate-400">
           The current side of each pair ends today, a day still being worked, so it is short by
           however much of today is left.

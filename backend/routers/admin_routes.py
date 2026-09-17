@@ -130,6 +130,49 @@ async def list_drivers(request: Request, admin=Depends(get_current_admin)):
     return {"drivers": [_serialize_driver(r) for r in rows]}
 
 
+@router.get("/data-range")
+async def data_range(request: Request, admin=Depends(get_current_admin)):
+    """Which days and months this app actually holds trips for.
+
+    The dashboard's month picker was generated from the calendar -- the last
+    twelve months, counted back from today -- so it offered November 2025 on
+    an app that did not exist then, and every one of those months answered
+    with nothing. A picker whose options mostly return empty teaches people
+    not to trust the ones that don't.
+
+    Months are the months that HAVE trips, newest first, plus the current one
+    even when it is still empty: a fleet that has not run yet today should
+    still be able to select today. The first and last dates bound the custom
+    range picker, so the browser greys out everything outside them.
+    """
+    pool = get_pool(request)
+    async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
+        await cur.execute(
+            "SELECT MIN(work_date) AS first_date, MAX(work_date) AS last_date, COUNT(*) AS trips "
+            "FROM manifests WHERE cancelled_at IS NULL"
+        )
+        span = await cur.fetchone()
+        # YEAR()/MONTH() rather than DATE_FORMAT: a '%Y-%m' literal in the SQL
+        # collides with the driver's own %s placeholders.
+        await cur.execute(
+            "SELECT DISTINCT YEAR(work_date) AS y, MONTH(work_date) AS m "
+            "FROM manifests WHERE cancelled_at IS NULL ORDER BY y DESC, m DESC"
+        )
+        months = [f"{r['y']}-{r['m']:02d}" for r in await cur.fetchall()]
+
+    today = local_today()
+    current = f"{today.year}-{today.month:02d}"
+    if current not in months:
+        months.insert(0, current)
+
+    return {
+        "trips": int(span["trips"] or 0),
+        "first_date": str(span["first_date"]) if span["first_date"] else None,
+        "last_date": str(span["last_date"]) if span["last_date"] else None,
+        "months": months,
+    }
+
+
 @router.get("/warehouses")
 async def list_warehouses(request: Request, admin=Depends(get_current_admin)):
     pool = get_pool(request)
