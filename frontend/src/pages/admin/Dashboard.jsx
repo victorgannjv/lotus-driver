@@ -3,6 +3,7 @@ import { api } from "../../api";
 import TrendChart from "../../components/TrendChart";
 import Comparisons from "../../components/Comparisons";
 import TripOfDay from "../../components/TripOfDay";
+import SectionNote, { NoteItem } from "../../components/SectionNote";
 import Icon from "../../components/Icon";
 import { dayParts, formatDate, formatDuration } from "../../lib/duration";
 
@@ -272,16 +273,46 @@ export default function Dashboard() {
 
       {data && (
         <div className="space-y-5">
-          {/* Asked directly: where do these numbers come from. Answered once,
-              at the top, rather than left to be inferred from four subtitles. */}
-          <p className="text-xs leading-relaxed text-slate-500">
-            Every figure below is calculated from the checkpoints drivers stamp on their phones — arrived,
-            goods ready, loaded, departed, returned. The app subtracts one timestamp from the next to get
-            the time each step took. Nothing here is typed in by hand.
-            {target
-              ? " A step that runs longer than its time limit is counted as a delay, and the reason the driver picks decides whether those minutes are attributed to Lotus, to us, or to neither."
-              : " Per-step time limits are switched off, so lateness is measured against the contracted delivery windows: arriving after a window opens is counted as ours, and still being there after it closes is counted as the outlet's."}
-          </p>
+          {/* Where the numbers come from, and how lateness is judged. Both
+              have to be answered somewhere, and the four tile subtitles
+              cannot carry it between them.
+              It was one paragraph of five clauses doing four jobs: the
+              source, the arithmetic, which basis is in force, and the
+              attribution rule. Nobody reads that standing up. Two short
+              lines now say the part you need every time; the mechanics sit
+              behind a disclosure for the once you need them. */}
+          <SectionNote
+            label="How these are worked out"
+            more={<>
+              <NoteItem term="The steps.">
+                Arrived · goods ready · loaded · departed · returned. The app subtracts one stamp from
+                the next to get how long each took.
+              </NoteItem>
+              <NoteItem term="Arriving late is ours.">
+                A run that reaches the outlet after its window has opened is counted against Ninja Van.
+              </NoteItem>
+              <NoteItem term="Still there at closing is the outlet's.">
+                Time after the window closes is counted against Lotus — but our own late arrival is
+                deducted first, so a claim never bills them for a start we were late to.
+              </NoteItem>
+              {target ? (
+                <NoteItem term="Steps over their limit.">
+                  A step that runs longer than its time limit is a delay too, and the reason the driver
+                  gives decides whether those minutes sit with Lotus, with us, or with neither.
+                </NoteItem>
+              ) : (
+                <NoteItem term="Why the limits are off.">
+                  The per-step figures are internal working assumptions, not terms agreed with Lotus.
+                  Until they are, no step is judged on its own length.
+                </NoteItem>
+              )}
+            </>}
+          >
+            Every figure comes from checkpoints drivers stamp on their phones — nothing is typed in by
+            hand. {target
+              ? "Lateness is judged against the delivery window for the run and the time limit on each step."
+              : "Lateness is judged against the contracted delivery window for each run."}
+          </SectionNote>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {/* Two sources, one row. The per-step limits are off, so
                 anything measured against them is not zero -- it is unmeasured,
@@ -311,7 +342,7 @@ export default function Dashboard() {
                 : `${win.missed ?? 0} / ${win.trips_with_window ?? 0}`}
               sub={target
                 ? (t.breach_rate !== null
-                    ? `${t.breach_rate}% of trips spent longer at the outlet than allowed`
+                    ? `${t.breach_rate}% of trips were at the outlet longer than the limit`
                     : "No trips in this period")
                 : (win.on_time_rate != null
                     ? `${win.on_time_rate}% left inside their contracted window`
@@ -342,10 +373,20 @@ export default function Dashboard() {
 
           <section className="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
             <h2 className="text-base font-semibold text-brand-black">Manpower</h2>
-            <p className="mt-0.5 text-xs text-slate-500">
-              Daily coverage and throughput. Establishes whether our own staffing explains a slow day before
-              outlet performance is questioned. Drivers on duty is derived from trips actually run.
-            </p>
+            <SectionNote
+              more={<>
+                <NoteItem term="Why it is here.">
+                  It answers the staffing question before the outlet one — a slow day with two drivers
+                  out is ours, not Lotus's, and this is where you can tell.
+                </NoteItem>
+                <NoteItem term="On duty.">
+                  Counted from trips actually run, not from a roster. A driver who was scheduled and did
+                  not drive does not appear.
+                </NoteItem>
+              </>}
+            >
+              A row per day: who drove, how much they carried, and how long they spent at the outlet.
+            </SectionNote>
             <div className="mt-3 overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -409,10 +450,24 @@ export default function Dashboard() {
             <h2 className="text-base font-semibold text-brand-black">
               Time at outlet, by {BUCKET_WORD[data.trend_bucket] || "week"}
             </h2>
-            <p className="mt-0.5 text-xs text-slate-500">
-              Average arrival-to-departure per outlet, grouped by {BUCKET_WORD[data.trend_bucket] || "week"}.
-              Each point covers the whole {BUCKET_WORD[data.trend_bucket] || "week"} it is labelled with.
-            </p>
+            <SectionNote
+              more={<>
+                <NoteItem term="Each point.">
+                  Covers the whole {BUCKET_WORD[data.trend_bucket] || "week"} it is labelled with, in its real
+                  place on the timeline — a gap means the fleet did not run, not that it scored zero.
+                </NoteItem>
+                <NoteItem term="The grain follows the period.">
+                  Day by day for a week or a month, week by week beyond that, month by month for a long
+                  range. Change the period above and this regroups.
+                </NoteItem>
+                <NoteItem term="Three outlets at most.">
+                  A fourth line cannot be told from the others by colour, so the busiest three are drawn
+                  and the rest are named under the chart.
+                </NoteItem>
+              </>}
+            >
+              Average time from arriving at an outlet to leaving it, one line per outlet.
+            </SectionNote>
             {/* The period bounds, so the axis is the span you selected rather
                 than just the days that came back with trips. */}
             <TrendChart trend={data.trend} target={data.at_outlet_target} bucket={data.trend_bucket}
@@ -451,14 +506,28 @@ export default function Dashboard() {
 
           <section className="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
             <h2 className="text-base font-semibold text-brand-black">Delay by reason code</h2>
-            {/* The minutes mean one of two things and the line says which.
+            {/* The minutes mean one of two things and the note says which.
                 With the limits off there is no bar to be over, so the figure
                 is the length of the step the driver explained. */}
-            <p className="mt-0.5 text-xs text-slate-500">
-              {data.reasons_over_allowance
-                ? "Minutes over the time limit, by the reason the driver gave, ranked by total time lost."
-                : "Time spent in the step the driver explained, by reason, ranked by total. Per-step time limits are off, so there is no overage to measure — this is the whole step."}
-            </p>
+            <SectionNote
+              more={<>
+                <NoteItem term="What the minutes are.">
+                  {data.reasons_over_allowance
+                    ? "The time a step ran past its limit — the overage, not the whole step."
+                    : "The whole length of the step the reason explains. With per-step time limits off there is no bar to be over, so there is no overage to measure."}
+                </NoteItem>
+                <NoteItem term="Where they come from.">
+                  A driver picks a coded reason against a step. Nothing here is typed free-hand, which is
+                  what makes these totals addable in the first place.
+                </NoteItem>
+                <NoteItem term="The colours.">
+                  Who the reason points at — amber Lotus, blue Ninja Van, green external. That tagging
+                  lives on the reason code, in Settings › Delay reasons.
+                </NoteItem>
+              </>}
+            >
+              Where the time went, by the reason the driver gave, ranked by total.
+            </SectionNote>
             <div className="mt-4 space-y-2.5">
               {data.reasons.map((r) => (
                 <div key={r.label} className="grid grid-cols-[minmax(120px,1.2fr)_minmax(0,3fr)_70px] items-center gap-3 text-sm">

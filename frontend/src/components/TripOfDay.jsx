@@ -1,5 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import Icon from "./Icon";
+import SectionNote, { NoteItem } from "./SectionNote";
 import { formatDate, formatDuration, formatShortDate } from "../lib/duration";
 
 // Arrival and departure, split by which run of the day it was.
@@ -98,11 +99,26 @@ export default function TripOfDay({ rows, unnumbered, from, to }) {
           from a control several sections away. Whether the figures are
           getting better or worse is a different question, answered by the
           day-on-day and week-on-week rows in the Manpower section above. */}
-      <p className="mt-0.5 text-xs text-slate-500">
-        Averages across {span ? <b className="text-slate-600">{span}</b> : "the selected period"}.
-        Each run has its own contracted window, so they are counted separately — arrival is measured
-        against the time that window <b>opens</b>, departure against the time it <b>closes</b>.
-      </p>
+      <SectionNote
+        more={<>
+          <NoteItem term="Two different boundaries.">
+            Arrival is measured against the time the window <b>opens</b>; departure against the time it
+            <b> closes</b>. The columns say which is which.
+          </NoteItem>
+          <NoteItem term="Why the runs are split.">
+            The first run and the second have different contracted windows and behave nothing alike —
+            the first waits for goods to be picked, the second collects what is already staged.
+            Averaged together, neither question gets answered.
+          </NoteItem>
+          <NoteItem term="Two denominators.">
+            Whether a truck arrived in time is known the moment it arrives; whether it left in time
+            cannot be judged until it has. A run still at the outlet counts in the first, not the second.
+          </NoteItem>
+        </>}
+      >
+        Averages across {span ? <b className="font-semibold text-slate-600">{span}</b> : "the selected period"},
+        counted separately for each run of the day.
+      </SectionNote>
 
       <div className="mt-3 overflow-x-auto">
         <table className="w-full text-left text-sm">

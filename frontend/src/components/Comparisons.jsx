@@ -1,3 +1,4 @@
+import SectionNote, { NoteItem } from "./SectionNote";
 import { dayParts, formatDate, formatDuration, formatShortDate } from "../lib/duration";
 
 // Day on day, week on week, four weeks on four weeks.
@@ -156,11 +157,24 @@ export default function Comparisons({ comparisons }) {
   return (
     <div className="mt-5 border-t border-slate-200 pt-4">
       <h3 className="text-sm font-semibold text-brand-black">Against the same stretch before</h3>
-      <p className="mt-0.5 text-xs text-slate-500">
-        Each window runs to today and is measured against the same slice of the one before — this
-        week so far against the same days last week, this month so far against the same dates last
-        month. Fixed, so they read the same whichever period is selected above.
-      </p>
+      <SectionNote
+        more={<>
+          <NoteItem term="Like for like.">
+            This week so far against the same days last week; this month so far against the same dates
+            last month. Four days against a full seven would report a collapse every Wednesday.
+          </NoteItem>
+          <NoteItem term="Fixed windows.">
+            These do not follow the period picker at the top. A comparison whose meaning changes when
+            someone clicks a tab is one nobody can quote in a meeting.
+          </NoteItem>
+          <NoteItem term="Earlier is better on the times.">
+            An earlier arrival is a truck in position; an earlier departure is less time held at the
+            outlet.
+          </NoteItem>
+        </>}
+      >
+        Each window runs to today, measured against the same slice of the period before it.
+      </SectionNote>
 
       <div className="mt-3 overflow-x-auto">
         <table className="min-w-full text-left text-sm">
