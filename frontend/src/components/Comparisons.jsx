@@ -79,11 +79,19 @@ export default function Comparisons({ comparisons }) {
           <thead>
             <tr className="text-xs uppercase tracking-wide text-slate-400">
               <th className="py-2 pr-4 font-medium">Measure</th>
+              {/* Three lines, not one run of text. "Tue 15 Sep → Thu 17 Sep"
+                  in small grey type makes a reader parse two dates, an arrow
+                  and a dash to work out which end is now. Stacked, the period
+                  being reported is the dark line and what it is measured
+                  against sits under it, and the eye never has to parse. */}
               {comparisons.map((c) => (
-                <th key={c.key} className="py-2 pr-4 font-medium">
-                  <span className="block text-slate-500">{c.label}</span>
-                  <span className="block normal-case tracking-normal text-slate-400">
-                    {periodLabel(c.previous_label)} → {periodLabel(c.current_label)}
+                <th key={c.key} className="py-2 pr-6 align-bottom font-medium">
+                  <span className="block text-slate-400">{c.label}</span>
+                  <span className="mt-1 block whitespace-nowrap text-sm normal-case tracking-normal text-brand-black">
+                    {periodLabel(c.current_label)}
+                  </span>
+                  <span className="block whitespace-nowrap text-xs font-normal normal-case tracking-normal text-slate-400">
+                    vs {periodLabel(c.previous_label)}
                   </span>
                 </th>
               ))}
@@ -94,13 +102,14 @@ export default function Comparisons({ comparisons }) {
               <tr key={row.key} className="border-t border-slate-100 align-top">
                 <td className="py-2.5 pr-4 text-slate-600">{row.label}</td>
                 {comparisons.map((c) => (
-                  <td key={c.key} className="py-2.5 pr-4">
+                  <td key={c.key} className="py-2.5 pr-6">
                     <Delta row={row} current={c.current[row.key]} previous={c.previous[row.key]} />
                     {/* Both figures underneath, because a change with no
                         magnitudes behind it cannot be checked -- "down 40%"
-                        is 5 trips or 500. */}
-                    <span className="mt-0.5 block text-xs tabular-nums text-slate-400">
-                      {show(row, c.previous[row.key])} → {show(row, c.current[row.key])}
+                        is 5 trips or 500. Current first, matching the header:
+                        one reading order for the whole block. */}
+                    <span className="mt-0.5 block whitespace-nowrap text-xs tabular-nums text-slate-400">
+                      {show(row, c.current[row.key])} vs {show(row, c.previous[row.key])}
                     </span>
                   </td>
                 ))}
