@@ -279,23 +279,23 @@ export default function Dashboard() {
             goods ready, loaded, departed, returned. The app subtracts one timestamp from the next to get
             the time each step took. Nothing here is typed in by hand.
             {target
-              ? " A step that runs longer than its allowance is counted as a delay, and the reason the driver picks decides whether those minutes are attributed to Lotus, to us, or to neither."
-              : " Per-step time allowances are switched off, so lateness is measured against the contracted delivery windows: arriving after a window opens is counted as ours, and still being there after it closes is counted as the outlet's."}
+              ? " A step that runs longer than its time limit is counted as a delay, and the reason the driver picks decides whether those minutes are attributed to Lotus, to us, or to neither."
+              : " Per-step time limits are switched off, so lateness is measured against the contracted delivery windows: arriving after a window opens is counted as ours, and still being there after it closes is counted as the outlet's."}
           </p>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {/* Two sources, one row. The per-step allowances are off, so
+            {/* Two sources, one row. The per-step limits are off, so
                 anything measured against them is not zero -- it is unmeasured,
                 and a confident "0m" beside "Delay caused by Lotus" reads as
                 "nothing to claim", which is the opposite of true.
                 The contracted delivery windows ARE in force and carry the same
-                attribution, so while allowances are off these tiles report the
+                attribution, so while the limits are off these tiles report the
                 windows and say so. Nothing on the row is a placeholder. */}
             <Tile
               accent
               label="Delay caused by Lotus"
               value={formatDuration(target ? t.owned_minutes.lotus : win.late_minutes_lotus ?? 0)}
               sub={target
-                ? "Minutes a step ran over its allowance, where the driver's reason points at the outlet"
+                ? "Minutes a step ran over its time limit, where the driver's reason points at the outlet"
                 : "Minutes a run left the outlet after its delivery window closed, beyond any late arrival of ours"}
               delta={
                 target && t.owned_minutes_previous.lotus
@@ -305,7 +305,7 @@ export default function Dashboard() {
               deltaBad={t.owned_minutes.lotus > t.owned_minutes_previous.lotus}
             />
             <Tile
-              label={target ? "Trips over allowance" : "Trips that missed their window"}
+              label={target ? "Trips over the limit" : "Trips that missed their window"}
               value={target
                 ? `${t.over_target} / ${t.trips}`
                 : `${win.missed ?? 0} / ${win.trips_with_window ?? 0}`}
@@ -395,7 +395,7 @@ export default function Dashboard() {
               </table>
             </div>
             <Legend items={[
-              ...(target ? [{ label: "Red figure", note: `over the ${target}m allowance`, dot: "bg-brand-red" }] : []),
+              ...(target ? [{ label: "Red figure", note: `over the ${target}m limit`, dot: "bg-brand-red" }] : []),
             ]} />
             {/* The cut at the end of the table: the same measures, against the
                 last day, the last week and the last four weeks. */}
@@ -452,12 +452,12 @@ export default function Dashboard() {
           <section className="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
             <h2 className="text-base font-semibold text-brand-black">Delay by reason code</h2>
             {/* The minutes mean one of two things and the line says which.
-                With allowances off there is no bar to be over, so the figure
+                With the limits off there is no bar to be over, so the figure
                 is the length of the step the driver explained. */}
             <p className="mt-0.5 text-xs text-slate-500">
               {data.reasons_over_allowance
-                ? "Minutes over the allowance, by the reason the driver gave, ranked by total time lost."
-                : "Time spent in the step the driver explained, by reason, ranked by total. Per-step allowances are off, so there is no overage to measure — this is the whole step."}
+                ? "Minutes over the time limit, by the reason the driver gave, ranked by total time lost."
+                : "Time spent in the step the driver explained, by reason, ranked by total. Per-step time limits are off, so there is no overage to measure — this is the whole step."}
             </p>
             <div className="mt-4 space-y-2.5">
               {data.reasons.map((r) => (
@@ -476,7 +476,7 @@ export default function Dashboard() {
               {data.reasons.length === 0 && (
                 <p className="text-sm text-slate-400">
                   {/* "gaps that ran over" described the old, broken rule --
-                      with allowances off nothing ever ran over, so this line
+                      with the limits off nothing ever ran over, so this line
                       was telling people to wait for something that could not
                       happen. Any coded reason lands here now. */}
                   No reasons recorded in this period — they appear here as soon as drivers start

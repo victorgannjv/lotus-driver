@@ -151,7 +151,7 @@ export const translations = {
       over: "{time} over",
       elapsed: "{elapsed} so far · {allowed} allowed",
       sinceStep: "so far on this step",
-      // Neutral on purpose. The allowance is a measure, not a verdict, and a
+      // Neutral on purpose. The limit is a measure, not a verdict, and a
       // fair share of the time the wait belongs to the outlet.
       overNote: "Record a reason at the next step so the time is accounted for.",
     },

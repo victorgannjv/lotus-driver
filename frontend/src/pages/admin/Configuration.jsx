@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import { api } from "../../api";
 import Icon from "../../components/Icon";
-import { CONFIG_TABS } from "./configTabs";
+import { useConfigTabs } from "./configTabs";
 
 // Settings, written for an ops coordinator rather than a developer.
 //
@@ -16,6 +16,7 @@ const subLink = ({ isActive }) =>
 
 
 export function ConfigurationLayout() {
+  const tabs = useConfigTabs();
   return (
     <div>
       <h1 className="text-lg font-semibold text-brand-black">Settings</h1>
@@ -23,7 +24,7 @@ export function ConfigurationLayout() {
         Changes save straight away and are recorded in the activity log.
       </p>
       <nav className="mt-4 flex flex-wrap gap-2 border-b border-slate-200 pb-3">
-        {CONFIG_TABS.map(({ to, label }) => (
+        {tabs.map(({ to, label }) => (
           <NavLink key={to} to={to} className={subLink}>{label}</NavLink>
         ))}
       </nav>
@@ -418,7 +419,7 @@ export function TripWindows() {
   );
 }
 
-/* ------------------------------------------------------------ time allowances */
+/* ---------------------------------------------------------------- time limits */
 
 const GAP_LABEL = {
   waiting_for_lotus: "Waiting for Lotus to have the goods ready",
@@ -459,38 +460,38 @@ export function Targets() {
 
   return (
     <Panel
-      title="Time allowances"
+      title="Time limits"
       blurb="How long each step may take before it is flagged as late."
-      footer="Allowances explain WHY a run was late. The delivery windows decide WHETHER it was — those work on their own and are unaffected by anything on this page."
+      footer="Time limits explain WHY a run was late. The delivery windows decide WHETHER it was — those work on their own and are unaffected by anything on this page."
     >
       <Err>{error}</Err>
 
       <Section
-        title="Use time allowances"
-        blurb="Off by default. These per-step figures are internal working assumptions, not terms agreed with Lotus. Enable them once the allowances are contractually settled; until then lateness is measured against the delivery windows alone."
+        title="Use time limits"
+        blurb="Off by default. These per-step figures are internal working assumptions, not terms agreed with Lotus. Turn them on once the limits are contractually settled; until then lateness is measured against the delivery windows alone."
       >
         <Row>
           <span className="min-w-[18rem] flex-1">
             <span className="block text-sm font-medium text-brand-black">
-              Flag steps that run over their allowance
+              Flag steps that run over their limit
             </span>
             <span className="mt-0.5 block text-xs text-slate-500">
               {enabled
-                ? "On — steps over their allowance are flagged, the driver is asked why, and the time is attributed."
+                ? "On — steps over their limit are flagged, the driver is asked why, and the time is attributed."
                 : "Off — no step is flagged, no reason is demanded, and lateness comes only from the delivery windows. Drivers can still add a reason whenever they want to."}
             </span>
           </span>
           {enabled === null ? (
             <span className="text-sm text-slate-500">Loading…</span>
           ) : (
-            <Toggle on={enabled} disabled={settingBusy} label="Use time allowances"
+            <Toggle on={enabled} disabled={settingBusy} label="Use time limits"
                     onChange={setMaster} />
           )}
         </Row>
       </Section>
 
       <Section
-        title="The allowances"
+        title="The limits"
         blurb={enabled
           ? "Switch individual steps off to leave them unflagged while the rest apply."
           : "Kept, and editable, but none of them apply while the switch above is off."}
@@ -518,7 +519,7 @@ export function Targets() {
               <Toggle
                 on={!!r.is_active}
                 disabled={busy || !enabled}
-                label={`Apply the ${GAP_LABEL[r.gap_code] || r.gap_code} allowance`}
+                label={`Apply the ${GAP_LABEL[r.gap_code] || r.gap_code} limit`}
                 onChange={(next) => run(() => api.put(`/admin/config/targets/${r.id}/active`, { is_active: next }))}
               />
               <span className={actionsCell}>
@@ -532,8 +533,8 @@ export function Targets() {
                 <button type="button" className={btnDanger} disabled={busy}
                         onClick={() => confirmed(
                           r.warehouse_id
-                            ? "Delete this outlet's allowance? It will fall back to the every-outlet one."
-                            : "Delete this allowance? Switching it off keeps the number; deleting loses it."
+                            ? "Delete this outlet's limit? It will fall back to the every-outlet one."
+                            : "Delete this limit? Switching it off keeps the number; deleting loses it."
                         ) && run(() => api.del(`/admin/config/targets/${r.id}`))}>
                   Delete
                 </button>
@@ -952,7 +953,7 @@ export function DriversConfig() {
           </button>
         )
       }
-      footer="The outlet decides which delivery windows and allowances a driver's trips are measured against. Turning sign-in off stops someone using the app but keeps their trips, which are the evidence behind past claims; removing the account takes those trips with it, and every dashboard figure that counted them."
+      footer="The outlet decides which delivery windows and time limits a driver's trips are measured against. Turning sign-in off stops someone using the app but keeps their trips, which are the evidence behind past claims; removing the account takes those trips with it, and every dashboard figure that counted them."
     >
       <Err>{error}</Err>
       <InviteLink invite={invite} onDone={() => setInvite(null)} />
@@ -1374,7 +1375,7 @@ export function Roster() {
 /* --------------------------------------------------------------- activity log */
 
 const ENTITY_LABEL = {
-  reason_code: "Delay reason", target: "Time allowance", schedule: "Delivery window",
+  reason_code: "Delay reason", target: "Time limit", schedule: "Delivery window",
   driver: "Driver", admin: "Admin", roster: "Shift roster", setting: "Driver app",
 };
 const ACTION_CHIP = {
@@ -1420,7 +1421,7 @@ export function ActivityLog() {
           {Object.entries(ENTITY_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </select>
       }
-      footer="Changing a window or an allowance re-scores past trips, so this is how you answer “why does last month read differently now?” — and how a claim survives Lotus asking whether the bar moved after the fact."
+      footer="Changing a window or a time limit re-scores past trips, so this is how you answer “why does last month read differently now?” — and how a claim survives Lotus asking whether the bar moved after the fact."
     >
       <Err>{error}</Err>
 

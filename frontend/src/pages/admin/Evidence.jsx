@@ -386,7 +386,7 @@ export default function Evidence() {
             "Every trip, and where the time went. A step that ran over its
             allowed time is flagged, and Owner says whose time it was" described
             three mechanics and never once said why anyone would open this
-            screen -- and the first of them was not even true with allowances
+            screen -- and the first of them was not even true with the limits
             switched off. The legend at the foot already explains the colours;
             this line only has to answer "what is this page". */}
         <p className="mt-0.5 text-xs text-slate-500">
@@ -466,8 +466,8 @@ export default function Evidence() {
             {/* Says what every colour on this page means, in the words someone
                 would use to explain it out loud. */}
             <div className="flex max-w-3xl flex-wrap gap-x-4 gap-y-1.5 text-xs text-slate-500">
-              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-brand-red" /><b className="text-slate-700">Red edge</b> — a step exceeded its allowance</span>
-              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-emerald-600" /><b className="text-slate-700">Green edge</b> — all steps within allowance</span>
+              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-brand-red" /><b className="text-slate-700">Red edge</b> — a step ran over its time limit</span>
+              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-emerald-600" /><b className="text-slate-700">Green edge</b> — every step inside its time limit</span>
               <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-amber-500" /><b className="text-slate-700">Lotus</b> — outlet delay, recoverable</span>
               <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-blue-600" /><b className="text-slate-700">Ninja Van</b> — our delay, absorbed</span>
               <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-emerald-500" /><b className="text-slate-700">External</b> — traffic or weather, not attributable</span>

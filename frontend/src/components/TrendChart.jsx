@@ -219,7 +219,7 @@ export default function TrendChart({ trend, target, bucket = "week", from, to })
           {target != null && (
             <span className="flex items-center gap-1.5 text-xs text-slate-500">
               <span className="h-0 w-4 border-t-2 border-dashed border-slate-400" />
-              allowance {formatDuration(target)}
+              limit {formatDuration(target)}
             </span>
           )}
         </div>

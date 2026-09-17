@@ -406,7 +406,7 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
           showed time-at-outlet, a number that stops moving the moment the
           truck leaves and says nothing at all mid-trip. A driver standing in
           a loading bay wants one thing: how long has this step got left.
-          Neutral by design -- it counts an allowance, it does not accuse
+          Neutral by design -- it counts against a limit, it does not accuse
           anybody, because a good share of the time the wait is not theirs. */}
       {live && (
         <div className={`mb-3 rounded-2xl p-4 shadow-sm ring-1 ${

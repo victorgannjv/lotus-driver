@@ -283,7 +283,7 @@ export function ReasonSheet({ open, gap, reasons, busy, onSubmit, onSkip }) {
     <Sheet
       title={t("reason.title")}
       subtitle={
-        // With allowances switched off there is no target to quote, but the
+        // With the time limits switched off there is no bar to quote, but the
         // driver can still open this from the timeline to explain a step.
         gap.target_minutes != null
           ? t("reason.subtitle", {

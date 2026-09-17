@@ -4,7 +4,7 @@ import RequireAdmin from "../../auth/RequireAdmin";
 import AppHeader from "../../components/AppHeader";
 import SampleDataBanner from "../../components/SampleDataBanner";
 import UpdateBar from "../../components/UpdateBar";
-import { CONFIG_TABS } from "./configTabs";
+import { useConfigTabs } from "./configTabs";
 import Icon from "../../components/Icon";
 
 // Work on the left, setup on the right.
@@ -23,6 +23,7 @@ export default function Gate() {
   // not on the allowlist, so this is only an echo of who you are.
   const [email, setEmail] = useState(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const tabs = useConfigTabs();
   const menuRef = useRef(null);
   const location = useLocation();
 
@@ -73,7 +74,7 @@ export default function Gate() {
             </button>
             {menuOpen && (
               <div className="absolute right-0 z-20 mt-1 w-52 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
-                {CONFIG_TABS.map((item) => (
+                {tabs.map((item) => (
                   <NavLink
                     key={item.to}
                     to={item.to}
