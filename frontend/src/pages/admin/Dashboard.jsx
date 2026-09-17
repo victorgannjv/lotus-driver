@@ -3,7 +3,7 @@ import { api } from "../../api";
 import TrendChart from "../../components/TrendChart";
 import Comparisons from "../../components/Comparisons";
 import Icon from "../../components/Icon";
-import { formatDayRelative, formatDuration } from "../../lib/duration";
+import { dayParts, formatDuration } from "../../lib/duration";
 
 // The monitoring surface. Every figure answers one question: how much time did
 // Lotus cost us, and can we prove it? Nothing here grows as data accumulates --
@@ -228,6 +228,7 @@ export default function Dashboard() {
                 <thead>
                   <tr className="text-left text-xs uppercase tracking-wide text-slate-400">
                     <th className="py-2 pr-4">Day</th>
+                    <th className="py-2 pr-4">Date</th>
                     <th className="py-2 pr-4">On duty</th>
                     <th className="py-2 pr-4">Trips</th>
                     <th className="py-2 pr-4">Trips / driver</th>
@@ -237,21 +238,35 @@ export default function Dashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.manpower.map((d) => (
-                    <tr key={d.work_date} className="border-t border-slate-100">
-                      <td className="py-2 pr-4 font-medium">{formatDayRelative(d.work_date)}</td>
-                      <td className="py-2 pr-4">{d.on_duty}</td>
-                      <td className="py-2 pr-4">{d.trips}</td>
-                      <td className="py-2 pr-4">{d.trips_per_driver}</td>
-                      <td className="py-2 pr-4">{d.orders}</td>
-                      <td className={`py-2 pr-4 ${over(d.avg_at_outlet_minutes) ? "font-semibold text-brand-red" : ""}`}>
-                        {formatDuration(d.avg_at_outlet_minutes)}
-                      </td>
-                      <td className="py-2">{d.over_target}</td>
-                    </tr>
-                  ))}
+                  {data.manpower.map((d) => {
+                    const day = dayParts(d.work_date);
+                    return (
+                      <tr key={d.work_date} className="border-t border-slate-100">
+                        {/* Weekday and date in their own columns, so both line
+                            up down the page instead of the weekday starting
+                            wherever "Today · " happened to end. */}
+                        <td className="py-2 pr-4 font-medium text-slate-500">{day.weekday}</td>
+                        <td className="py-2 pr-4 whitespace-nowrap font-medium">
+                          {day.date}
+                          {day.relative && (
+                            <span className="ml-2 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                              {day.relative}
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-2 pr-4 tabular-nums">{d.on_duty}</td>
+                        <td className="py-2 pr-4 tabular-nums">{d.trips}</td>
+                        <td className="py-2 pr-4 tabular-nums">{d.trips_per_driver}</td>
+                        <td className="py-2 pr-4 tabular-nums">{d.orders}</td>
+                        <td className={`py-2 pr-4 tabular-nums ${over(d.avg_at_outlet_minutes) ? "font-semibold text-brand-red" : ""}`}>
+                          {formatDuration(d.avg_at_outlet_minutes)}
+                        </td>
+                        <td className="py-2 tabular-nums">{d.over_target}</td>
+                      </tr>
+                    );
+                  })}
                   {data.manpower.length === 0 && (
-                    <tr><td colSpan="7" className="py-3 text-sm text-slate-400">No trips in this period.</td></tr>
+                    <tr><td colSpan="8" className="py-3 text-sm text-slate-400">No trips in this period.</td></tr>
                   )}
                 </tbody>
               </table>

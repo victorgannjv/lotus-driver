@@ -53,16 +53,23 @@ export function formatDate(iso) {
   return `${DAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}`;
 }
 
-// The same, with the two labels that save the counting entirely.
-export function formatDayRelative(iso) {
+// A date broken into the parts a table wants in separate columns.
+//
+// "Today · Thu 17 Sep" in one cell put three things a reader scans for --
+// which weekday, which date, and is this today -- into one run of text, with
+// the weekday landing at a different x on every row. Split, the weekdays form
+// a column you can read down.
+export function dayParts(iso) {
   const d = parseISODate(iso);
-  if (!d) return iso || "";
+  if (!d) return { weekday: "", date: iso || "", relative: null };
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const days = Math.round((today - d) / 86400000);
-  if (days === 0) return `Today · ${formatDate(iso)}`;
-  if (days === 1) return `Yesterday · ${formatDate(iso)}`;
-  return formatDate(iso);
+  return {
+    weekday: DAYS[d.getDay()],
+    date: `${d.getDate()} ${MONTHS[d.getMonth()]}`,
+    relative: days === 0 ? "Today" : days === 1 ? "Yesterday" : null,
+  };
 }
 
 // "2026-09-15 13:49:00" -> "Mon 15 Sep · 13:49". The wire format carries
