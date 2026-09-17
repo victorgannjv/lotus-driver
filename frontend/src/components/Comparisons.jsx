@@ -1,4 +1,4 @@
-import { formatDate, formatDuration, formatShortDate } from "../lib/duration";
+import { dayParts, formatDate, formatDuration, formatShortDate } from "../lib/duration";
 
 // Day on day, week on week, four weeks on four weeks.
 //
@@ -42,13 +42,43 @@ function periodLabel(raw) {
   return sameMonth ? `${left.split(" ")[0]}–${right}` : `${left} – ${right}`;
 }
 
-// "Sep" + "1–17 Sep" -> "Sep 1–17". The month is already the name of the
-// window; printing it again at the end of the range is the same word twice.
-// Week prefixes (W38) never match a month, so those keep their "14–17 Sep".
-function withPrefix(prefix, raw) {
+// The two halves of a period label, kept apart.
+//
+// "Thu 17 Sep" as one run of text puts the weekday and the date in the same
+// weight and the same colour, so the eye has nothing to catch and reads a
+// four-word blur. Every one of these labels is really a NAME and a SPAN --
+// Thu / 17 Sep, W38 / 14-17 Sep, Sep / 1-17 -- and separating them is the
+// same fix the day column in the table above needed.
+function labelParts(prefix, raw) {
+  if (!raw) return { name: "", span: "" };
+  if (!raw.includes("..")) {
+    const d = dayParts(raw);
+    return { name: d.weekday, span: d.date };
+  }
   const label = periodLabel(raw);
-  if (!prefix) return label;
-  return label.endsWith(` ${prefix}`) ? `${prefix} ${label.slice(0, -prefix.length - 1)}` : `${prefix} ${label}`;
+  if (prefix && label.endsWith(` ${prefix}`)) {
+    // "1–17 Sep" under the name "Sep" would say September twice.
+    return { name: prefix, span: label.slice(0, -prefix.length - 1) };
+  }
+  return { name: prefix || "", span: label };
+}
+
+// Two different typefaces' worth of difference, not just a space.
+//
+// Same size, same weight, same colour, one space apart is what made "Thu 17
+// Sep" read as a blur. The name is set small, spaced and upper-case in grey;
+// the dates stay full size and near-black. They no longer look like one
+// phrase, which is the point -- they are not one.
+function PeriodLabel({ prefix, raw, muted }) {
+  const { name, span } = labelParts(prefix, raw);
+  return (
+    <span className="inline-flex items-baseline gap-2">
+      {name && (
+        <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{name}</span>
+      )}
+      <span className={muted ? "text-slate-500" : "text-brand-black"}>{span}</span>
+    </span>
+  );
 }
 
 function Delta({ row, current, previous }) {
@@ -101,11 +131,11 @@ export default function Comparisons({ comparisons }) {
                       it actually covers behind it. A week number alone is
                       unverifiable; a date range alone makes the reader count
                       back to work out which week it was. */}
-                  <span className="mt-1 block whitespace-nowrap text-sm font-semibold normal-case tracking-normal text-brand-black">
-                    {withPrefix(c.current_prefix, c.current_label)}
+                  <span className="mt-1 block whitespace-nowrap text-sm font-semibold normal-case tracking-normal">
+                    <PeriodLabel prefix={c.current_prefix} raw={c.current_label} />
                   </span>
                   <span className="block whitespace-nowrap text-xs font-normal normal-case tracking-normal text-slate-400">
-                    vs {withPrefix(c.previous_prefix, c.previous_label)}
+                    vs <PeriodLabel prefix={c.previous_prefix} raw={c.previous_label} muted />
                   </span>
                 </th>
               ))}
