@@ -57,7 +57,17 @@ export default function Jobs() {
 
   return (
     <div>
-      <div className="mb-4 flex flex-wrap items-end gap-3">
+      {/* This page opened straight onto a row of filters with no title and no
+          sentence, so the only way to learn what it was for was to use it.
+          Same card and same shape as the Evidence header, so the two admin
+          screens introduce themselves the same way. */}
+      <div className="mb-4 rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
+        <h2 className="text-base font-semibold text-brand-black">Orders</h2>
+        <p className="mt-0.5 text-xs text-slate-500">
+          Every parcel scanned, and how it ended. Search a tracking number when someone asks about
+          one delivery — the row opens the full trail for that parcel.
+        </p>
+        <div className="mt-3 flex flex-wrap items-end gap-3">
         <label className="text-sm">
           <span className="mb-1 block font-medium text-slate-700">Job ID</span>
           <input
@@ -118,6 +128,7 @@ export default function Jobs() {
         >
           Export CSV
         </a>
+        </div>
       </div>
 
       {error && <p className="text-sm text-red-600">{error}</p>}

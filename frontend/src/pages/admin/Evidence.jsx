@@ -382,12 +382,17 @@ export default function Evidence() {
     <div>
       <div className="mb-4 rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
         <h2 className="text-base font-semibold text-brand-black">Evidence</h2>
-        {/* One line. Six lines of explanation above a table is six lines
-            nobody reads -- the legend at the foot of the page already says
-            what each colour means, and the table itself says the rest. */}
+        {/* Say what the page is FOR, not how it works.
+            "Every trip, and where the time went. A step that ran over its
+            allowed time is flagged, and Owner says whose time it was" described
+            three mechanics and never once said why anyone would open this
+            screen -- and the first of them was not even true with allowances
+            switched off. The legend at the foot already explains the colours;
+            this line only has to answer "what is this page". */}
         <p className="mt-0.5 text-xs text-slate-500">
-          Every trip, and where the time went. A step that ran over its allowed time is flagged, and
-          <b> Owner</b> says whose time it was.
+          Look up any trip and pull up the proof behind it — every checkpoint with its time, place
+          and photo, and the reason given for a delay. This is what a late-delivery charge from
+          Lotus gets argued with.
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <input
