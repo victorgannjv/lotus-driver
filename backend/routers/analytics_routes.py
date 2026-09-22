@@ -776,7 +776,8 @@ async def evidence(
     if q:
         needle = q.strip().lower()
         trips = [t for t in trips
-                 if needle in str(t["id"]) or needle in (t["driver_name"] or "").lower()]
+                 if needle in str(t["id"]) or needle in str(t["driver_day_id"])
+                 or needle in (t["driver_name"] or "").lower()]
 
     days = _group_by_day(trips)
 

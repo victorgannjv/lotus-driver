@@ -181,6 +181,10 @@ function DayHeader({ day }) {
       <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-black text-[10px] font-bold text-white">
         {(day.driver_name || "?").split(" ").map((w) => w[0]).slice(0, 2).join("")}
       </span>
+      {/* Same "T-<id>" convention as the trip cards below it -- a day is now a
+          row with its own id (driver_day), not just a label grouping trips,
+          so it gets the same kind of identifier the things inside it get. */}
+      <span className="text-xs font-semibold text-slate-400">D-{day.driver_day_id}</span>
       <span className="text-sm font-semibold text-brand-black">{day.driver_name}</span>
       <span className="text-xs text-slate-400">{formatDate(day.work_date)}</span>
       <span className="text-xs text-slate-400">
@@ -463,7 +467,7 @@ export default function Evidence() {
             type="search"
             value={filters.q}
             onChange={set("q")}
-            placeholder="Trip ID or driver…"
+            placeholder="Trip ID, day ID or driver…"
             className="min-w-0 flex-1 basis-48 rounded-lg border border-slate-300 px-3 py-2 text-sm"
           />
           <select value={filters.warehouseId} onChange={set("warehouseId")} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
