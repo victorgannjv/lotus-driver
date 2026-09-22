@@ -81,6 +81,25 @@ CHECKPOINT_LABELS = {
 CHECKPOINT_GAP = {to_cp: code for code, _from, to_cp, _party in GAP_DEFS}
 
 
+async def find_or_create_driver_day(pool, driver_id: int, work_date: str) -> int:
+    """The id of the (driver_id, work_date) row every trip that driver starts
+    today gets linked to -- creating it on the first trip of the day, reusing
+    it on the second and third. (driver_id, work_date) was already how the app
+    found "today's trips" everywhere else (see GET /my-days); this just gives
+    that pair a real row, the same way a trip already has one for its jobs."""
+    async with pool.acquire() as conn, conn.cursor() as cur:
+        await cur.execute(
+            "SELECT id FROM driver_day WHERE driver_id = %s AND work_date = %s", (driver_id, work_date)
+        )
+        row = await cur.fetchone()
+        if row:
+            return row[0]
+        await cur.execute(
+            "INSERT INTO driver_day (driver_id, work_date) VALUES (%s, %s)", (driver_id, work_date)
+        )
+        return cur.lastrowid
+
+
 async def load_targets(pool) -> dict:
     """Active gap targets, keyed (gap_code, warehouse_id). warehouse_id None is
     the global default; an outlet row overrides it for that outlet only.

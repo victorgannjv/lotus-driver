@@ -836,6 +836,7 @@
           "warehouse_arrived_lat": { "type": "number", "nullable": true },
           "warehouse_arrived_lng": { "type": "number", "nullable": true },
           "warehouse_arrived_photo_id": { "type": "integer", "nullable": true, "description": "proof-of-arrival photo, fetch via GET /api/photos/{id}" },
+          "driver_day_id": { "type": "integer", "description": "the driver_day (all trips this driver ran on work_date) this trip belongs to" },
           "created_at": { "type": "string" }
         }
       },

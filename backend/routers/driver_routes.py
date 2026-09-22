@@ -19,14 +19,14 @@ from db import get_pool
 from photos import evidence_caption, link_trip_photos, store_photo
 from clocks import fmt, local_today, stamp as clock_stamp
 from localities import describe
-from trips import load_settings, setting_list
+from trips import find_or_create_driver_day, load_settings, setting_list
 from schemas import DriverWarehouseRequest, ScanRequest
 
 router = APIRouter()
 
 _MANIFEST_COLUMNS = (
     "id, work_date, cancelled_at, warehouse_arrived_at, warehouse_arrived_lat, warehouse_arrived_lng, "
-    "warehouse_arrived_photo_id, created_at"
+    "warehouse_arrived_photo_id, driver_day_id, created_at"
 )
 
 
@@ -39,6 +39,7 @@ def _serialize_manifest(row: dict) -> dict:
         "warehouse_arrived_lat": float(row["warehouse_arrived_lat"]) if row["warehouse_arrived_lat"] is not None else None,
         "warehouse_arrived_lng": float(row["warehouse_arrived_lng"]) if row["warehouse_arrived_lng"] is not None else None,
         "warehouse_arrived_photo_id": row["warehouse_arrived_photo_id"],
+        "driver_day_id": row["driver_day_id"],
         "created_at": fmt(row["created_at"]),
     }
 
@@ -342,13 +343,14 @@ async def start_manifest(
         )
         (prior,) = await cur.fetchone()
     slot_no = prior + 1
+    driver_day_id = await find_or_create_driver_day(pool, driver["id"], today)
 
     async with pool.acquire() as conn, conn.cursor() as cur:
         await cur.execute(
             "INSERT INTO manifests (driver_id, work_date, warehouse_arrived_at, warehouse_arrived_lat, "
-            "warehouse_arrived_lng, warehouse_arrived_photo_id, schedule_slot_no) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
-            (driver["id"], today, occurred_dt, lat, lng, photo_id, slot_no),
+            "warehouse_arrived_lng, warehouse_arrived_photo_id, schedule_slot_no, driver_day_id) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+            (driver["id"], today, occurred_dt, lat, lng, photo_id, slot_no, driver_day_id),
         )
         manifest_id = cur.lastrowid
 

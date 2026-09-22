@@ -1,4 +1,4 @@
-<!-- BEGIN substrait-app contract (v6) — managed by the substrait plugin (link/deploy); edits inside this block are overwritten on update. Delete the whole block to opt out. -->
+<!-- BEGIN substrait-app contract (v7) — managed by the substrait plugin (link/deploy); edits inside this block are overwritten on update. Delete the whole block to opt out. -->
 ## Substrait deployment
 
 **Linked app:** `lotus-driver-tracking` — https://lotus-driver-tracking.ninjavan.apps.substrait.build
@@ -6,7 +6,10 @@
 This project deploys to the **Substrait platform** (linked via the gitignored
 `.substrait/config.json`). Deploy with **`/substrait:deploy`** (packages source-only,
 uploads, `--watch` follows the build to the live preview); re-link with
-`/substrait:link`. The `substrait-app` skill has the full contract; the essentials:
+`/substrait:link`. When the DEPLOYED app misbehaves (500s, blank page, a change that
+didn't take), read its runtime logs with **`/substrait:logs`** — `--watch` stops at the
+green deploy and cannot see runtime faults. The `substrait-app` skill has the full
+contract; the essentials:
 
 **Hard requirements (platform-enforced):**
 - Backend in any language. Its Dockerfile — `cicd/Dockerfile.backend` (repo-root build
@@ -31,8 +34,10 @@ uploads, `--watch` follows the build to the live preview); re-link with
   qdrant: {}, object-storage: {}}`) — the platform provisions them and injects
   `REDIS_URL` / `KAFKA_BROKERS` / `QDRANT_URL` / `OBJECT_STORAGE_BUCKET` only for what's
   declared. The three pod services are ephemeral unless `persistent: true`;
-  `object-storage` is a private per-app file bucket — durable, no options, no credential
-  to configure, and removing the declaration never deletes the files.
+  `object-storage` is a private file bucket per app PER ENVIRONMENT — durable, no options,
+  no credential to configure, and removing the declaration never deletes the files. Read
+  `OBJECT_STORAGE_BUCKET` rather than hard-coding a name; a new environment's bucket
+  starts empty.
 - Custom env vars/secrets: declare in `backend/.env.example` (`NAME=value`, trailing
   `# secret` marks a secret) — the portal pre-creates them for the owner to fill in.
   Build-time frontend vars go in a committed `frontend/.env.production` (public,

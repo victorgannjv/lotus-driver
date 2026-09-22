@@ -102,7 +102,7 @@ async def _load_trips(pool, start: date, end: date, warehouse_id: int | None) ->
     async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
         await cur.execute(
             "SELECT m.id, m.work_date, m.day_closed_at, m.expected_job_count, m.schedule_slot_no, "
-            "u.id AS driver_id, u.name AS driver_name, u.warehouse_id, w.name AS warehouse_name "
+            "m.driver_day_id, u.id AS driver_id, u.name AS driver_name, u.warehouse_id, w.name AS warehouse_name "
             "FROM manifests m JOIN users u ON u.id = m.driver_id "
             "LEFT JOIN warehouses w ON w.id = u.warehouse_id "
             f"WHERE {' AND '.join(where)} ORDER BY m.work_date DESC, m.id DESC",
@@ -162,7 +162,7 @@ async def _scored(pool, rows: list[dict]) -> list[dict]:
             stamps.get("arrived"), stamps.get("departed"),
         )
         out.append({
-            **{k: r[k] for k in ("id", "driver_id", "driver_name", "warehouse_id", "warehouse_name")},
+            **{k: r[k] for k in ("id", "driver_id", "driver_name", "warehouse_id", "warehouse_name", "driver_day_id")},
             "window": window,
             "missed_window": bool(window and window.get("departed_late_minutes")),
             # Which run of the day this was -- stamped at trip start, so a
@@ -710,6 +710,39 @@ async def overview(
     }
 
 
+def _group_by_day(trips: list[dict]) -> list[dict]:
+    """Trips folded under the driver_day each one belongs to, newest day
+    first -- everything one driver ran on one date, which is the question a
+    dispute or a roster check actually asks, not "how was trip 3000006" on
+    its own. A day exists here only if it still has a trip surviving the
+    filters above; an empty day is not evidence of anything."""
+    by_day: dict[int, dict] = {}
+    for t in trips:
+        day = by_day.setdefault(t["driver_day_id"], {
+            "driver_day_id": t["driver_day_id"],
+            "driver_id": t["driver_id"],
+            "driver_name": t["driver_name"],
+            "warehouse_id": t["warehouse_id"],
+            "warehouse_name": t["warehouse_name"],
+            "work_date": t["work_date"],
+            "trips": [],
+        })
+        day["trips"].append(t)
+
+    rows = []
+    for day in by_day.values():
+        ts = day["trips"]
+        rows.append({
+            **day,
+            "trip_count": len(ts),
+            "jobs_total": sum(t["jobs"] for t in ts),
+            "orders_total": sum(t["orders"] for t in ts),
+            "over_target_count": sum(1 for t in ts if t["over_target"]),
+        })
+    rows.sort(key=lambda d: (d["work_date"], d["driver_name"] or ""), reverse=True)
+    return rows
+
+
 @router.get("/evidence")
 async def evidence(
     request: Request,
@@ -724,8 +757,10 @@ async def evidence(
     page_size: int = 25,
     admin=Depends(get_current_admin),
 ):
-    """The detail extract. Filtered and paged rather than dumped: at a few
-    hundred trips a month, scrolling is not a way to find anything."""
+    """The detail extract, grouped by day. Paginated by day rather than by
+    trip, so a day's trips can never be split across a page boundary -- a
+    day's own totals (jobs, orders, over-target count) would otherwise be
+    wrong on whichever page happened to hold the rest of it."""
     pool = get_pool(request)
     end = date.fromisoformat(date_to) if date_to else local_today()
     start = date.fromisoformat(date_from) if date_from else end - timedelta(days=29)
@@ -743,17 +778,20 @@ async def evidence(
         trips = [t for t in trips
                  if needle in str(t["id"]) or needle in (t["driver_name"] or "").lower()]
 
-    total = len(trips)
+    days = _group_by_day(trips)
+
+    total = len(days)
     page = max(1, page)
     page_size = max(1, min(page_size, 200))
-    window = trips[(page - 1) * page_size: page * page_size]
+    window = days[(page - 1) * page_size: page * page_size]
 
     return {
-        "trips": window,
+        "days": window,
         "page": page,
         "page_size": page_size,
         "total": total,
         "pages": max(1, (total + page_size - 1) // page_size),
+        "trip_total": len(trips),
         "over_target_total": sum(1 for t in trips if t["over_target"]),
     }
 

@@ -170,6 +170,31 @@ function JobRow({ trip, job: j }) {
   );
 }
 
+// The layer above Trip: everything one driver ran on one date. A driver makes
+// two or three trips a day, and "how was Ali's Tuesday" is the question a
+// dispute or a roster check actually asks -- not "how was trip 3000006" on
+// its own. Not collapsible like a trip card: at that scale there is nothing
+// to hide, only a header worth reading before the cards it introduces.
+function DayHeader({ day }) {
+  return (
+    <div className="mb-1.5 mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 px-1 first:mt-0">
+      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-black text-[10px] font-bold text-white">
+        {(day.driver_name || "?").split(" ").map((w) => w[0]).slice(0, 2).join("")}
+      </span>
+      <span className="text-sm font-semibold text-brand-black">{day.driver_name}</span>
+      <span className="text-xs text-slate-400">{formatDate(day.work_date)}</span>
+      <span className="text-xs text-slate-400">
+        {day.trip_count} {day.trip_count === 1 ? "trip" : "trips"} · {day.jobs_total} jobs · {day.orders_total} orders
+      </span>
+      {day.over_target_count > 0 && (
+        <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-medium text-brand-red">
+          {day.over_target_count} over target
+        </span>
+      )}
+    </div>
+  );
+}
+
 function TripCard({ trip, open, onToggle }) {
   const [detail, setDetail] = useState(null);
   const tao = trip.time_at_outlet;
@@ -462,7 +487,8 @@ export default function Evidence() {
         </div>
         {data && (
           <p className="mt-3 text-xs text-slate-500">
-            Showing {data.trips.length} of {data.total} trips · {data.over_target_total} over target
+            Showing {data.days.length} of {data.total} driver-days · {data.trip_total} trips
+            {" "}· {data.over_target_total} over target
           </p>
         )}
       </div>
@@ -485,16 +511,23 @@ export default function Evidence() {
             ))}
           </div>
 
-          <div className="space-y-2">
-            {data.trips.map((trip) => (
-              <TripCard
-                key={trip.id}
-                trip={trip}
-                open={openId === trip.id}
-                onToggle={() => patch({ trip: openId === trip.id ? "" : trip.id }, { keepPage: true })}
-              />
+          <div>
+            {data.days.map((day) => (
+              <div key={day.driver_day_id}>
+                <DayHeader day={day} />
+                <div className="space-y-2">
+                  {day.trips.map((trip) => (
+                    <TripCard
+                      key={trip.id}
+                      trip={trip}
+                      open={openId === trip.id}
+                      onToggle={() => patch({ trip: openId === trip.id ? "" : trip.id }, { keepPage: true })}
+                    />
+                  ))}
+                </div>
+              </div>
             ))}
-            {data.trips.length === 0 && (
+            {data.days.length === 0 && (
               <p className="rounded-xl bg-white px-4 py-6 text-sm text-slate-500 ring-1 ring-slate-200">
                 No trips match these filters. Clear one and try again.
               </p>
