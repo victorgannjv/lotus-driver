@@ -16,6 +16,12 @@ import { formatDate, formatDuration, formatTime } from "../../lib/duration";
 //
 // Built to be filtered rather than scrolled: at a few hundred trips a month,
 // scrolling is not a way to find anything.
+//
+// The hierarchy is Job -> Trip -> Order: a Job is everything one driver ran
+// on one date (was labelled "Day" -- same driver_day row, friendlier name),
+// a Trip is one warehouse run, and each Trip carries the Waypoints (its
+// drops -- the thing this app used to also call "Job", before Job took over
+// the day-level name) that its Orders (parcels) were scanned against.
 
 const CHECKPOINT_LABEL = {
   arrived: "Arrived at Lotus",
@@ -57,16 +63,20 @@ function OwnerChip({ owner, lateSteps }) {
 }
 
 // One column template, used by the header strip AND every row. Before this the
-// header was a wrapping flex of variable-width children, so "Jobs" started
+// header was a wrapping flex of variable-width children, so a column started
 // wherever the driver's name happened to end -- "JC" and "Victor Test 3" pushed
 // the same column to two different places and nothing lined up down the page.
 //
-// Stacks below lg rather than md: nine columns need about 900px before they
+// Job leads the row (not just the group banner above it) so the hierarchy reads
+// even when a page of results only ever shows one trip from a given job -- the
+// id is a property of the trip, not just something a banner happens to say.
+//
+// Stacks below lg rather than md: ten columns need about 950px before they
 // stop being a table and start being a squeeze.
 const TRIP_COLS =
-  "lg:grid lg:grid-cols-[6.5rem_minmax(9rem,1.4fr)_6.5rem_5rem_5rem_6rem_4rem_4.5rem_6.5rem] lg:items-center lg:gap-x-4";
+  "lg:grid lg:grid-cols-[5.5rem_6.5rem_minmax(9rem,1.4fr)_6.5rem_5rem_5rem_6rem_5rem_4.5rem_6.5rem] lg:items-center lg:gap-x-4";
 
-const TRIP_HEADS = ["Trip", "Driver", "Date", "Arrived", "Returned", "At outlet", "Jobs", "Orders", "Owner"];
+const TRIP_HEADS = ["Job", "Trip", "Driver", "Date", "Arrived", "Returned", "At outlet", "Waypoints", "Orders", "Owner"];
 
 // Below lg the label rides with the value, because a stacked row has no header
 // strip to sit under.
@@ -81,19 +91,19 @@ function Cell({ label, children, tone }) {
   );
 }
 
-// A drop row is a door, not a dead end.
+// A waypoint row is a door, not a dead end.
 //
 // The trail behind one parcel -- every status event with its own time, GPS,
 // photo and the failure reason the driver typed -- lives on the order page.
-// From here an admin could see THAT job 2 failed but then had to go to Orders
-// and search the tracking number to find out WHY, which is the question the
-// row itself raises.
+// From here an admin could see THAT waypoint 2 failed but then had to go to
+// Orders and search the tracking number to find out WHY, which is the
+// question the row itself raises.
 //
-// The order page is per parcel, so the parcel is what links. A drop carrying a
-// single parcel is unambiguous, so its whole header row goes there as well; a
-// drop with several keeps an inert header and lets each parcel link for
-// itself, rather than guessing which one was meant.
-function JobRow({ trip, job: j }) {
+// The order page is per parcel, so the parcel is what links. A waypoint
+// carrying a single parcel is unambiguous, so its whole header row goes there
+// as well; a waypoint with several keeps an inert header and lets each parcel
+// link for itself, rather than guessing which one was meant.
+function WaypointRow({ trip, waypoint: j }) {
   const only = j.orders.length === 1 ? j.orders[0] : null;
   const Head = only ? Link : "div";
   const headProps = only
@@ -114,7 +124,7 @@ function JobRow({ trip, job: j }) {
           <span className={`h-4 w-1 rounded ${
             j.status === "failed" ? "bg-brand-red" : j.status === "done" ? "bg-emerald-600" : "bg-slate-300"
           }`} />
-          <span className={`font-semibold ${only ? "group-hover:text-brand-red" : ""}`}>Job {j.seq}</span>
+          <span className={`font-semibold ${only ? "group-hover:text-brand-red" : ""}`}>Waypoint {j.seq}</span>
           {/* A coloured bar told you something happened without saying what.
               The outcome is the thing an admin came to this row for. */}
           <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${dropStyle(j.status)}`}>
@@ -130,20 +140,20 @@ function JobRow({ trip, job: j }) {
         </Head>
         {j.photo_id && (
           <PhotoThumb photoId={j.photo_id} size="h-10 w-10"
-                      caption={`T-${trip.id} · Job ${j.seq} · ${formatTime(j.completed_at)}`} />
+                      caption={`T-${trip.id} · Waypoint ${j.seq} · ${formatTime(j.completed_at)}`} />
         )}
       </div>
 
-      {/* Which parcels, and how each one ended. A drop can be closed with one
-          parcel delivered and another failed, and the drop's own status cannot
-          show that. Each one opens its own evidence trail.
+      {/* Which parcels, and how each one ended. A waypoint can be closed with
+          one parcel delivered and another failed, and the waypoint's own
+          status cannot show that. Each one opens its own evidence trail.
 
           The row is the link, not the text. A tracking number here is often
           typed by the driver rather than scanned, so underlining it in red
           dressed a scrap of free text up as an identifier -- and a column of
           those reads as noise. The row lights on hover and carries the same
-          chevron as the job above it, which is how everything else on this
-          page says "this opens". */}
+          chevron as the waypoint above it, which is how everything else on
+          this page says "this opens". */}
       {j.orders.length > 0 && (
         <ul className="mt-2 space-y-0.5 border-t border-slate-100 pt-1.5">
           {j.orders.map((o) => (
@@ -170,36 +180,35 @@ function JobRow({ trip, job: j }) {
   );
 }
 
-// The layer above Trip: everything one driver ran on one date. A driver makes
-// two or three trips a day, and "how was Ali's Tuesday" is the question a
-// dispute or a roster check actually asks -- not "how was trip 3000006" on
+// The layer above Trip: everything one driver ran on one date -- a driver
+// makes two or three trips a day, and "how was Ali's Tuesday" is the question
+// a dispute or a roster check actually asks, not "how was trip 3000006" on
 // its own. Not collapsible like a trip card: at that scale there is nothing
 // to hide, only a header worth reading before the cards it introduces.
-function DayHeader({ day }) {
+//
+// Its own id (J-<id>) also rides as the first column on every trip row below,
+// so the grouping this banner shows is never the only place the id appears.
+function JobHeader({ job }) {
   return (
     <div className="mb-1.5 mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 px-1 first:mt-0">
       <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-black text-[10px] font-bold text-white">
-        {(day.driver_name || "?").split(" ").map((w) => w[0]).slice(0, 2).join("")}
+        {(job.driver_name || "?").split(" ").map((w) => w[0]).slice(0, 2).join("")}
       </span>
-      {/* Same "T-<id>" convention as the trip cards below it -- a day is now a
-          row with its own id (driver_day), not just a label grouping trips,
-          so it gets the same kind of identifier the things inside it get. */}
-      <span className="text-xs font-semibold text-slate-400">D-{day.driver_day_id}</span>
-      <span className="text-sm font-semibold text-brand-black">{day.driver_name}</span>
-      <span className="text-xs text-slate-400">{formatDate(day.work_date)}</span>
+      <span className="text-sm font-semibold text-brand-black">{job.driver_name}</span>
+      <span className="text-xs text-slate-400">{formatDate(job.work_date)}</span>
       <span className="text-xs text-slate-400">
-        {day.trip_count} {day.trip_count === 1 ? "trip" : "trips"} · {day.jobs_total} jobs · {day.orders_total} orders
+        {job.trip_count} {job.trip_count === 1 ? "trip" : "trips"} · {job.jobs_total} waypoints · {job.orders_total} orders
       </span>
-      {day.over_target_count > 0 && (
+      {job.over_target_count > 0 && (
         <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-medium text-brand-red">
-          {day.over_target_count} over target
+          {job.over_target_count} over target
         </span>
       )}
     </div>
   );
 }
 
-function TripCard({ trip, open, onToggle }) {
+function TripCard({ trip, open, onToggle, onFilterJob }) {
   const [detail, setDetail] = useState(null);
   const tao = trip.time_at_outlet;
 
@@ -215,12 +224,35 @@ function TripCard({ trip, open, onToggle }) {
     <div className={`overflow-hidden rounded-xl border border-slate-200 border-l-4 bg-white ${
       trip.over_target ? "border-l-brand-red" : "border-l-emerald-600"
     }`}>
-      <button
-        type="button"
+      <div
+        role="button"
+        tabIndex={0}
         onClick={onToggle}
+        onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onToggle())}
         aria-expanded={open}
-        className={`w-full space-y-1.5 px-4 py-3.5 text-left hover:bg-slate-50 lg:space-y-0 ${TRIP_COLS}`}
+        className={`w-full cursor-pointer space-y-1.5 px-4 py-3.5 hover:bg-slate-50 lg:space-y-0 ${TRIP_COLS}`}
       >
+        {/* Its own cell, not just a click target inside the row -- an admin
+            scanning the Job column for "which trips are on J-501" should
+            never have to open a trip to find out which job it is in. A real
+            <button>, stopping the click before it also toggles the row. */}
+        <span className="flex items-baseline gap-2 lg:block">
+          <span className="w-[5.5rem] shrink-0 text-[10px] font-bold uppercase tracking-widest text-slate-400 lg:hidden">
+            Job
+          </span>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onFilterJob();
+            }}
+            title="Show every trip in this job"
+            className="text-sm font-medium text-slate-500 underline decoration-slate-300 hover:text-brand-red hover:decoration-brand-red"
+          >
+            J-{trip.driver_day_id}
+          </button>
+        </span>
+
         <span className="flex items-center gap-2">
           <Icon name="chevron" className={`h-3.5 w-3.5 shrink-0 text-slate-400 ${open ? "rotate-90" : ""}`} />
           <span className="text-sm font-semibold text-brand-black">T-{trip.id}</span>
@@ -248,7 +280,7 @@ function TripCard({ trip, open, onToggle }) {
               tone={tao?.over_target ? "font-semibold text-brand-red" : "text-emerald-700"}>
           {tao ? formatDuration(tao.minutes) : "—"}
         </Cell>
-        <Cell label="Jobs">{trip.jobs}</Cell>
+        <Cell label="Waypoints">{trip.jobs}</Cell>
         <Cell label="Orders">{trip.orders}</Cell>
 
         <span className="flex items-baseline gap-2 lg:block lg:text-right">
@@ -257,7 +289,7 @@ function TripCard({ trip, open, onToggle }) {
           </span>
           <OwnerChip owner={trip.owner} lateSteps={(trip.gaps || []).some((g) => g.over_target)} />
         </span>
-      </button>
+      </div>
 
       {open && (
         <div className="border-t border-slate-200 bg-slate-50 px-4 py-4">
@@ -314,10 +346,10 @@ function TripCard({ trip, open, onToggle }) {
 
           {detail && detail.job_detail.length > 0 && (
             <>
-              <p className="mb-2 mt-4 text-[10px] font-bold uppercase tracking-widest text-slate-400">Jobs</p>
+              <p className="mb-2 mt-4 text-[10px] font-bold uppercase tracking-widest text-slate-400">Waypoints</p>
               <ul className="space-y-1.5">
                 {detail.job_detail.map((j) => (
-                  <JobRow key={j.id} trip={trip} job={j} />
+                  <WaypointRow key={j.id} trip={trip} waypoint={j} />
                 ))}
               </ul>
             </>
@@ -467,7 +499,7 @@ export default function Evidence() {
             type="search"
             value={filters.q}
             onChange={set("q")}
-            placeholder="Trip ID, day ID or driver…"
+            placeholder="Job ID, Trip ID or driver…"
             className="min-w-0 flex-1 basis-48 rounded-lg border border-slate-300 px-3 py-2 text-sm"
           />
           <select value={filters.warehouseId} onChange={set("warehouseId")} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
@@ -491,7 +523,7 @@ export default function Evidence() {
         </div>
         {data && (
           <p className="mt-3 text-xs text-slate-500">
-            Showing {data.days.length} of {data.total} driver-days · {data.trip_total} trips
+            Showing {data.days.length} of {data.total} jobs · {data.trip_total} trips
             {" "}· {data.over_target_total} over target
           </p>
         )}
@@ -516,16 +548,17 @@ export default function Evidence() {
           </div>
 
           <div>
-            {data.days.map((day) => (
-              <div key={day.driver_day_id}>
-                <DayHeader day={day} />
+            {data.days.map((job) => (
+              <div key={job.driver_day_id}>
+                <JobHeader job={job} />
                 <div className="space-y-2">
-                  {day.trips.map((trip) => (
+                  {job.trips.map((trip) => (
                     <TripCard
                       key={trip.id}
                       trip={trip}
                       open={openId === trip.id}
                       onToggle={() => patch({ trip: openId === trip.id ? "" : trip.id }, { keepPage: true })}
+                      onFilterJob={() => patch({ q: String(trip.driver_day_id) })}
                     />
                   ))}
                 </div>

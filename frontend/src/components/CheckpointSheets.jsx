@@ -9,10 +9,10 @@ import { formatDuration } from "../lib/duration";
 const PARTY_ORDER = ["lotus", "njv", "external"];
 
 // The screens the trip timeline raises, in the order a checkpoint needs them:
-// photo -> (job count, at loading only) -> reason, if the gap ran over target.
+// photo -> (waypoint count, at loading only) -> reason, if the gap ran over target.
 // Kept in one file because they are never used apart.
 //
-// Two frames, chosen by how much work the step is. The job count and the delay
+// Two frames, chosen by how much work the step is. The waypoint count and the delay
 // reason are one tap on a short list, so they stay bottom sheets with the trip
 // still visible behind them. The photo step is not: it is a camera, a strip of
 // thumbnails, a location to check and a confirm, and as a sheet it arrived as a

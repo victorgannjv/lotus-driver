@@ -1,10 +1,10 @@
 import { useLanguage } from "../i18n/LanguageContext";
 
-// Shown once every order scanned into a job has a resolved outcome (delivered or
-// failed) -- a distinct, congratulatory popup so the driver notices the job wrapped
+// Shown once every order scanned into a trip has a resolved outcome (delivered or
+// failed) -- a distinct, congratulatory popup so the driver notices the trip wrapped
 // up, separate from the routine per-scan result confirmation. "Back to home" is the
 // way into the next warehouse trip: Home's "Arrived at warehouse" button always
-// starts a brand-new job, so this is how a driver making 2 trips a day loops back.
+// starts a brand-new trip, so this is how a driver making 2 trips a day loops back.
 export default function JobCompleteModal({ open, onViewJob, onGoHome, onDismiss }) {
   const { t } = useLanguage();
   if (!open) return null;

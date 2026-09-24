@@ -36,7 +36,7 @@ const STEPS = ["arrived", "goods_ready", "loaded", "departed", "deliveries_done"
 // could switch departure off.
 const BEFORE_DELIVERIES = ["arrived", "goods_ready", "loaded", "departed"];
 
-// deliveries_done is fired by the server when the last job resolves; the driver
+// deliveries_done is fired by the server when the last waypoint resolves; the driver
 // is never asked to confirm what the app already knows.
 const SERVER_FIRED = new Set(["deliveries_done"]);
 
@@ -469,7 +469,7 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
           <p className="mt-2 text-center text-xs text-slate-400">
             {jobsTracked && nextJob && readyToDeliver ? t("trip.jobCtaHint") : t("trip.ctaHint")}
           </p>
-          {/* A job is a drop; a scan is one parcel inside it. Both are needed,
+          {/* A waypoint is a drop; a scan is one parcel inside it. Both are needed,
               so say which is which instead of leaving two similar buttons. */}
           {jobsTracked && nextJob && readyToDeliver && (
             <Link
@@ -591,8 +591,9 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
               {/* Always reachable while the trip is open. This button used to
                   be gated on `jobs.length > 0` — the one state cancelling the
                   sheet guarantees — so a cancel, or a tap of Back mid-answer,
-                  locked the driver out of setting a job count for the rest of
-                  the run, and with no jobs there is nothing to deliver against. */}
+                  locked the driver out of setting a waypoint count for the rest
+                  of the run, and with no waypoints there is nothing to deliver
+                  against. */}
               {cp === "deliveries_done" && canSetJobs && (
                 <button
                   type="button"
