@@ -88,10 +88,6 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
   // shape of the run on the opening screen), and everything if neither has
   // answered yet.
   //
-  // Declared up here rather than beside the rest of the derived values,
-  // because stampCheckpoint closes over countAnchor: a const declared after an
-  // early return is never initialised on a render that takes it, and the
-  // handler would throw the moment it was called.
   const active = state?.active_checkpoints || settings?.active_checkpoints || STEPS;
 
   // Whether this fleet records drops and parcels at all.
@@ -192,8 +188,6 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
         } else {
           setPendingContinue(true);
         }
-      } else if (jobsTracked && checkpoint === countAnchor && next.trip.expected_job_count == null) {
-        setPendingCount(true);
       } else if (next.reason_required_for) {
         openReason(checkpoint, next);
       }
