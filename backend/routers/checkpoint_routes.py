@@ -68,7 +68,8 @@ async def _owned_trip(pool, driver_id: int, manifest_id: int) -> dict:
     async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
         await cur.execute(
             "SELECT m.id, m.driver_id, m.work_date, m.cancelled_at, m.day_closed_at, m.expected_job_count, "
-            "m.schedule_slot_no, u.warehouse_id, w.name AS warehouse_name, w.address AS warehouse_address "
+            "m.schedule_slot_no, m.driver_day_id, u.warehouse_id, w.name AS warehouse_name, "
+            "w.address AS warehouse_address "
             "FROM manifests m JOIN users u ON u.id = m.driver_id "
             "LEFT JOIN warehouses w ON w.id = u.warehouse_id "
             "WHERE m.id = %s AND m.driver_id = %s",
@@ -245,6 +246,81 @@ async def get_trip(manifest_id: int, request: Request, driver=Depends(get_curren
     pool = get_pool(request)
     trip = await _owned_trip(pool, driver["id"], manifest_id)
     return await _trip_state(pool, trip)
+
+
+@router.post("/trips/{manifest_id}/continue", status_code=201)
+async def continue_trip(
+    manifest_id: int,
+    request: Request,
+    lat: float | None = Form(None),
+    lng: float | None = Form(None),
+    driver=Depends(get_current_driver),
+):
+    """Starts the next trip on the same job, the moment this one returns to
+    Lotus. Every driver runs at least two trips a day, so the truck never
+    actually left the outlet between them -- there is nothing to re-arrive
+    at. `arrived` is stamped here, on the new trip, at the exact instant the
+    old one returned (not "now"), and without a photo: presence was just
+    proven by the return, and asking again would only be re-proving it.
+    """
+    pool = get_pool(request)
+    trip = await _owned_trip(pool, driver["id"], manifest_id)
+    settings = await load_settings(pool)
+    ended = final_checkpoint(active_checkpoints(settings))
+    existing = (await fetch_checkpoints(pool, [manifest_id])).get(manifest_id, {})
+    if ended not in existing:
+        raise HTTPException(status_code=409, detail="this trip has not returned to Lotus yet")
+
+    # Idempotency: a retried tap (or a second tab) must not spawn two more
+    # trips. If a later trip already exists today, that IS the continuation.
+    async with pool.acquire() as conn, conn.cursor() as cur:
+        await cur.execute(
+            "SELECT MAX(id) FROM manifests WHERE driver_id = %s AND work_date = %s AND cancelled_at IS NULL",
+            (driver["id"], trip["work_date"]),
+        )
+        (latest_id,) = await cur.fetchone()
+    if latest_id != manifest_id:
+        async with pool.acquire() as conn, conn.cursor() as cur:
+            await cur.execute(
+                "SELECT id, driver_id FROM manifests WHERE id = %s AND driver_id = %s",
+                (latest_id, driver["id"]),
+            )
+            later = await cur.fetchone()
+        if later is None:
+            raise HTTPException(status_code=409, detail="a later trip already exists today")
+        later_trip = await _owned_trip(pool, driver["id"], later[0])
+        return await _trip_state(pool, later_trip)
+
+    return_row = existing[ended]
+    occurred_dt = return_row["occurred_at"]
+    # The truck has not moved since the return, so reuse that fix rather than
+    # asking the handset again.
+    arr_lat = lat if lat is not None else return_row["lat"]
+    arr_lng = lng if lng is not None else return_row["lng"]
+
+    async with pool.acquire() as conn, conn.cursor() as cur:
+        await cur.execute(
+            "SELECT COUNT(*) FROM manifests WHERE driver_id = %s AND work_date = %s AND cancelled_at IS NULL",
+            (driver["id"], trip["work_date"]),
+        )
+        (prior,) = await cur.fetchone()
+    slot_no = prior + 1
+
+    async with pool.acquire() as conn, conn.cursor() as cur:
+        await cur.execute(
+            "INSERT INTO manifests (driver_id, work_date, warehouse_arrived_at, warehouse_arrived_lat, "
+            "warehouse_arrived_lng, schedule_slot_no, driver_day_id) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            (driver["id"], trip["work_date"], occurred_dt, arr_lat, arr_lng, slot_no, trip["driver_day_id"]),
+        )
+        new_manifest_id = cur.lastrowid
+        await cur.execute(
+            "INSERT INTO trip_checkpoint (manifest_id, checkpoint, occurred_at, lat, lng, created_by) "
+            "VALUES (%s, 'arrived', %s, %s, %s, %s)",
+            (new_manifest_id, occurred_dt, arr_lat, arr_lng, driver["id"]),
+        )
+
+    new_trip = await _owned_trip(pool, driver["id"], new_manifest_id)
+    return await _trip_state(pool, new_trip)
 
 
 @router.post("/trips/{manifest_id}/checkpoints", status_code=201)

@@ -94,6 +94,14 @@ export default function Home() {
     }
   }
 
+  // A trip that continued on its own, or that the driver chose to continue
+  // into -- either way the new trip is what the screen should show next.
+  function handleTripStarted(newManifestId) {
+    setSelected(newManifestId);
+    loadToday(false);
+    setRefreshKey((n) => n + 1);
+  }
+
   const tabClass = (key) =>
     `flex-1 rounded-lg px-3 py-2 text-sm font-semibold ${
       tab === key ? "bg-white text-brand-black shadow-sm" : "text-slate-500"
@@ -196,6 +204,7 @@ export default function Home() {
                   loadToday(false);
                   setRefreshKey((n) => n + 1);
                 }}
+                onTripStarted={handleTripStarted}
               />
             )}
 

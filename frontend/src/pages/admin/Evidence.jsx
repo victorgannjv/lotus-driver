@@ -167,13 +167,21 @@ function WaypointRow({ trip, waypoint: j }) {
 // it was. Everything a trip card used to spell out in its own full-width row
 // -- the id, the window, the load -- but small enough that a job with three
 // trips still reads as one shape, not three repeats of the same driver and date.
-function TripChip({ trip, open, onToggle }) {
+// `connectedAbove`/`connectedBelow` say whether the trip touching this one on
+// that side started the instant this one ended (see JobRow) -- the driver
+// never left Lotus between them, so the seam is dropped and the two chips
+// read as one continuous block instead of two trips with a border between.
+function TripChip({ trip, open, onToggle, connectedAbove, connectedBelow, spaced }) {
   return (
     <button
       type="button"
       onClick={onToggle}
       aria-expanded={open}
-      className={`flex w-full items-center gap-3 rounded-lg border-l-4 border-y border-r border-slate-200 bg-white px-3 py-2 text-left text-xs hover:bg-slate-50 ${
+      className={`flex w-full items-center gap-3 border-l-4 border-r border-slate-200 bg-white px-3 py-2 text-left text-xs hover:bg-slate-50 ${
+        spaced ? "mt-1" : ""
+      } ${connectedAbove ? "border-t border-t-slate-100 rounded-t-none" : "border-t rounded-t-lg"} ${
+        connectedBelow ? "rounded-b-none" : "border-b rounded-b-lg"
+      } ${
         trip.over_target ? "border-l-brand-red" : "border-l-emerald-600"
       } ${open ? "ring-1 ring-inset ring-brand-red" : ""}`}
     >
@@ -189,19 +197,21 @@ function TripChip({ trip, open, onToggle }) {
   );
 }
 
-// The gap itself -- what this whole rewrite is for. Between two stacked trip
-// rows this is the only thing on the page that isn't a trip: dead time the
-// driver spent neither at the outlet nor on the road, and until now nothing
-// said how long it was. A missing timestamp (a trip still open, or cancelled
-// without one) shows as a dash rather than a wrong number.
+// The gap itself -- dead time the driver spent neither at the outlet nor on
+// the road. Only drawn between trips that actually have a gap: a trip that
+// started the instant the last one returned (every trip past the first,
+// now that one drop-off rolls straight into the next pickup) gets no badge
+// at all -- see JobRow, where the chips are merged into one block instead.
+// A missing timestamp (a trip still open, or cancelled without one) shows as
+// a dash rather than a wrong number.
 function GapBadge({ minutes }) {
   if (minutes == null) {
-    return <span className="flex items-center gap-2 py-0.5 pl-3 text-slate-300">┊</span>;
+    return <span className="mt-1 flex items-center gap-2 py-0.5 pl-3 text-slate-300">┊</span>;
   }
   const long = minutes >= 60;
   return (
     <span
-      className={`flex items-center gap-2 py-0.5 pl-3 text-[11px] ${long ? "font-semibold text-brand-red" : "text-slate-400"}`}
+      className={`mt-1 flex items-center gap-2 py-0.5 pl-3 text-[11px] ${long ? "font-semibold text-brand-red" : "text-slate-400"}`}
       title="Time between this trip ending and the next one starting"
     >
       <span aria-hidden="true">↓</span>
@@ -225,7 +235,7 @@ function TripDetail({ trip }) {
   const gapFor = (cp) => (trip.gaps || []).find((g) => g.to_checkpoint === cp);
 
   return (
-    <div className="-mx-4 border-y border-slate-200 bg-slate-50 px-4 py-4">
+    <div className="-mx-4 mt-1 border-y border-slate-200 bg-slate-50 px-4 py-4">
       <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
         <span className="font-semibold text-brand-black">T-{trip.id} · {trip.warehouse_name}</span>
         <span>Arrived {formatTime(trip.started_at) || "—"}</span>
@@ -319,15 +329,34 @@ function JobRow({ job, openTripId, onToggleTrip, onFilterJob }) {
   // pinned to the bottom of the strip -- opening the first of three trips
   // used to drop its evidence trail below the other two, which read as the
   // detail belonging to the last trip, or as a second card underneath.
+  //
+  // A gap of exactly zero minutes means the next trip's "arrived" is the
+  // same instant this one's "returned" was stamped -- which, now that every
+  // driver's second trip onward starts itself the moment the last one
+  // returns, is not a coincidence but the normal case. Those pairs are drawn
+  // with no gap badge and no seam between them at all, so the strip reads as
+  // one continuous run with real rest breaks called out, rather than a row
+  // of independent trips.
   const strip = trips.flatMap((trip, i) => {
+    const prevGap = i > 0 ? minutesBetween(trips[i - 1].ended_at, trip.started_at) : null;
+    const nextGap = i < trips.length - 1 ? minutesBetween(trip.ended_at, trips[i + 1].started_at) : null;
+    const connectedAbove = i > 0 && prevGap === 0;
+    const connectedBelow = i < trips.length - 1 && nextGap === 0;
+
     const nodes = [];
-    if (i > 0) {
-      nodes.push(
-        <GapBadge key={`gap-${trip.id}`} minutes={minutesBetween(trips[i - 1].ended_at, trip.started_at)} />,
-      );
+    if (i > 0 && !connectedAbove) {
+      nodes.push(<GapBadge key={`gap-${trip.id}`} minutes={prevGap} />);
     }
     nodes.push(
-      <TripChip key={trip.id} trip={trip} open={trip.id === openTripId} onToggle={() => onToggleTrip(trip.id)} />,
+      <TripChip
+        key={trip.id}
+        trip={trip}
+        open={trip.id === openTripId}
+        onToggle={() => onToggleTrip(trip.id)}
+        connectedAbove={connectedAbove}
+        connectedBelow={connectedBelow}
+        spaced={i > 0 && !connectedAbove}
+      />,
     );
     if (trip.id === openTripId) {
       nodes.push(<TripDetail key={`detail-${trip.id}`} trip={trip} />);
@@ -367,7 +396,7 @@ function JobRow({ job, openTripId, onToggleTrip, onFilterJob }) {
         )}
       </div>
 
-      <div className="flex flex-col gap-1 border-t border-slate-100 bg-slate-50/70 px-4 py-3">
+      <div className="flex flex-col border-t border-slate-100 bg-slate-50/70 px-4 py-3">
         {strip}
       </div>
     </div>

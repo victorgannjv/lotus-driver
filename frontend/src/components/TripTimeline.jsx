@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { api } from "../api";
 import Icon, { CHECKPOINT_ICON } from "./Icon";
 import PhotoThumb from "./PhotoThumb";
-import { JobCountSheet, PhotoSheet, ReasonSheet } from "./CheckpointSheets";
+import { ContinueSheet, JobCountSheet, PhotoSheet, ReasonSheet } from "./CheckpointSheets";
 import { useLanguage } from "../i18n/LanguageContext";
 import { formatDuration, formatTime } from "../lib/duration";
 import { positionForSubmit } from "../lib/geolocation";
@@ -57,7 +57,7 @@ const EMPTY_STATE = {
   next_checkpoint: "arrived",
 };
 
-export default function TripTimeline({ manifestId, settings, onChanged, onStart, starting }) {
+export default function TripTimeline({ manifestId, settings, onChanged, onStart, starting, onTripStarted }) {
   const { t } = useLanguage();
   const [state, setState] = useState(null);
   const [error, setError] = useState(null);
@@ -65,6 +65,10 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
   const [pendingPhoto, setPendingPhoto] = useState(null); // { kind, checkpoint|jobId }
   const [pendingCount, setPendingCount] = useState(false);
   const [pendingReason, setPendingReason] = useState(null); // { checkpoint, gap }
+  // Asked after every return-to-Lotus past the first trip of the day -- the
+  // first continues on its own (see stampCheckpoint), because every driver
+  // is required to run at least two.
+  const [pendingContinue, setPendingContinue] = useState(false);
   const [reasons, setReasons] = useState([]);
   // Which completed drop is open for review. A closed drop is still the
   // driver's own evidence, and until the trip ends he should be able to
@@ -178,7 +182,17 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
       const next = await api.postForm(`/trips/${manifestId}/checkpoints`, fd);
       setState(next);
       setPendingPhoto(null);
-      if (jobsTracked && checkpoint === countAnchor && next.trip.expected_job_count == null) {
+      if (checkpoint === next.final_checkpoint) {
+        // The driver is required to run at least two trips a day, so the
+        // first return continues into the second on its own; every return
+        // after that asks, because only the driver knows whether a third
+        // trip is actually coming.
+        if (next.trip.schedule_slot_no === 1) {
+          await continueTrip();
+        } else {
+          setPendingContinue(true);
+        }
+      } else if (jobsTracked && checkpoint === countAnchor && next.trip.expected_job_count == null) {
         setPendingCount(true);
       } else if (next.reason_required_for) {
         openReason(checkpoint, next);
@@ -187,6 +201,26 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
     } catch (err) {
       setError(err.detail || t("trip.stampError"));
       setPendingPhoto(null);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Starts the next trip -- either fired automatically after the first
+  // return, or from the continue-working sheet after a later one. The new
+  // trip already has "arrived" stamped by the server, so the driver lands
+  // straight on "Lotus goods ready" instead of being asked to re-arrive.
+  async function continueTrip() {
+    setBusy(true);
+    setError(null);
+    try {
+      const fd = await withPosition(new FormData());
+      const next = await api.postForm(`/trips/${manifestId}/continue`, fd);
+      setPendingContinue(false);
+      if (onTripStarted) onTripStarted(next.trip.id);
+    } catch (err) {
+      setError(err.detail || t("trip.stampError"));
+      setPendingContinue(false);
     } finally {
       setBusy(false);
     }
@@ -758,6 +792,12 @@ export default function TripTimeline({ manifestId, settings, onChanged, onStart,
         busy={busy}
         onSubmit={submitReason}
         onSkip={() => setPendingReason(null)}
+      />
+      <ContinueSheet
+        open={pendingContinue}
+        busy={busy}
+        onContinue={continueTrip}
+        onStop={() => setPendingContinue(false)}
       />
     </div>
   );

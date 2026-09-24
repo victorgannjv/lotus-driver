@@ -285,6 +285,12 @@ export const translations = {
       viewJob: "View trip",
       keepScanning: "Keep scanning",
     },
+    continue: {
+      title: "Still working?",
+      subtitle: "You're back at Lotus. Start another trip, or call it a day.",
+      keepWorking: "Continue working",
+      stopWorking: "Stop working",
+    },
     update: {
       available: "A newer version of the app is ready.",
       reload: "Reload",
@@ -610,6 +616,12 @@ export const translations = {
       backHome: "Kembali ke laman utama",
       viewJob: "Lihat perjalanan",
       keepScanning: "Teruskan mengimbas",
+    },
+    continue: {
+      title: "Masih bekerja?",
+      subtitle: "Anda sudah kembali ke Lotus. Mulakan satu lagi perjalanan, atau tamatkan hari ini.",
+      keepWorking: "Teruskan bekerja",
+      stopWorking: "Berhenti bekerja",
     },
     update: {
       available: "Versi aplikasi yang lebih baharu telah sedia.",

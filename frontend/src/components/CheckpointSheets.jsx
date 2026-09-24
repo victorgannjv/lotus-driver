@@ -255,6 +255,38 @@ export function JobCountSheet({ open, busy, quickPicks, max, onSubmit, onCancel 
   );
 }
 
+// Raised after every return-to-Lotus past the first trip of the day -- the
+// first always continues on its own (every driver runs at least two trips),
+// so only the driver can say whether a third, fourth, or later one is coming.
+// No dismiss route: unlike the reason sheet, silence here has no honest
+// default, so the two buttons are the only way out.
+export function ContinueSheet({ open, busy, onContinue, onStop }) {
+  const { t } = useLanguage();
+  if (!open) return null;
+  return (
+    <Sheet title={t("continue.title")} subtitle={t("continue.subtitle")}>
+      <div className="space-y-2">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={onContinue}
+          className="w-full rounded-xl bg-brand-red px-4 py-3.5 text-base font-semibold text-white hover:bg-brand-red-dark disabled:opacity-50"
+        >
+          {t("continue.keepWorking")}
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={onStop}
+          className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3.5 text-base font-semibold text-brand-black disabled:opacity-50"
+        >
+          {t("continue.stopWorking")}
+        </button>
+      </div>
+    </Sheet>
+  );
+}
+
 // Only raised when a gap actually ran over its target, so a clean trip is never
 // interrupted. Codes are grouped by who owns the delay, with the gap's likely
 // owner listed first -- that grouping is the whole basis of the dispute split.
