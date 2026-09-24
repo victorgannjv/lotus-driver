@@ -173,43 +173,39 @@ function TripChip({ trip, open, onToggle }) {
       type="button"
       onClick={onToggle}
       aria-expanded={open}
-      className={`flex min-w-[9.5rem] flex-col items-start gap-0.5 rounded-lg border-l-4 border-y border-r border-slate-200 bg-white px-3 py-2 text-left text-xs hover:bg-slate-50 ${
+      className={`flex w-full items-center gap-3 rounded-lg border-l-4 border-y border-r border-slate-200 bg-white px-3 py-2 text-left text-xs hover:bg-slate-50 ${
         trip.over_target ? "border-l-brand-red" : "border-l-emerald-600"
       } ${open ? "ring-1 ring-inset ring-brand-red" : ""}`}
     >
-      <span className="flex items-center gap-1.5 font-semibold text-brand-black">
-        <Icon name="chevron" className={`h-3 w-3 shrink-0 text-slate-400 ${open ? "rotate-90" : ""}`} />
-        T-{trip.id}
-      </span>
+      <Icon name="chevron" className={`h-3 w-3 shrink-0 text-slate-400 ${open ? "rotate-90" : ""}`} />
+      <span className="font-semibold text-brand-black">T-{trip.id}</span>
       <span className="text-slate-500">
         {formatTime(trip.started_at) || "—"}–{formatTime(trip.ended_at) || "open"}
       </span>
-      <span className="truncate text-[10px] text-slate-400">
+      <span className="min-w-0 flex-1 truncate text-right text-[10px] text-slate-400">
         {trip.warehouse_name} · {trip.jobs} wp · {trip.orders} ord
       </span>
     </button>
   );
 }
 
-// The gap itself -- what this whole rewrite is for. Between two trip chips
-// this is the only thing on the page that isn't a trip: dead time the driver
-// spent neither at the outlet nor on the road, and until now nothing said how
-// long it was. A missing timestamp (a trip still open, or cancelled without
-// one) shows as a dash rather than a wrong number.
+// The gap itself -- what this whole rewrite is for. Between two stacked trip
+// rows this is the only thing on the page that isn't a trip: dead time the
+// driver spent neither at the outlet nor on the road, and until now nothing
+// said how long it was. A missing timestamp (a trip still open, or cancelled
+// without one) shows as a dash rather than a wrong number.
 function GapBadge({ minutes }) {
   if (minutes == null) {
-    return <span className="flex shrink-0 items-center self-center px-1.5 text-slate-300">···</span>;
+    return <span className="flex items-center gap-2 py-0.5 pl-3 text-slate-300">┊</span>;
   }
   const long = minutes >= 60;
   return (
     <span
-      className={`flex shrink-0 flex-col items-center justify-center self-center px-1.5 text-center leading-tight ${
-        long ? "text-brand-red" : "text-slate-400"
-      }`}
+      className={`flex items-center gap-2 py-0.5 pl-3 text-[11px] ${long ? "font-semibold text-brand-red" : "text-slate-400"}`}
       title="Time between this trip ending and the next one starting"
     >
-      <span className="text-[13px]">→</span>
-      <span className={`text-[10px] ${long ? "font-semibold" : ""}`}>{formatDuration(minutes)}</span>
+      <span aria-hidden="true">↓</span>
+      {formatDuration(minutes)} gap
     </span>
   );
 }
@@ -365,7 +361,7 @@ function JobRow({ job, openTripId, onToggleTrip, onFilterJob }) {
         )}
       </div>
 
-      <div className="flex flex-wrap items-stretch gap-1.5 border-t border-slate-100 bg-slate-50/70 px-4 py-3">
+      <div className="flex flex-col gap-1 border-t border-slate-100 bg-slate-50/70 px-4 py-3">
         {strip}
       </div>
 
