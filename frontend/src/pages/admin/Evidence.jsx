@@ -62,33 +62,16 @@ function OwnerChip({ owner, lateSteps }) {
   return <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">On time</span>;
 }
 
-// One column template, used by the header strip AND every row. Before this the
-// header was a wrapping flex of variable-width children, so a column started
-// wherever the driver's name happened to end -- "JC" and "Victor Test 3" pushed
-// the same column to two different places and nothing lined up down the page.
-//
-// Job leads the row (not just the group banner above it) so the hierarchy reads
-// even when a page of results only ever shows one trip from a given job -- the
-// id is a property of the trip, not just something a banner happens to say.
-//
-// Stacks below lg rather than md: ten columns need about 950px before they
-// stop being a table and start being a squeeze.
-const TRIP_COLS =
-  "lg:grid lg:grid-cols-[5.5rem_6.5rem_minmax(9rem,1.4fr)_6.5rem_5rem_5rem_6rem_5rem_4.5rem_6.5rem] lg:items-center lg:gap-x-4";
-
-const TRIP_HEADS = ["Job", "Trip", "Driver", "Date", "Arrived", "Returned", "At outlet", "Waypoints", "Orders", "Owner"];
-
-// Below lg the label rides with the value, because a stacked row has no header
-// strip to sit under.
-function Cell({ label, children, tone }) {
-  return (
-    <span className="flex min-w-0 items-baseline gap-2 lg:block">
-      <span className="w-[5.5rem] shrink-0 text-[10px] font-bold uppercase tracking-widest text-slate-400 lg:hidden">
-        {label}
-      </span>
-      <span className={`min-w-0 truncate text-sm ${tone || "text-brand-black"}`}>{children}</span>
-    </span>
-  );
+// Two timestamps in, minutes between them out. Values arrive as
+// "2026-09-11 08:05:12", already in Malaysia wall-clock time (see
+// formatTime) -- the 'T' swap is only so Date can parse it, the offset it
+// assumes cancels out when the two are subtracted.
+function minutesBetween(fromValue, toValue) {
+  if (!fromValue || !toValue) return null;
+  const a = new Date(String(fromValue).replace(" ", "T"));
+  const b = new Date(String(toValue).replace(" ", "T"));
+  if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) return null;
+  return (b - a) / 60000;
 }
 
 // A waypoint row is a door, not a dead end.
@@ -180,182 +163,213 @@ function WaypointRow({ trip, waypoint: j }) {
   );
 }
 
-// The layer above Trip: everything one driver ran on one date -- a driver
-// makes two or three trips a day, and "how was Ali's Tuesday" is the question
-// a dispute or a roster check actually asks, not "how was trip 3000006" on
-// its own. Not collapsible like a trip card: at that scale there is nothing
-// to hide, only a header worth reading before the cards it introduces.
-//
-// Its own id (J-<id>) also rides as the first column on every trip row below,
-// so the grouping this banner shows is never the only place the id appears.
-function JobHeader({ job }) {
+// A trip, folded down to what fits on a chip: which one, when it ran, how big
+// it was. Everything a trip card used to spell out in its own full-width row
+// -- the id, the window, the load -- but small enough that a job with three
+// trips still reads as one shape, not three repeats of the same driver and date.
+function TripChip({ trip, open, onToggle }) {
   return (
-    <div className="mb-1.5 mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 px-1 first:mt-0">
-      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-black text-[10px] font-bold text-white">
-        {(job.driver_name || "?").split(" ").map((w) => w[0]).slice(0, 2).join("")}
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={open}
+      className={`flex min-w-[9.5rem] flex-col items-start gap-0.5 rounded-lg border-l-4 border-y border-r border-slate-200 bg-white px-3 py-2 text-left text-xs hover:bg-slate-50 ${
+        trip.over_target ? "border-l-brand-red" : "border-l-emerald-600"
+      } ${open ? "ring-1 ring-inset ring-brand-red" : ""}`}
+    >
+      <span className="flex items-center gap-1.5 font-semibold text-brand-black">
+        <Icon name="chevron" className={`h-3 w-3 shrink-0 text-slate-400 ${open ? "rotate-90" : ""}`} />
+        T-{trip.id}
       </span>
-      <span className="text-sm font-semibold text-brand-black">{job.driver_name}</span>
-      <span className="text-xs text-slate-400">{formatDate(job.work_date)}</span>
-      <span className="text-xs text-slate-400">
-        {job.trip_count} {job.trip_count === 1 ? "trip" : "trips"} · {job.jobs_total} waypoints · {job.orders_total} orders
+      <span className="text-slate-500">
+        {formatTime(trip.started_at) || "—"}–{formatTime(trip.ended_at) || "open"}
       </span>
-      {job.over_target_count > 0 && (
-        <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-medium text-brand-red">
-          {job.over_target_count} over target
+      <span className="truncate text-[10px] text-slate-400">
+        {trip.warehouse_name} · {trip.jobs} wp · {trip.orders} ord
+      </span>
+    </button>
+  );
+}
+
+// The gap itself -- what this whole rewrite is for. Between two trip chips
+// this is the only thing on the page that isn't a trip: dead time the driver
+// spent neither at the outlet nor on the road, and until now nothing said how
+// long it was. A missing timestamp (a trip still open, or cancelled without
+// one) shows as a dash rather than a wrong number.
+function GapBadge({ minutes }) {
+  if (minutes == null) {
+    return <span className="flex shrink-0 items-center self-center px-1.5 text-slate-300">···</span>;
+  }
+  const long = minutes >= 60;
+  return (
+    <span
+      className={`flex shrink-0 flex-col items-center justify-center self-center px-1.5 text-center leading-tight ${
+        long ? "text-brand-red" : "text-slate-400"
+      }`}
+      title="Time between this trip ending and the next one starting"
+    >
+      <span className="text-[13px]">→</span>
+      <span className={`text-[10px] ${long ? "font-semibold" : ""}`}>{formatDuration(minutes)}</span>
+    </span>
+  );
+}
+
+// The full evidence trail for whichever trip chip is open, shown once below
+// the whole strip rather than under the chip itself -- a chip is too narrow
+// to grow without reflowing every chip after it.
+function TripDetail({ trip }) {
+  const [detail, setDetail] = useState(null);
+  const tao = trip.time_at_outlet;
+
+  useEffect(() => {
+    setDetail(null);
+    api.get(`/admin/trips/${trip.id}/detail`).then((d) => setDetail(d.trip)).catch(() => setDetail(null));
+  }, [trip.id]);
+
+  const gapFor = (cp) => (trip.gaps || []).find((g) => g.to_checkpoint === cp);
+
+  return (
+    <div className="border-t border-slate-200 bg-slate-50 px-4 py-4">
+      <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
+        <span className="font-semibold text-brand-black">T-{trip.id} · {trip.warehouse_name}</span>
+        <span>Arrived {formatTime(trip.started_at) || "—"}</span>
+        <span className={trip.ended_at ? undefined : "text-slate-400"}>
+          Returned {formatTime(trip.ended_at) || "open"}
         </span>
+        <span className={tao?.over_target ? "font-semibold text-brand-red" : "text-emerald-700"}>
+          At outlet {tao ? formatDuration(tao.minutes) : "—"}
+        </span>
+        <OwnerChip owner={trip.owner} lateSteps={(trip.gaps || []).some((g) => g.over_target)} />
+      </div>
+      {trip.reason && (
+        <p className="mb-3 text-sm text-slate-600">
+          <span className="font-semibold text-brand-black">Reason given:</span> {trip.reason}
+        </p>
+      )}
+      <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+        End to end · arrival to return
+      </p>
+      <ol className="space-y-1.5">
+        {trip.checkpoints.map((c) => {
+          const gap = gapFor(c.checkpoint);
+          const over = gap && gap.over_target;
+          return (
+            <li
+              key={c.checkpoint}
+              className={`grid grid-cols-[26px_minmax(110px,1fr)_90px_minmax(0,1.4fr)_56px] items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs ${
+                over ? "border-l-[3px] border-l-brand-red" : "border-l-[3px] border-l-emerald-600"
+              }`}
+            >
+              <span className={`flex h-6 w-6 items-center justify-center rounded-md ${over ? "bg-rose-50 text-brand-red" : "bg-emerald-50 text-emerald-700"}`}>
+                <Icon name={CHECKPOINT_ICON[c.checkpoint]} className="h-3.5 w-3.5" />
+              </span>
+              <span className="font-semibold text-brand-black">{CHECKPOINT_LABEL[c.checkpoint]}</span>
+              <span className="min-w-0">
+                <span className="block">{formatTime(c.occurred_at)}</span>
+                {c.place && <span className="block truncate text-[10px] text-slate-400">{c.place}</span>}
+              </span>
+              <span className={`${over ? "font-semibold text-brand-red" : "text-slate-500"}`}>
+                {gap ? `${gap.label} ${formatDuration(gap.minutes)} / ${formatDuration(gap.target_minutes)}` : ""}
+                {c.reason_label ? ` · ${c.reason_label}` : ""}
+              </span>
+              <span className="flex justify-end">
+                {(c.photo_ids?.length ? c.photo_ids : c.photo_id ? [c.photo_id] : []).length > 0 ? (
+                  <span className="flex flex-wrap justify-end gap-1">
+                    {(c.photo_ids?.length ? c.photo_ids : [c.photo_id]).map((pid) => (
+                      <PhotoThumb key={pid} photoId={pid} size="h-10 w-10"
+                                  caption={`T-${trip.id} · ${CHECKPOINT_LABEL[c.checkpoint]} · ${formatTime(c.occurred_at)}`} />
+                    ))}
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-slate-300">no photo</span>
+                )}
+              </span>
+            </li>
+          );
+        })}
+        {trip.checkpoints.length === 0 && (
+          <li className="text-xs text-slate-400">No checkpoints recorded for this trip.</li>
+        )}
+      </ol>
+
+      {detail && detail.job_detail.length > 0 && (
+        <>
+          <p className="mb-2 mt-4 text-[10px] font-bold uppercase tracking-widest text-slate-400">Waypoints</p>
+          <ul className="space-y-1.5">
+            {detail.job_detail.map((j) => (
+              <WaypointRow key={j.id} trip={trip} waypoint={j} />
+            ))}
+          </ul>
+        </>
       )}
     </div>
   );
 }
 
-function TripCard({ trip, open, onToggle, onFilterJob }) {
-  const [detail, setDetail] = useState(null);
-  const tao = trip.time_at_outlet;
+// One row per job -- not one per trip. A job that ran three trips used to
+// print its driver, date and owner three times over as three separate cards;
+// here it prints once, and the trips ride inside as a strip of chips with the
+// gap between each pair called out, which is the shape "how was Ali's
+// Tuesday" actually has: a few active stretches with dead time in between.
+function JobRow({ job, openTripId, onToggleTrip, onFilterJob }) {
+  const trips = [...job.trips].sort((a, b) => {
+    const ta = a.started_at || "";
+    const tb = b.started_at || "";
+    if (ta !== tb) return ta < tb ? -1 : 1;
+    return a.id - b.id;
+  });
+  const openTrip = trips.find((t) => t.id === openTripId) || null;
 
-  useEffect(() => {
-    if (open && !detail) {
-      api.get(`/admin/trips/${trip.id}/detail`).then((d) => setDetail(d.trip)).catch(() => setDetail(null));
+  const strip = trips.flatMap((trip, i) => {
+    const nodes = [];
+    if (i > 0) {
+      nodes.push(
+        <GapBadge key={`gap-${trip.id}`} minutes={minutesBetween(trips[i - 1].ended_at, trip.started_at)} />,
+      );
     }
-  }, [open, detail, trip.id]);
-
-  const gapFor = (cp) => (trip.gaps || []).find((g) => g.to_checkpoint === cp);
+    nodes.push(
+      <TripChip key={trip.id} trip={trip} open={trip.id === openTripId} onToggle={() => onToggleTrip(trip.id)} />,
+    );
+    return nodes;
+  });
 
   return (
-    <div className={`overflow-hidden rounded-xl border border-slate-200 border-l-4 bg-white ${
-      trip.over_target ? "border-l-brand-red" : "border-l-emerald-600"
+    <div className={`mb-2.5 overflow-hidden rounded-xl border border-slate-200 border-l-4 bg-white ${
+      job.over_target_count > 0 ? "border-l-brand-red" : "border-l-emerald-600"
     }`}>
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={onToggle}
-        onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onToggle())}
-        aria-expanded={open}
-        className={`w-full cursor-pointer space-y-1.5 px-4 py-3.5 hover:bg-slate-50 lg:space-y-0 ${TRIP_COLS}`}
-      >
-        {/* Its own cell, not just a click target inside the row -- an admin
-            scanning the Job column for "which trips are on J-501" should
-            never have to open a trip to find out which job it is in. A real
-            <button>, stopping the click before it also toggles the row. */}
-        <span className="flex items-baseline gap-2 lg:block">
-          <span className="w-[5.5rem] shrink-0 text-[10px] font-bold uppercase tracking-widest text-slate-400 lg:hidden">
-            Job
-          </span>
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onFilterJob();
-            }}
-            title="Show every trip in this job"
-            className="text-sm font-medium text-slate-500 underline decoration-slate-300 hover:text-brand-red hover:decoration-brand-red"
-          >
-            J-{trip.driver_day_id}
-          </button>
-        </span>
-
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 px-4 py-3">
+        <button
+          type="button"
+          onClick={onFilterJob}
+          title="Copy this job's id into the search box"
+          className="text-sm font-medium text-slate-500 underline decoration-slate-300 hover:text-brand-red hover:decoration-brand-red"
+        >
+          J-{job.driver_day_id}
+        </button>
         <span className="flex items-center gap-2">
-          <Icon name="chevron" className={`h-3.5 w-3.5 shrink-0 text-slate-400 ${open ? "rotate-90" : ""}`} />
-          <span className="text-sm font-semibold text-brand-black">T-{trip.id}</span>
-        </span>
-
-        <span className="flex min-w-0 items-center gap-2">
           <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10px] font-bold text-slate-600">
-            {(trip.driver_name || "?").split(" ").map((w) => w[0]).slice(0, 2).join("")}
+            {(job.driver_name || "?").split(" ").map((w) => w[0]).slice(0, 2).join("")}
           </span>
-          <span className="flex min-w-0 flex-col leading-tight">
-            <span className="truncate text-sm font-semibold text-brand-black">{trip.driver_name}</span>
-            <span className="truncate text-[11px] text-slate-400">{trip.warehouse_name}</span>
+          <span className="flex flex-col leading-tight">
+            <span className="text-sm font-semibold text-brand-black">{job.driver_name}</span>
+            <span className="text-[11px] text-slate-400">{formatDate(job.work_date)}</span>
           </span>
         </span>
-
-        <Cell label="Date">{formatDate(trip.work_date)}</Cell>
-        <Cell label="Arrived">{formatTime(trip.started_at) || "—"}</Cell>
-        {/* An open trip says so. The old row rendered "05:01–…", which reads
-            like a value that got cut off rather than one that does not exist
-            yet. */}
-        <Cell label="Returned" tone={trip.ended_at ? undefined : "text-slate-400"}>
-          {formatTime(trip.ended_at) || "open"}
-        </Cell>
-        <Cell label="At outlet"
-              tone={tao?.over_target ? "font-semibold text-brand-red" : "text-emerald-700"}>
-          {tao ? formatDuration(tao.minutes) : "—"}
-        </Cell>
-        <Cell label="Waypoints">{trip.jobs}</Cell>
-        <Cell label="Orders">{trip.orders}</Cell>
-
-        <span className="flex items-baseline gap-2 lg:block lg:text-right">
-          <span className="w-[5.5rem] shrink-0 text-[10px] font-bold uppercase tracking-widest text-slate-400 lg:hidden">
-            Owner
-          </span>
-          <OwnerChip owner={trip.owner} lateSteps={(trip.gaps || []).some((g) => g.over_target)} />
+        <span className="text-xs text-slate-500">
+          {job.trip_count} {job.trip_count === 1 ? "trip" : "trips"} · {job.jobs_total} waypoints · {job.orders_total} orders
         </span>
+        {job.over_target_count > 0 && (
+          <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-medium text-brand-red">
+            {job.over_target_count} over target
+          </span>
+        )}
       </div>
 
-      {open && (
-        <div className="border-t border-slate-200 bg-slate-50 px-4 py-4">
-          {trip.reason && (
-            <p className="mb-3 text-sm text-slate-600">
-              <span className="font-semibold text-brand-black">Reason given:</span> {trip.reason}
-            </p>
-          )}
-          <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">
-            End to end · arrival to return
-          </p>
-          <ol className="space-y-1.5">
-            {trip.checkpoints.map((c) => {
-              const gap = gapFor(c.checkpoint);
-              const over = gap && gap.over_target;
-              return (
-                <li
-                  key={c.checkpoint}
-                  className={`grid grid-cols-[26px_minmax(110px,1fr)_90px_minmax(0,1.4fr)_56px] items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs ${
-                    over ? "border-l-[3px] border-l-brand-red" : "border-l-[3px] border-l-emerald-600"
-                  }`}
-                >
-                  <span className={`flex h-6 w-6 items-center justify-center rounded-md ${over ? "bg-rose-50 text-brand-red" : "bg-emerald-50 text-emerald-700"}`}>
-                    <Icon name={CHECKPOINT_ICON[c.checkpoint]} className="h-3.5 w-3.5" />
-                  </span>
-                  <span className="font-semibold text-brand-black">{CHECKPOINT_LABEL[c.checkpoint]}</span>
-                  <span className="min-w-0">
-                    <span className="block">{formatTime(c.occurred_at)}</span>
-                    {c.place && <span className="block truncate text-[10px] text-slate-400">{c.place}</span>}
-                  </span>
-                  <span className={`${over ? "font-semibold text-brand-red" : "text-slate-500"}`}>
-                    {gap ? `${gap.label} ${formatDuration(gap.minutes)} / ${formatDuration(gap.target_minutes)}` : ""}
-                    {c.reason_label ? ` · ${c.reason_label}` : ""}
-                  </span>
-                  <span className="flex justify-end">
-                    {(c.photo_ids?.length ? c.photo_ids : c.photo_id ? [c.photo_id] : []).length > 0 ? (
-                      <span className="flex flex-wrap justify-end gap-1">
-                        {(c.photo_ids?.length ? c.photo_ids : [c.photo_id]).map((pid) => (
-                          <PhotoThumb key={pid} photoId={pid} size="h-10 w-10"
-                                      caption={`T-${trip.id} · ${CHECKPOINT_LABEL[c.checkpoint]} · ${formatTime(c.occurred_at)}`} />
-                        ))}
-                      </span>
-                    ) : (
-                      <span className="text-[10px] text-slate-300">no photo</span>
-                    )}
-                  </span>
-                </li>
-              );
-            })}
-            {trip.checkpoints.length === 0 && (
-              <li className="text-xs text-slate-400">No checkpoints recorded for this trip.</li>
-            )}
-          </ol>
+      <div className="flex flex-wrap items-stretch gap-1.5 border-t border-slate-100 bg-slate-50/70 px-4 py-3">
+        {strip}
+      </div>
 
-          {detail && detail.job_detail.length > 0 && (
-            <>
-              <p className="mb-2 mt-4 text-[10px] font-bold uppercase tracking-widest text-slate-400">Waypoints</p>
-              <ul className="space-y-1.5">
-                {detail.job_detail.map((j) => (
-                  <WaypointRow key={j.id} trip={trip} waypoint={j} />
-                ))}
-              </ul>
-            </>
-          )}
-        </div>
-      )}
+      {openTrip && <TripDetail trip={openTrip} />}
     </div>
   );
 }
@@ -534,35 +548,15 @@ export default function Evidence() {
 
       {data && (
         <>
-          {/* Said once, at the top, instead of on all 25 cards. The labels were
-              the loudest thing on a row that exists to show values. */}
-          <div className={`hidden px-4 pb-2 ${TRIP_COLS}`} aria-hidden="true">
-            {TRIP_HEADS.map((h, i) => (
-              <span key={h}
-                    className={`text-[10px] font-bold uppercase tracking-widest text-slate-400 ${
-                      i === TRIP_HEADS.length - 1 ? "text-right" : ""
-                    }`}>
-                {h}
-              </span>
-            ))}
-          </div>
-
           <div>
             {data.days.map((job) => (
-              <div key={job.driver_day_id}>
-                <JobHeader job={job} />
-                <div className="space-y-2">
-                  {job.trips.map((trip) => (
-                    <TripCard
-                      key={trip.id}
-                      trip={trip}
-                      open={openId === trip.id}
-                      onToggle={() => patch({ trip: openId === trip.id ? "" : trip.id }, { keepPage: true })}
-                      onFilterJob={() => patch({ q: String(trip.driver_day_id) })}
-                    />
-                  ))}
-                </div>
-              </div>
+              <JobRow
+                key={job.driver_day_id}
+                job={job}
+                openTripId={openId}
+                onToggleTrip={(tripId) => patch({ trip: openId === tripId ? "" : tripId }, { keepPage: true })}
+                onFilterJob={() => patch({ q: String(job.driver_day_id) })}
+              />
             ))}
             {data.days.length === 0 && (
               <p className="rounded-xl bg-white px-4 py-6 text-sm text-slate-500 ring-1 ring-slate-200">
