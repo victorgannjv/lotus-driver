@@ -225,7 +225,7 @@ function TripDetail({ trip }) {
   const gapFor = (cp) => (trip.gaps || []).find((g) => g.to_checkpoint === cp);
 
   return (
-    <div className="border-t border-slate-200 bg-slate-50 px-4 py-4">
+    <div className="-mx-4 border-y border-slate-200 bg-slate-50 px-4 py-4">
       <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
         <span className="font-semibold text-brand-black">T-{trip.id} · {trip.warehouse_name}</span>
         <span>Arrived {formatTime(trip.started_at) || "—"}</span>
@@ -314,8 +314,11 @@ function JobRow({ job, openTripId, onToggleTrip, onFilterJob }) {
     if (ta !== tb) return ta < tb ? -1 : 1;
     return a.id - b.id;
   });
-  const openTrip = trips.find((t) => t.id === openTripId) || null;
 
+  // The detail for whichever chip is open sits right under THAT chip, not
+  // pinned to the bottom of the strip -- opening the first of three trips
+  // used to drop its evidence trail below the other two, which read as the
+  // detail belonging to the last trip, or as a second card underneath.
   const strip = trips.flatMap((trip, i) => {
     const nodes = [];
     if (i > 0) {
@@ -326,6 +329,9 @@ function JobRow({ job, openTripId, onToggleTrip, onFilterJob }) {
     nodes.push(
       <TripChip key={trip.id} trip={trip} open={trip.id === openTripId} onToggle={() => onToggleTrip(trip.id)} />,
     );
+    if (trip.id === openTripId) {
+      nodes.push(<TripDetail key={`detail-${trip.id}`} trip={trip} />);
+    }
     return nodes;
   });
 
@@ -364,8 +370,6 @@ function JobRow({ job, openTripId, onToggleTrip, onFilterJob }) {
       <div className="flex flex-col gap-1 border-t border-slate-100 bg-slate-50/70 px-4 py-3">
         {strip}
       </div>
-
-      {openTrip && <TripDetail trip={openTrip} />}
     </div>
   );
 }
