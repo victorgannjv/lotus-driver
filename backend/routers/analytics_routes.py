@@ -358,6 +358,15 @@ def _avg_at_outlet(trips: list[dict]) -> int | None:
     return round(sum(vals) / len(vals)) if vals else None
 
 
+def _avg_waiting_minutes(trips: list[dict]) -> int | None:
+    """Average of the 'waiting_for_lotus' gap -- arrived at the outlet to
+    Lotus goods ready. Narrower than avg_at_outlet_minutes (which runs all
+    the way to departure) and the step Lotus owns by default, so it is the
+    figure a driver-standing-around complaint is actually about."""
+    vals = [g["minutes"] for t in trips for g in t["gaps"] if g["gap_code"] == "waiting_for_lotus"]
+    return round(sum(vals) / len(vals)) if vals else None
+
+
 # ---------------------------------------------------------------------------
 # Day on day, week on week, month on month.
 #
@@ -549,6 +558,7 @@ async def overview(
         "late_arrivals": sum(1 for t in windowed if not t["window"]["arrived_on_time"]),
     }
     avg, prev_avg = _avg_at_outlet(trips), _avg_at_outlet(prev)
+    avg_waiting, prev_avg_waiting = _avg_waiting_minutes(trips), _avg_waiting_minutes(prev)
     breached = sum(1 for t in trips if t["over_target"])
 
     trip_of_day, unnumbered = _by_trip_of_day(trips)
@@ -687,6 +697,11 @@ async def overview(
             "avg_at_outlet_minutes": avg,
             "avg_at_outlet_previous": prev_avg,
             "avg_delta_minutes": (avg - prev_avg) if (avg is not None and prev_avg is not None) else None,
+            "avg_waiting_minutes": avg_waiting,
+            "avg_waiting_previous": prev_avg_waiting,
+            "avg_waiting_delta_minutes": (
+                (avg_waiting - prev_avg_waiting) if (avg_waiting is not None and prev_avg_waiting is not None) else None
+            ),
             "owned_minutes": owned,
             "owned_minutes_previous": prev_owned,
             "jobs": sum(t["jobs"] for t in trips),

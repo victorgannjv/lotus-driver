@@ -315,7 +315,7 @@ export default function Dashboard() {
               ? "Being late is measured two ways: against the delivery window for the run, and against the time limit on each step."
               : "Being late is measured against the delivery window agreed for each run."}
           </SectionNote>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
             {/* Two sources, one row. The per-step limits are off, so
                 anything measured against them is not zero -- it is unmeasured,
                 and a confident "0m" beside "Delay caused by Lotus" reads as
@@ -360,6 +360,17 @@ export default function Dashboard() {
                   : null
               }
               deltaBad={t.avg_delta_minutes > 0}
+            />
+            <Tile
+              label="Avg waiting time"
+              value={formatDuration(t.avg_waiting_minutes)}
+              sub="Average from arriving to Lotus goods ready -- Lotus's by default"
+              delta={
+                t.avg_waiting_delta_minutes !== null
+                  ? `${t.avg_waiting_delta_minutes > 0 ? "▲" : "▼"} ${formatDuration(Math.abs(t.avg_waiting_delta_minutes))} vs previous period`
+                  : null
+              }
+              deltaBad={t.avg_waiting_delta_minutes > 0}
             />
             <Tile
               label="Delay caused by us"
