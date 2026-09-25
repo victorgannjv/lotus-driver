@@ -354,6 +354,11 @@ function JobRow({ job, openTripId, onToggleTrip, onFilterJob }) {
     return a.id - b.id;
   });
   const longWaitCount = trips.filter(isLongWait).length;
+  // Every order riding on a long-wait trip counts as problematic -- the wait
+  // is stamped before a single drop exists yet (arrived -> goods ready), so
+  // it delayed the whole load, not just some of it. "Problematic" is left
+  // open for other criteria later; today this is the only one.
+  const problematicOrders = trips.reduce((sum, t) => sum + (isLongWait(t) ? t.orders : 0), 0);
 
   // The detail for whichever chip is open sits right under THAT chip, not
   // pinned to the bottom of the strip -- opening the first of three trips
@@ -424,9 +429,20 @@ function JobRow({ job, openTripId, onToggleTrip, onFilterJob }) {
             {job.over_target_count} over target
           </span>
         )}
-        {longWaitCount > 0 && (
-          <span className="flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">
+        {/* The count Lotus disputes are actually argued over -- a trip is an
+            operational unit, an order is the billable one. Shown first, with
+            the trip-count chip beside it as the "which runs" detail. */}
+        {problematicOrders > 0 && (
+          <span
+            className="flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800"
+            title="Orders riding on a trip that waited more than 30 minutes for Lotus goods ready"
+          >
             <Icon name="alert" className="h-3 w-3" />
+            {problematicOrders} problematic {problematicOrders === 1 ? "order" : "orders"}
+          </span>
+        )}
+        {longWaitCount > 0 && (
+          <span className="flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
             {longWaitCount} {longWaitCount === 1 ? "long wait" : "long waits"}
           </span>
         )}
@@ -573,7 +589,8 @@ export default function Evidence() {
             <li>
               <b className="font-semibold text-slate-600">Amber wait flag:</b>{" "}
               <Swatch tone="bg-amber-100" /> Waited over 30 minutes for Lotus goods ready -- its own fixed
-              bar, separate from the time-at-outlet limit above (which can be off entirely)
+              bar, separate from the time-at-outlet limit above (which can be off entirely). Shown per
+              trip in minutes, and per job as how many orders rode on a flagged trip
             </li>
           </ul>
         </details>
