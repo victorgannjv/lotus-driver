@@ -38,6 +38,23 @@ const OWNER = {
   external: { label: "External", chip: "bg-emerald-100 text-emerald-800", dot: "bg-emerald-600" },
 };
 
+// A flat 30 minutes, independent of whatever time-at-outlet target is (or
+// isn't) configured in Settings -- that target covers the whole outlet stay
+// and can be switched off entirely, but "how long before Lotus even started
+// pulling the load" is its own question and this page answers it on its own
+// bar.
+const LONG_WAIT_MINUTES = 30;
+
+function waitMinutes(trip) {
+  const gap = (trip.gaps || []).find((g) => g.gap_code === "waiting_for_lotus");
+  return gap ? gap.minutes : null;
+}
+
+function isLongWait(trip) {
+  const mins = waitMinutes(trip);
+  return mins != null && mins > LONG_WAIT_MINUTES;
+}
+
 // Blank used to mean two very different things, both shown as "No owner": the
 // trip was fine, or the trip ran late and nobody said why. The second is money
 // we cannot claim because the reason was never logged, so it gets its own chip
@@ -190,6 +207,18 @@ function TripChip({ trip, open, onToggle, connectedAbove, connectedBelow, spaced
       <span className="text-slate-500">
         {formatTime(trip.started_at) || "—"}–{formatTime(trip.ended_at) || "open"}
       </span>
+      {/* Its own flag, separate from the red edge: that one tracks the
+          configurable time-at-outlet target (which can be off entirely),
+          this one is a fixed 30-minute bar on the wait alone. */}
+      {isLongWait(trip) && (
+        <span
+          className="flex shrink-0 items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800"
+          title="Waited more than 30 minutes for Lotus goods ready"
+        >
+          <Icon name="alert" className="h-3 w-3" />
+          {formatDuration(waitMinutes(trip))} wait
+        </span>
+      )}
       <span className="min-w-0 flex-1 truncate text-right text-[10px] text-slate-400">
         {trip.warehouse_name} · {trip.jobs} wp · {trip.orders} ord
       </span>
@@ -324,6 +353,7 @@ function JobRow({ job, openTripId, onToggleTrip, onFilterJob }) {
     if (ta !== tb) return ta < tb ? -1 : 1;
     return a.id - b.id;
   });
+  const longWaitCount = trips.filter(isLongWait).length;
 
   // The detail for whichever chip is open sits right under THAT chip, not
   // pinned to the bottom of the strip -- opening the first of three trips
@@ -392,6 +422,12 @@ function JobRow({ job, openTripId, onToggleTrip, onFilterJob }) {
         {job.over_target_count > 0 && (
           <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-medium text-brand-red">
             {job.over_target_count} over target
+          </span>
+        )}
+        {longWaitCount > 0 && (
+          <span className="flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">
+            <Icon name="alert" className="h-3 w-3" />
+            {longWaitCount} {longWaitCount === 1 ? "long wait" : "long waits"}
           </span>
         )}
       </div>
@@ -533,6 +569,11 @@ export default function Evidence() {
               <Swatch tone="bg-orange-500" /> No reason given, so nobody to bill
               <span className="px-1.5 text-slate-300">·</span>
               <Swatch tone="bg-slate-300" /> On time, nothing to explain
+            </li>
+            <li>
+              <b className="font-semibold text-slate-600">Amber wait flag:</b>{" "}
+              <Swatch tone="bg-amber-100" /> Waited over 30 minutes for Lotus goods ready -- its own fixed
+              bar, separate from the time-at-outlet limit above (which can be off entirely)
             </li>
           </ul>
         </details>
