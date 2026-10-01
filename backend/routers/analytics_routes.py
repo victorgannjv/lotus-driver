@@ -13,12 +13,15 @@ the driver app uses (see trips.py), so ops' numbers and a driver's own numbers
 can never disagree. Nothing is precomputed or cached: retuning a target has to
 re-score history while the target is still being negotiated with Lotus.
 """
+import csv
+import io
 from datetime import date, timedelta
 
 from asyncmy.cursors import DictCursor
 
 from clocks import fmt, local_today
 from fastapi import APIRouter, Depends, Query, Request
+from fastapi.responses import Response
 
 from auth import get_current_admin
 from db import get_pool
@@ -758,6 +761,33 @@ def _group_by_day(trips: list[dict]) -> list[dict]:
     return rows
 
 
+async def _filtered_evidence_trips(
+    pool, date_from: str | None, date_to: str | None, warehouse_id: int | None,
+    driver_id: int | None, owner: str | None, over_target_only: bool, q: str | None,
+) -> list[dict]:
+    """Every trip the Evidence page's filters resolve to, unpaginated -- the
+    one filtering pass shared by the screen (which pages it) and the CSV
+    export (which doesn't), so the two can never disagree about what counts
+    as 'matching the current filters'."""
+    end = date.fromisoformat(date_to) if date_to else local_today()
+    start = date.fromisoformat(date_from) if date_from else end - timedelta(days=29)
+
+    trips = await _scored(pool, await _load_trips(pool, start, end, warehouse_id))
+
+    if driver_id:
+        trips = [t for t in trips if t["driver_id"] == driver_id]
+    if owner:
+        trips = [t for t in trips if t["owner"] == owner]
+    if over_target_only:
+        trips = [t for t in trips if t["over_target"]]
+    if q:
+        needle = q.strip().lower()
+        trips = [t for t in trips
+                 if needle in str(t["id"]) or needle in str(t["driver_day_id"])
+                 or needle in (t["driver_name"] or "").lower()]
+    return trips
+
+
 @router.get("/evidence")
 async def evidence(
     request: Request,
@@ -777,23 +807,9 @@ async def evidence(
     day's own totals (jobs, orders, over-target count) would otherwise be
     wrong on whichever page happened to hold the rest of it."""
     pool = get_pool(request)
-    end = date.fromisoformat(date_to) if date_to else local_today()
-    start = date.fromisoformat(date_from) if date_from else end - timedelta(days=29)
-
-    trips = await _scored(pool, await _load_trips(pool, start, end, warehouse_id))
-
-    if driver_id:
-        trips = [t for t in trips if t["driver_id"] == driver_id]
-    if owner:
-        trips = [t for t in trips if t["owner"] == owner]
-    if over_target_only:
-        trips = [t for t in trips if t["over_target"]]
-    if q:
-        needle = q.strip().lower()
-        trips = [t for t in trips
-                 if needle in str(t["id"]) or needle in str(t["driver_day_id"])
-                 or needle in (t["driver_name"] or "").lower()]
-
+    trips = await _filtered_evidence_trips(
+        pool, date_from, date_to, warehouse_id, driver_id, owner, over_target_only, q,
+    )
     days = _group_by_day(trips)
 
     total = len(days)
@@ -810,6 +826,81 @@ async def evidence(
         "trip_total": len(trips),
         "over_target_total": sum(1 for t in trips if t["over_target"]),
     }
+
+
+# Mirrors the Evidence page's own fixed bar (frontend/src/pages/admin/Evidence.jsx) --
+# the waiting_for_lotus gap is scored against this regardless of whatever
+# time-at-outlet target is (or isn't) configured.
+LONG_WAIT_MINUTES = 30
+
+EVIDENCE_CSV_HEADER = [
+    "job_id", "trip_id", "driver", "warehouse", "work_date", "trip_of_day",
+    "arrived_at", "goods_ready_at", "loaded_at", "departed_at", "deliveries_done_at", "returned_at",
+    "waiting_for_lotus_minutes", "long_wait_over_30min",
+    "time_at_outlet_minutes", "time_at_outlet_over_target",
+    "waypoints", "orders", "failed_orders",
+    "owner", "reason",
+]
+
+
+def _evidence_csv_row(t: dict) -> list:
+    cps = {c["checkpoint"]: c["occurred_at"] for c in t["checkpoints"]}
+    wait_gap = next((g for g in t["gaps"] if g["gap_code"] == "waiting_for_lotus"), None)
+    wait_minutes = wait_gap["minutes"] if wait_gap else None
+    tao = t["time_at_outlet"]
+    return [
+        t["driver_day_id"], t["id"], t["driver_name"] or "", t["warehouse_name"] or "",
+        t["work_date"], t.get("schedule_slot_no") or "",
+        cps.get("arrived", ""), cps.get("goods_ready", ""), cps.get("loaded", ""),
+        cps.get("departed", ""), cps.get("deliveries_done", ""), cps.get("returned", ""),
+        wait_minutes if wait_minutes is not None else "",
+        "yes" if (wait_minutes is not None and wait_minutes > LONG_WAIT_MINUTES) else "no",
+        tao["minutes"] if tao else "",
+        "yes" if (tao and tao["over_target"]) else "no",
+        t["jobs"], t["orders"], t["failed_orders"],
+        t["owner"] or "", t["reason"] or "",
+    ]
+
+
+@router.get("/evidence/export")
+async def evidence_export(
+    request: Request,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    warehouse_id: int | None = None,
+    driver_id: int | None = None,
+    owner: str | None = None,
+    over_target_only: bool = False,
+    q: str | None = None,
+    admin=Depends(get_current_admin),
+):
+    """The same filtered trips GET /evidence pages through, as one CSV file --
+    the export button is 'give me everything the screen currently matches',
+    not just the 25 rows on the visible page."""
+    pool = get_pool(request)
+    trips = await _filtered_evidence_trips(
+        pool, date_from, date_to, warehouse_id, driver_id, owner, over_target_only, q,
+    )
+    trips.sort(key=lambda t: (t["work_date"], t["driver_name"] or "", t["id"]))
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(EVIDENCE_CSV_HEADER)
+    for t in trips:
+        writer.writerow(_evidence_csv_row(t))
+
+    end = date.fromisoformat(date_to) if date_to else local_today()
+    start = date.fromisoformat(date_from) if date_from else end - timedelta(days=29)
+    filename = f"evidence_{start.isoformat()}_to_{end.isoformat()}.csv"
+
+    # utf-8-sig: Excel otherwise guesses the system codepage on a BOM-less
+    # file, which mangles anything outside ASCII the moment a driver's name
+    # isn't.
+    return Response(
+        content=buf.getvalue().encode("utf-8-sig"),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/trips/{manifest_id}/detail")

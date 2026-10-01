@@ -540,10 +540,74 @@ export default function Evidence() {
     };
   }
 
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState(null);
+
+  // Every trip the current filters match, not just the page on screen -- and
+  // with no date picker on this page at all, "every trip" has to mean the
+  // app's whole history, not the 30-day window /admin/evidence quietly
+  // defaults to when no dates are given. So this looks up the real span
+  // first rather than trusting that default.
+  async function exportCsv() {
+    setExporting(true);
+    setExportError(null);
+    try {
+      const span = await api.get("/admin/data-range");
+      const out = new URLSearchParams();
+      if (span.first_date) out.set("date_from", span.first_date);
+      if (span.last_date) out.set("date_to", span.last_date);
+      if (filters.q) out.set("q", filters.q);
+      if (filters.warehouseId) out.set("warehouse_id", filters.warehouseId);
+      if (filters.driverId) out.set("driver_id", filters.driverId);
+      if (filters.owner) out.set("owner", filters.owner);
+      if (filters.overOnly) out.set("over_target_only", "true");
+
+      const res = await fetch(`/api/admin/evidence/export?${out.toString()}`);
+      if (!res.ok) {
+        let detail;
+        try {
+          detail = (await res.json())?.detail;
+        } catch {
+          detail = null;
+        }
+        throw new Error(detail || `export failed (HTTP ${res.status})`);
+      }
+      const blob = await res.blob();
+      const match = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") || "");
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = match ? match[1] : "evidence.csv";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setExportError(err.message || "could not export the evidence log");
+    } finally {
+      setExporting(false);
+    }
+  }
+
   return (
     <div>
       <div className="mb-4 rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
-        <h2 className="text-base font-semibold text-brand-black">Evidence</h2>
+        <div className="flex items-start justify-between gap-3">
+          <h2 className="text-base font-semibold text-brand-black">Evidence</h2>
+          {/* Every trip the filters match, not the page on screen -- see
+              exportCsv. A CSV rather than a PDF or a print view: this is
+              raw rows meant to be pivoted and filtered in a spreadsheet,
+              not read as a document. */}
+          <button
+            type="button"
+            onClick={exportCsv}
+            disabled={exporting}
+            className="shrink-0 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-brand-black hover:bg-slate-50 disabled:opacity-50"
+          >
+            {exporting ? "Exporting…" : "Export CSV"}
+          </button>
+        </div>
+        {exportError && <p className="mt-1 text-xs text-red-600">{exportError}</p>}
         {/* Say what the page is FOR, not how it works.
             "Every trip, and where the time went. A step that ran over its
             allowed time is flagged, and Owner says whose time it was" described
