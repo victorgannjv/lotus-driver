@@ -8,6 +8,16 @@
 # `nginxinc/nginx-unprivileged` (rootless, no startup chown; keep `listen 8000`).
 FROM python:3.12-slim
 WORKDIR /app
+# Patch the base image's OpenSSL packages ahead of what python:3.12-slim ships,
+# rather than pin a dated tag that may carry its own unreviewed CVEs. apt has no
+# floor-version operator like Alpine's `apk add pkg>=version` -- `apt-get update`
+# first so the install below resolves to whatever is current in the trixie-security
+# index, which is the patched build once Debian has published it.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libssl3t64 \
+    openssl \
+    openssl-provider-legacy \
+    && rm -rf /var/lib/apt/lists/*
 COPY backend/requirements.txt .
 # Wheels-only: never fall back to a source build. This slim image has no C compiler, so
 # a dep with no wheel for this Python (e.g. an old asyncmy pinned below its first cp312

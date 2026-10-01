@@ -15,8 +15,8 @@ FROM nginx:1.27-alpine
 # rather than pin a newer nginx tag that may bundle its own new CVEs unreviewed.
 RUN apk update && apk add --no-cache \
     "c-ares>=1.34.8-r0" \
-    "libcrypto3>=3.3.7-r1" \
-    "libssl3>=3.3.7-r1" \
+    "libcrypto3>=3.3.7-r2" \
+    "libssl3>=3.3.7-r2" \
     "libexpat>=2.8.4-r0" \
     "libpng>=1.6.55-r0" \
     "libxml2>=2.13.9-r1" \
