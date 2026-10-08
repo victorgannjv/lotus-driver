@@ -4,6 +4,7 @@ import RequireAdmin from "../../auth/RequireAdmin";
 import AppHeader from "../../components/AppHeader";
 import SampleDataBanner from "../../components/SampleDataBanner";
 import UpdateBar from "../../components/UpdateBar";
+import { api } from "../../api";
 import { useConfigTabs } from "./configTabs";
 import Icon from "../../components/Icon";
 
@@ -36,6 +37,18 @@ export default function Gate() {
 
   useEffect(() => setMenuOpen(false), [location.pathname]);
 
+  // Unresolved errors from the last day, on the Diagnostics tab. Refreshed on
+  // every page change rather than polled: an admin moving around the app is
+  // the moment a new problem is worth surfacing, and it costs nothing while
+  // they are idle. A failed check shows no badge -- never a false alarm.
+  const [openErrors, setOpenErrors] = useState(0);
+  useEffect(() => {
+    api
+      .get("/admin/diagnostics/summary")
+      .then((d) => setOpenErrors(d.open_errors_24h || 0))
+      .catch(() => setOpenErrors(0));
+  }, [location.pathname]);
+
   useEffect(() => {
     function onDocClick(e) {
       if (menuRef.current && !menuRef.current.contains(e.target)) setMenuOpen(false);
@@ -54,6 +67,23 @@ export default function Gate() {
           <NavLink to="/admin/dashboard" className={linkClass}>Dashboard</NavLink>
           <NavLink to="/admin/evidence" className={linkClass}>Evidence</NavLink>
           <NavLink to="/admin/jobs" className={linkClass}>Orders</NavLink>
+          <NavLink to="/admin/diagnostics" className={linkClass}>
+            {({ isActive }) => (
+              <span className="flex items-center gap-1.5">
+                Diagnostics
+                {openErrors > 0 && (
+                  <span
+                    title={`${openErrors} unresolved error${openErrors === 1 ? "" : "s"} in the last 24 hours`}
+                    className={`rounded-full px-1.5 py-px text-[10px] font-bold leading-4 ${
+                      isActive ? "bg-white text-brand-red" : "bg-brand-red text-white"
+                    }`}
+                  >
+                    {openErrors > 99 ? "99+" : openErrors}
+                  </span>
+                )}
+              </span>
+            )}
+          </NavLink>
 
           <span className="flex-1" />
 

@@ -1,5 +1,7 @@
 // Fetch wrapper for the backend. Always relative /api paths -- same-origin
 // through the ingress in prod, proxied to :8000 by Vite in local dev.
+import { reportError } from "./lib/errorReporter";
+
 const TOKEN_KEY = "lotus_driver_token";
 
 export function getToken() {
@@ -16,6 +18,9 @@ export class ApiError extends Error {
     super(detail || `request failed (${status})`);
     this.status = status;
     this.detail = detail;
+    // The server already logged this one, with the real route and who asked.
+    // The global handler checks this so an uncaught one is not counted twice.
+    this.isApiError = true;
   }
 }
 
@@ -25,11 +30,41 @@ async function request(path, { method = "GET", body, isForm = false } = {}) {
   if (token) headers.Authorization = `Bearer ${token}`;
   if (body && !isForm) headers["Content-Type"] = "application/json";
 
-  const res = await fetch(`/api${path}`, {
-    method,
-    headers,
-    body: body ? (isForm ? body : JSON.stringify(body)) : undefined,
-  });
+  let res;
+  try {
+    res = await fetch(`/api${path}`, {
+      method,
+      headers,
+      body: body ? (isForm ? body : JSON.stringify(body)) : undefined,
+    });
+  } catch (err) {
+    // The request never got an answer -- no signal, a dropped connection, the
+    // server unreachable. The backend cannot log what it never received, and
+    // this is the failure drivers hit most in a loading bay.
+    reportError({
+      kind: "network_error",
+      level: "warning",
+      message: `${method} ${path.split("?")[0]} failed: ${err?.message || "network error"}`,
+      apiMethod: method,
+      apiPath: `/api${path}`,
+    });
+    err.alreadyReported = true;
+    throw err;
+  }
+
+  // An answer that did not come from the app. Our own errors are JSON; an HTML
+  // or empty body on a failed call is the ingress or a proxy speaking (502,
+  // 503, 504, a 413 for an oversized upload), which the backend never saw.
+  if (!res.ok && res.status !== 401 && !(res.headers.get("content-type") || "").includes("application/json")) {
+    reportError({
+      kind: "gateway_error",
+      level: res.status >= 500 ? "error" : "warning",
+      message: `${method} ${path.split("?")[0]} returned HTTP ${res.status} from the gateway, not the app`,
+      apiMethod: method,
+      apiPath: `/api${path}`,
+      status: res.status,
+    });
+  }
 
   if (res.status === 401) {
     setToken(null);

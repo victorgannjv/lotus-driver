@@ -48,6 +48,7 @@ const AdminGate = lazyRoute(() => import("./pages/admin/Gate"));
 const AdminDashboard = lazyRoute(() => import("./pages/admin/Dashboard"));
 const AdminJobs = lazyRoute(() => import("./pages/admin/Jobs"));
 const AdminEvidence = lazyRoute(() => import("./pages/admin/Evidence"));
+const AdminDiagnostics = lazyRoute(() => import("./pages/admin/Diagnostics"));
 const ConfigLayout = lazyRoute(() =>
   import("./pages/admin/Configuration").then((m) => ({ default: m.ConfigurationLayout }))
 );
@@ -151,6 +152,7 @@ export default function App() {
             <Route index element={<Navigate to="/admin/dashboard" replace />} />
             <Route path="dashboard" element={<AdminDashboard />} />
             <Route path="evidence" element={<AdminEvidence />} />
+            <Route path="diagnostics" element={<AdminDiagnostics />} />
             <Route path="jobs" element={<AdminJobs />} />
             <Route path="jobs/:jobId" element={<AdminJobDetail />} />
 

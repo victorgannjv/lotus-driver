@@ -1,4 +1,5 @@
 import { Component } from "react";
+import { reportError } from "../lib/errorReporter";
 
 // No failure should ever be a blank screen.
 //
@@ -25,6 +26,14 @@ export default class ErrorBoundary extends Component {
     // Goes to the browser console, which is where it can be read off a
     // handset over a cable when someone reports "it went white".
     console.error("Unhandled error:", error, info?.componentStack);
+    // And to the admin Diagnostics log. The console is only readable with the
+    // handset on a cable; this is how a white screen on a phone in the field
+    // reaches someone who can fix it.
+    reportError({
+      kind: "render_error",
+      message: error?.message || String(error),
+      stack: `${error?.stack || ""}\n\nComponent stack:${info?.componentStack || ""}`,
+    });
   }
 
   render() {
