@@ -106,7 +106,10 @@ def fingerprint(source: str, kind: str, message: str, *, status_code=None, metho
         source, kind, str(status_code or ""), method or "",
         _DIGITS.sub("#", path or ""), normalize(message), frame or "",
     ])
-    return hashlib.sha1(key.encode("utf-8")).hexdigest()
+    # SHA-256 cut to 40 hex characters. Only a grouping key -- nothing here is
+    # secret -- but SHA-1 is flagged by every scanner on sight, and the width
+    # the table was built for is the same.
+    return hashlib.sha256(key.encode("utf-8")).hexdigest()[:40]
 
 
 def route_path(request: Request) -> str:
