@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Navigate, NavLink, Outlet } from "react-router-dom";
 import { api } from "../../api";
 import Icon from "../../components/Icon";
+import { useAccess } from "../../auth/AdminAccess";
 import { useConfigTabs } from "./configTabs";
 
 // Settings, written for an ops coordinator rather than a developer.
@@ -1021,6 +1022,12 @@ function NewDriverForm({ outlets, busy, onCancel, onCreate }) {
 
 export function DriversConfig() {
   const { rows, error, busy, run } = useList("/admin/drivers", "drivers");
+  // Two separate permissions (see backend/access.py). This page is not wrapped
+  // in the blanket read-only fieldset, because that would disable the password
+  // button even for a role that holds it -- so each control checks for itself.
+  const { can } = useAccess();
+  const canEdit = can("drivers", "edit");
+  const canSetPasswords = can("driver_passwords", "edit");
   const [outlets, setOutlets] = useState([]);
   const [edit, setEdit] = useState({});
   const [adding, setAdding] = useState(false);
@@ -1050,7 +1057,8 @@ export function DriversConfig() {
       blurb="Who can sign into the driver app, and where they work from."
       action={
         !adding && (
-          <button type="button" className={btnPrimary} onClick={() => { setAdding(true); setInvite(null); setPw(null); }}>
+          <button type="button" className={btnPrimary} disabled={!canEdit}
+                  onClick={() => { setAdding(true); setInvite(null); setPw(null); }}>
             Add driver
           </button>
         )
@@ -1136,7 +1144,7 @@ export function DriversConfig() {
             <span className="flex items-center gap-2 text-sm text-slate-500">
               {/* PUT, not DELETE. This switch always meant "status", and
                   wiring it to DELETE left no verb for actually deleting. */}
-              <Toggle on={d.status === "active"} disabled={busy} label={`Sign-in for ${d.name}`}
+              <Toggle on={d.status === "active"} disabled={busy || !canEdit} label={`Sign-in for ${d.name}`}
                       onChange={(next) => run(() => api.put(`/admin/config/drivers/${d.id}`,
                         { status: next ? "active" : "disabled" }))} />
               Can sign in
@@ -1165,14 +1173,14 @@ export function DriversConfig() {
               </>
             ) : (
               <>
-                <button type="button" className={btn}
+                <button type="button" className={btn} disabled={!canEdit}
                         onClick={() => setEdit((v) => ({
                           ...v,
                           [d.id]: { name: d.name || "", phone: d.phone || "", warehouse_id: d.warehouse_id ?? "" },
                         }))}>
                   Edit
                 </button>
-                <button type="button" className={btn} disabled={busy || d.status !== "active"}
+                <button type="button" className={btn} disabled={busy || !canEdit || d.status !== "active"}
                         title={d.status === "active"
                           ? "A one-time link for them to set a password"
                           : "Turn sign-in back on first"}
@@ -1187,11 +1195,13 @@ export function DriversConfig() {
                 {/* The link needs the driver to open it on a phone they can
                     already use. For the one who is locked out of theirs, or
                     cannot read the inbox it went to, the admin sets it. */}
-                <button type="button" className={btn} disabled={busy}
-                        title="Choose a new password for them yourself"
-                        onClick={() => { setPw({ id: d.id, name: d.name }); setInvite(null); setAdding(false); }}>
-                  Set password
-                </button>
+                {canSetPasswords && (
+                  <button type="button" className={btn} disabled={busy}
+                          title="Choose a new password for them yourself"
+                          onClick={() => { setPw({ id: d.id, name: d.name }); setInvite(null); setAdding(false); }}>
+                    Set password
+                  </button>
+                )}
                 {/* On every row. It was withheld from anyone who had driven,
                     on the grounds that their trips are dispute evidence --
                     but which accounts are worth keeping is the account
@@ -1202,7 +1212,7 @@ export function DriversConfig() {
                     account with trips also has to have its name typed. One
                     misclick should not be able to remove fourteen trips'
                     worth of figures from the dashboard. */}
-                <button type="button" className={btnDanger} disabled={busy}
+                <button type="button" className={btnDanger} disabled={busy || !canEdit}
                         title={d.trips === 0
                           ? "This account has never run a trip"
                           : `Also removes ${d.trips} trip${d.trips === 1 ? "" : "s"} and their evidence`}

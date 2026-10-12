@@ -25,6 +25,12 @@ const btnDanger = "rounded-lg border border-rose-200 bg-white px-3 py-1.5 text-s
 
 const LEVEL_LABEL = { none: "No access", view: "View", edit: "Edit" };
 
+// A module that offers only Edit has no scale to put a person on; it is a
+// switch, so it is labelled as one (Driver passwords: Allowed / Not allowed).
+const isSwitch = (m) => !!m && m.levels.length === 1 && m.levels[0] === "edit";
+const levelLabel = (m, level) =>
+  isSwitch(m) ? (level === "none" ? "Not allowed" : "Allowed") : LEVEL_LABEL[level];
+
 function Panel({ title, blurb, action, children, footer }) {
   return (
     <section className="rounded-xl bg-white shadow-sm ring-1 ring-slate-200">
@@ -44,11 +50,16 @@ function Panel({ title, blurb, action, children, footer }) {
 // "Edit: Drivers, Outlets · View: Dashboard, Evidence" -- the whole of a role
 // in a line, so the list can be read without opening each one.
 function Grants({ permissions, byKey, order }) {
-  const labelsAt = (level) =>
-    order.filter((k) => permissions[k] === level).map((k) => byKey[k]?.label || k);
-  const edit = labelsAt("edit");
-  const view = labelsAt("view");
-  if (!edit.length && !view.length) return <span className="text-xs text-slate-400">No access to anything</span>;
+  const labelsAt = (level, wantSwitch) =>
+    order
+      .filter((k) => permissions[k] === level && isSwitch(byKey[k]) === wantSwitch)
+      .map((k) => byKey[k]?.label || k);
+  const edit = labelsAt("edit", false);
+  const view = labelsAt("view", false);
+  const allowed = labelsAt("edit", true);
+  if (!edit.length && !view.length && !allowed.length) {
+    return <span className="text-xs text-slate-400">No access to anything</span>;
+  }
   return (
     <span className="space-y-1 text-xs text-slate-600">
       {edit.length > 0 && (
@@ -61,6 +72,12 @@ function Grants({ permissions, byKey, order }) {
         <span className="block">
           <b className="mr-1.5 rounded bg-slate-100 px-1.5 py-0.5 font-semibold text-slate-600">View</b>
           {view.join(", ")}
+        </span>
+      )}
+      {allowed.length > 0 && (
+        <span className="block">
+          <b className="mr-1.5 rounded bg-amber-100 px-1.5 py-0.5 font-semibold text-amber-800">Allowed</b>
+          {allowed.join(", ")}
         </span>
       )}
     </span>
@@ -85,13 +102,20 @@ function RoleEditor({ modules, initial, busy, onSave, onCancel }) {
     setPerms(
       Object.fromEntries(
         modules
-          .map((m) => [m.key, mode === "edit" ? m.levels[m.levels.length - 1] : mode === "view" ? "view" : null])
+          .map((m) => [
+            m.key,
+            mode === "edit" ? m.levels[m.levels.length - 1]
+              : mode === "view" && m.levels.includes("view") ? "view"
+              : null,
+          ])
           .filter(([, v]) => v),
       ),
     );
 
   const groups = [...new Set(modules.map((m) => m.group))];
   const grantsAccess = perms.access === "edit";
+  // The switch lives on the Drivers page, which opens with View on Drivers.
+  const passwordsUnreachable = perms.driver_passwords === "edit" && !perms.drivers;
 
   return (
     <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
@@ -141,7 +165,7 @@ function RoleEditor({ modules, initial, busy, onSave, onCancel }) {
                              }`}>
                         <input type="radio" className="sr-only" name={`perm-${m.key}`} checked={level === lv}
                                onChange={() => set(m.key, lv)} />
-                        {LEVEL_LABEL[lv]}
+                        {levelLabel(m, lv)}
                       </label>
                     ))}
                   </div>
@@ -151,6 +175,13 @@ function RoleEditor({ modules, initial, busy, onSave, onCancel }) {
           </div>
         ))}
       </div>
+
+      {passwordsUnreachable && (
+        <p className="mt-3 rounded-lg bg-slate-100 px-3 py-2 text-xs text-slate-700 ring-1 ring-slate-200">
+          Driver passwords is set on the Drivers page, which needs at least View on Drivers to open. Without it,
+          this role can't reach the button.
+        </p>
+      )}
 
       {grantsAccess && (
         <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 ring-1 ring-amber-200">

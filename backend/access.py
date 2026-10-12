@@ -41,6 +41,15 @@ CATALOG = [
        "The error log and system health checks. Edit lets them resolve issues and clear the log."),
     _m("drivers", "Drivers", "Settings", [VIEW, EDIT],
        "The driver list. Edit lets them add, change, invite and delete drivers (deleting removes their trips)."),
+    # An on/off switch rather than a scale: there is no "view" of setting a
+    # password. Its own module (not part of Drivers edit) because it is the one
+    # permission that lets someone SIGN IN AS another person -- everything a
+    # driver's account can do, and every proof photo it can add -- so who holds
+    # it is a decision of its own. It does not open the Drivers page; that
+    # still takes View on Drivers.
+    _m("driver_passwords", "Driver passwords", "Settings", [EDIT],
+       "Set a new password for a driver who has forgotten theirs. Whoever can do this can then sign in "
+       "as that driver, so give it sparingly. They also need View on Drivers to reach the page."),
     _m("outlets", "Outlets", "Settings", [VIEW, EDIT],
        "The warehouses drivers work from."),
     _m("windows", "Delivery windows", "Settings", [VIEW, EDIT],

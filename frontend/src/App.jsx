@@ -165,7 +165,15 @@ export default function App() {
                 menu draw only the ones a role holds. */}
             <Route path="config" element={<ConfigLayout />}>
               <Route index element={<ConfigIndex />} />
-              <Route path="drivers" element={<Guard module="drivers"><ConfigDrivers /></Guard>} />
+              <Route
+                path="drivers"
+                element={
+                  <Guard module="drivers" fieldset={false}
+                         also={{ module: "driver_passwords", text: "setting a driver's password" }}>
+                    <ConfigDrivers />
+                  </Guard>
+                }
+              />
               <Route path="access" element={<Guard module="access"><AdminAccessControl /></Guard>} />
               <Route path="outlets" element={<Guard module="outlets"><ConfigOutlets /></Guard>} />
               <Route path="windows" element={<Guard module="windows"><ConfigWindows /></Guard>} />

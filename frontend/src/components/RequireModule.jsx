@@ -16,7 +16,13 @@ import { CONFIG_TABS } from "../pages/admin/configTabs";
 // Screens that mix reading controls with a few write actions (Diagnostics: its
 // filters are not an edit, resolving an issue is) pass fieldset={false} and
 // gate their own buttons with useAccess().can instead.
-export default function RequireModule({ module, fieldset = true, children }) {
+//
+// So do screens that hold an action behind a DIFFERENT permission (Drivers:
+// setting a password is its own switch). A disabled <fieldset> cannot be
+// overridden from inside, so a blanket one would disable that action even for
+// the role that holds it. `also` names that permission, so the banner can say
+// what the page is still good for.
+export default function RequireModule({ module, fieldset = true, also = null, children }) {
   const { can, role, byKey } = useAccess();
   const mod = byKey[module];
 
@@ -36,13 +42,15 @@ export default function RequireModule({ module, fieldset = true, children }) {
 
   const offersEdit = !!mod?.levels?.includes("edit");
   const readOnly = offersEdit && !can(module, "edit");
+  const exception = also && can(also.module, "edit") ? also.text : null;
 
   if (!readOnly) return children;
 
   return (
     <>
       <div className="mb-4 rounded-xl bg-slate-100 px-4 py-2.5 text-sm text-slate-700 ring-1 ring-slate-200">
-        <b>View only.</b> Your role{role ? ` (${role})` : ""} can see this page but not change it.
+        <b>View only.</b> Your role{role ? ` (${role})` : ""} can see this page but not change it
+        {exception ? `, apart from ${exception}` : ""}.
       </div>
       {fieldset ? (
         <fieldset disabled className="m-0 min-w-0 border-0 p-0">

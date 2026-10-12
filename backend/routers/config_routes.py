@@ -503,9 +503,13 @@ MAX_PASSWORD_BYTES = 72
 
 @router.put("/drivers/{driver_id}/password")
 async def set_driver_password(driver_id: int, body: PasswordIn, request: Request,
-                              admin=Depends(require_access("drivers", "edit"))):
+                              admin=Depends(require_access("driver_passwords", "edit"))):
     """Sets a driver's password directly, for the driver who has forgotten
     theirs and has no inbox they can reach from the loading bay.
+
+    Gated on its own permission, not on Edit for Drivers: being able to tidy a
+    driver's name or outlet is a different trust from being able to sign in as
+    them, and the two should be grantable apart.
 
     This is a deliberate exception to "the admin never knows the password" (see
     _issue_invite), made because the link flow depends on the driver being able
