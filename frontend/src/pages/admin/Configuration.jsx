@@ -874,6 +874,101 @@ function InviteLink({ invite, onDone }) {
 
 // Module scope, like ReasonFields above: declared inside DriversConfig this is
 // a new component type every render, and the inputs lose focus mid-word.
+// Letters and digits with the look-alikes taken out (no 0/O, 1/l/I): this is
+// read aloud or typed from a phone screen, and a password nobody can transcribe
+// is no better than none.
+const PW_ALPHABET = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+function generatePassword(length = 10) {
+  const bytes = new Uint32Array(length);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (n) => PW_ALPHABET[n % PW_ALPHABET.length]).join("");
+}
+
+// An admin choosing a driver's password for them -- for the driver who has
+// forgotten theirs and cannot open a link on the phone they are locked out of.
+//
+// Generated here, in the browser, so the server never has to send a password
+// back: it only ever receives one. What was set is kept on screen until the
+// admin is done, because for a generated password that is the only copy there
+// is to read out.
+function SetPassword({ target, onSubmit, onClose }) {
+  const [value, setValue] = useState("");
+  const [show, setShow] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [done, setDone] = useState(null);
+  const [copied, setCopied] = useState(false);
+  const tooShort = value.length < 8;
+
+  async function save() {
+    setSaving(true);
+    const ok = await onSubmit(value);
+    setSaving(false);
+    if (ok) setDone(value);
+  }
+
+  if (done) {
+    return (
+      <div className="mb-4 rounded-lg bg-emerald-50 px-4 py-3 ring-1 ring-emerald-200">
+        <p className="text-sm font-semibold text-emerald-900">Password changed for {target.name}</p>
+        <p className="mt-0.5 text-xs text-emerald-800">
+          Give it to them in person or over a call rather than in a group chat. Any sign-in link sent to
+          them earlier no longer works. If they are already signed in on a phone they stay signed in.
+        </p>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <input readOnly value={done} onFocus={(e) => e.target.select()} aria-label="The new password"
+                 className="w-56 rounded-lg border border-emerald-200 bg-white px-3 py-2 font-mono text-sm text-slate-800" />
+          <button type="button" className={btn}
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(done);
+                      setCopied(true);
+                      setTimeout(() => setCopied(false), 2000);
+                    } catch {
+                      setCopied(false);
+                    }
+                  }}>
+            {copied ? "Copied" : "Copy"}
+          </button>
+          <button type="button" className={btn} onClick={onClose}>Done</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mb-4 rounded-lg bg-slate-50 px-4 py-3 ring-1 ring-slate-200">
+      <p className="text-sm font-semibold text-brand-black">Set a new password for {target.name}</p>
+      <p className="mt-0.5 text-xs text-slate-500">
+        Replaces their current one straight away. At least 8 characters. It is not sent to them anywhere,
+        so you will need to tell them what it is.
+      </p>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <input
+          type={show ? "text" : "password"}
+          value={value}
+          autoComplete="new-password"
+          placeholder="New password"
+          aria-label={`New password for ${target.name}`}
+          onChange={(e) => setValue(e.target.value)}
+          className={`${input} w-56 ${show ? "font-mono" : ""}`}
+        />
+        <button type="button" className={btn} onClick={() => setShow((v) => !v)}>{show ? "Hide" : "Show"}</button>
+        <button type="button" className={btn} onClick={() => { setValue(generatePassword()); setShow(true); }}>
+          Generate one
+        </button>
+        <button type="button" className={btnPrimary} disabled={saving || tooShort} onClick={save}>
+          {saving ? "Saving…" : "Set password"}
+        </button>
+        <button type="button" className={btn} onClick={onClose}>Cancel</button>
+      </div>
+      {value.length > 0 && tooShort && (
+        <p className="mt-1.5 text-xs text-amber-700">{8 - value.length} more character{8 - value.length === 1 ? "" : "s"} needed.</p>
+      )}
+    </div>
+  );
+}
+
 function NewDriverForm({ outlets, busy, onCancel, onCreate }) {
   const [draft, setDraft] = useState({ name: "", email: "", phone: "", warehouse_id: "" });
   const set = (k) => (e) => setDraft((d) => ({ ...d, [k]: e.target.value }));
@@ -930,6 +1025,7 @@ export function DriversConfig() {
   const [edit, setEdit] = useState({});
   const [adding, setAdding] = useState(false);
   const [invite, setInvite] = useState(null);
+  const [pw, setPw] = useState(null);   // the driver whose password is being set
 
   useEffect(() => {
     api.get("/admin/warehouses").then((d) => setOutlets(d.warehouses)).catch(() => {});
@@ -954,7 +1050,7 @@ export function DriversConfig() {
       blurb="Who can sign into the driver app, and where they work from."
       action={
         !adding && (
-          <button type="button" className={btnPrimary} onClick={() => { setAdding(true); setInvite(null); }}>
+          <button type="button" className={btnPrimary} onClick={() => { setAdding(true); setInvite(null); setPw(null); }}>
             Add driver
           </button>
         )
@@ -963,6 +1059,14 @@ export function DriversConfig() {
     >
       <Err>{error}</Err>
       <InviteLink invite={invite} onDone={() => setInvite(null)} />
+      {pw && (
+        <SetPassword
+          key={pw.id}
+          target={pw}
+          onClose={() => setPw(null)}
+          onSubmit={(password) => run(() => api.put(`/admin/config/drivers/${pw.id}/password`, { password }))}
+        />
+      )}
       {adding && (
         <NewDriverForm outlets={outlets} busy={busy} onCancel={() => setAdding(false)} onCreate={createDriver} />
       )}
@@ -1079,6 +1183,14 @@ export function DriversConfig() {
                           }
                         }}>
                   Send sign-in link
+                </button>
+                {/* The link needs the driver to open it on a phone they can
+                    already use. For the one who is locked out of theirs, or
+                    cannot read the inbox it went to, the admin sets it. */}
+                <button type="button" className={btn} disabled={busy}
+                        title="Choose a new password for them yourself"
+                        onClick={() => { setPw({ id: d.id, name: d.name }); setInvite(null); setAdding(false); }}>
+                  Set password
                 </button>
                 {/* On every row. It was withheld from anyone who had driven,
                     on the grounds that their trips are dispute evidence --

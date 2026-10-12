@@ -22,7 +22,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from access import ensure
-from auth import generate_reset_token, require_access, require_any_access
+from auth import generate_reset_token, hash_password, require_access, require_any_access
 from db import get_pool
 from mailer import send_password_reset_email
 
@@ -488,6 +488,57 @@ async def resend_invite(driver_id: int, request: Request, admin=Depends(require_
     link = await _issue_invite(pool, request, driver_id, row["email"])
     await audit(pool, admin, "driver", driver_id, "update", f"Sent a new sign-in link to {row['email']}")
     return {"id": driver_id, "invite_link": link}
+
+
+class PasswordIn(BaseModel):
+    password: str
+
+
+# bcrypt only reads the first 72 bytes, and the library now refuses longer input
+# outright rather than silently truncating -- so the limit is stated up front
+# instead of surfacing as a 500.
+MIN_PASSWORD_LENGTH = 8
+MAX_PASSWORD_BYTES = 72
+
+
+@router.put("/drivers/{driver_id}/password")
+async def set_driver_password(driver_id: int, body: PasswordIn, request: Request,
+                              admin=Depends(require_access("drivers", "edit"))):
+    """Sets a driver's password directly, for the driver who has forgotten
+    theirs and has no inbox they can reach from the loading bay.
+
+    This is a deliberate exception to "the admin never knows the password" (see
+    _issue_invite), made because the link flow depends on the driver being able
+    to open a link on the same phone they are locked out of. The answer is
+    never echoed back or logged, and the audit entry records only that it
+    happened.
+
+    Any set-password link already issued is retired: otherwise a link sent last
+    week could silently replace the password the admin has just handed over.
+    Existing signed-in sessions are not touched -- tokens here are stateless.
+    """
+    password = body.password
+    if len(password) < MIN_PASSWORD_LENGTH:
+        raise HTTPException(status_code=422, detail=f"a password needs at least {MIN_PASSWORD_LENGTH} characters")
+    if len(password.encode("utf-8")) > MAX_PASSWORD_BYTES:
+        raise HTTPException(status_code=422, detail=f"that password is too long ({MAX_PASSWORD_BYTES} bytes at most)")
+
+    pool = get_pool(request)
+    async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
+        await cur.execute("SELECT id, name, email FROM users WHERE id = %s AND role = 'driver'", (driver_id,))
+        row = await cur.fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="driver not found")
+
+    async with pool.acquire() as conn, conn.cursor() as cur:
+        await cur.execute("UPDATE users SET password_hash = %s WHERE id = %s", (hash_password(password), driver_id))
+        await cur.execute(
+            "UPDATE password_reset_tokens SET used_at = NOW() WHERE user_id = %s AND used_at IS NULL",
+            (driver_id,),
+        )
+    await audit(pool, admin, "driver", driver_id, "update",
+                f"Set a new password for {row['name']} ({row['email']})")
+    return {"id": driver_id, "changed": True}
 
 
 @router.put("/drivers/{driver_id}")
