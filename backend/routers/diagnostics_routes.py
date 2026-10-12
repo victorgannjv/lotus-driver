@@ -28,7 +28,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 
 import diagnostics
-from auth import get_current_admin
+from auth import require_access
 from clocks import fmt
 from db import get_pool
 from diagnostics import actor_from_request, client_ip, client_limiter, record_error
@@ -167,7 +167,7 @@ _EVENT_COLS = ("e.id, e.source, e.kind, e.level, e.message, e.detail, e.method, 
 
 
 @router.get("/summary")
-async def summary(request: Request, admin=Depends(get_current_admin)):
+async def summary(request: Request, admin=Depends(require_access("diagnostics"))):
     pool = get_pool(request)
     now = _now()
     since24, since7 = now - timedelta(hours=24), now - timedelta(days=7)
@@ -223,7 +223,7 @@ async def issues(
     days: int = Query(7, ge=1, le=90),
     page: int = Query(1, ge=1),
     page_size: int = Query(15, ge=1, le=100),
-    admin=Depends(get_current_admin),
+    admin=Depends(require_access("diagnostics")),
 ):
     """The log grouped by fingerprint: fifty drivers hitting one bug are one
     row here, seen fifty times."""
@@ -285,7 +285,7 @@ async def events(
     fingerprint: str | None = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=100),
-    admin=Depends(get_current_admin),
+    admin=Depends(require_access("diagnostics")),
 ):
     """The raw log, newest first. With a fingerprint, the occurrences of one
     issue."""
@@ -307,7 +307,7 @@ async def events(
 
 
 @router.get("/health")
-async def health(request: Request, admin=Depends(get_current_admin)):
+async def health(request: Request, admin=Depends(require_access("diagnostics"))):
     checks = await run_checks(get_pool(request))
     worst = "fail" if any(c["status"] == "fail" for c in checks) else \
             "warn" if any(c["status"] == "warn" for c in checks) else "ok"
@@ -323,7 +323,7 @@ def _fp(value: str) -> str:
 
 
 @router.post("/issues/{fingerprint}/resolve")
-async def resolve_issue(fingerprint: str, request: Request, admin=Depends(get_current_admin)):
+async def resolve_issue(fingerprint: str, request: Request, admin=Depends(require_access("diagnostics", "edit"))):
     """Marks every occurrence of one issue as dealt with. If it happens again
     the new occurrence is open, and the issue reads as regressed."""
     pool = get_pool(request)
@@ -336,7 +336,7 @@ async def resolve_issue(fingerprint: str, request: Request, admin=Depends(get_cu
 
 
 @router.post("/issues/{fingerprint}/reopen")
-async def reopen_issue(fingerprint: str, request: Request, admin=Depends(get_current_admin)):
+async def reopen_issue(fingerprint: str, request: Request, admin=Depends(require_access("diagnostics", "edit"))):
     pool = get_pool(request)
     async with pool.acquire() as conn, conn.cursor() as cur:
         await cur.execute(
@@ -348,7 +348,7 @@ async def reopen_issue(fingerprint: str, request: Request, admin=Depends(get_cur
 
 
 @router.post("/clear-resolved")
-async def clear_resolved(request: Request, admin=Depends(get_current_admin)):
+async def clear_resolved(request: Request, admin=Depends(require_access("diagnostics", "edit"))):
     pool = get_pool(request)
     async with pool.acquire() as conn, conn.cursor() as cur:
         await cur.execute("DELETE FROM error_log WHERE resolved_at IS NOT NULL")
@@ -356,7 +356,7 @@ async def clear_resolved(request: Request, admin=Depends(get_current_admin)):
 
 
 @router.post("/test-backend-error")
-async def test_backend_error(admin=Depends(get_current_admin)):
+async def test_backend_error(admin=Depends(require_access("diagnostics", "edit"))):
     """Raises on purpose, to prove the path from a backend exception to this
     page works end to end. The caller sees a 500 -- that is the test."""
     raise RuntimeError("Diagnostics self-test: this error was raised on purpose by an admin")

@@ -25,6 +25,7 @@ from pathlib import Path
 
 from asyncmy.cursors import DictCursor
 
+from access import EDIT, allows, effective_permissions
 from clocks import fmt, local_today
 from diagnostics import STARTED_AT
 from trips import CHECKPOINT_ORDER, active_checkpoints, fetch_checkpoints, final_checkpoint, load_settings
@@ -145,6 +146,35 @@ async def _config_count(pool, key, label, sql, empty_detail, ok_noun):
     if not n:
         return _check(key, "Configuration", label, "warn", empty_detail)
     return _check(key, "Configuration", label, "ok", f"{n} {ok_noun}")
+
+
+async def check_access_control(pool):
+    async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
+        await cur.execute(
+            "SELECT u.id, u.name, u.access_role_id, r.permissions, r.is_system FROM users u "
+            "LEFT JOIN access_role r ON r.id = u.access_role_id "
+            "WHERE u.role = 'admin' AND u.status = 'active' ORDER BY u.id"
+        )
+        staff = await cur.fetchall()
+    label = "Admin access"
+    managers = [
+        p for p in staff
+        if allows(effective_permissions(p["access_role_id"], p["permissions"], p["is_system"]), "access", EDIT)
+    ]
+    if not staff:
+        return _check("admins", "Configuration", label, "fail", "No active admin -- nobody can sign in to this page.")
+    if not managers:
+        return _check("admins", "Configuration", label, "fail",
+                      "Nobody has Edit on Access control, so roles and staff can no longer be changed from the "
+                      "site. Fix it in the database by giving one admin the Administrator role.")
+    unassigned = [p for p in staff if not p["access_role_id"]]
+    if unassigned:
+        return _check("admins", "Configuration", label, "warn",
+                      f"{len(unassigned)} active staff member(s) have no access role. They can sign in but can't "
+                      "open anything. Give them a role under Settings > Access control.",
+                      [{"label": p["name"], "href": "/admin/config/access"} for p in unassigned[:SAMPLE_LIMIT]])
+    return _check("admins", "Configuration", label, "ok",
+                  f"{len(staff)} active staff, {len(managers)} can manage access")
 
 
 async def check_drivers_without_outlet(pool):
@@ -279,10 +309,7 @@ async def run_checks(pool) -> list[dict]:
     results += [
         await _safe("migrations", "System", "Database migrations", check_migrations(pool)),
         await _safe("photos", "System", "Photo storage", check_photo_storage(pool)),
-        await _safe("admins", "Configuration", "Admin access", _config_count(
-            pool, "admins", "Admin access",
-            "SELECT COUNT(*) FROM users WHERE role = 'admin' AND status = 'active'",
-            "No active admin -- nobody can sign in to this page.", "active admin(s)")),
+        await _safe("admins", "Configuration", "Admin access", check_access_control(pool)),
         await _safe("outlets", "Configuration", "Outlets", _config_count(
             pool, "outlets", "Outlets", "SELECT COUNT(*) FROM warehouses WHERE is_active = 1",
             "No active outlet -- drivers cannot pick one at signup.", "active outlet(s)")),

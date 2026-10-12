@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../../api";
+import { useAccess } from "../../auth/AdminAccess";
 import Icon from "../../components/Icon";
 import SectionNote, { NoteItem } from "../../components/SectionNote";
 import { formatDateTime } from "../../lib/duration";
@@ -272,6 +273,8 @@ function where(item) {
 }
 
 function IssueCard({ issue, days, onChanged }) {
+  // Reading an issue is View; marking it resolved changes the log, which is Edit.
+  const canEdit = useAccess().can("diagnostics", "edit");
   const [open, setOpen] = useState(false);
   const [events, setEvents] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -322,7 +325,8 @@ function IssueCard({ issue, days, onChanged }) {
                   className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">
             {open ? "Hide" : "Details"}
           </button>
-          <button type="button" onClick={toggleResolved} disabled={busy}
+          <button type="button" onClick={toggleResolved} disabled={busy || !canEdit}
+                  title={canEdit ? undefined : "Your role can view the log but not change it"}
                   className={`rounded-lg px-3 py-1.5 text-xs font-semibold disabled:opacity-50 ${
                     resolved ? "border border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
                              : "bg-brand-black text-white hover:bg-slate-800"}`}>
@@ -383,6 +387,7 @@ const PERIODS = [
 ];
 
 function ErrorLog({ reloadKey, onChanged }) {
+  const canEdit = useAccess().can("diagnostics", "edit");
   const [params, setParams] = useSearchParams();
   const get = (k, d = "") => params.get(k) || d;
   const tab = get("tab", "issues");
@@ -501,7 +506,8 @@ function ErrorLog({ reloadKey, onChanged }) {
                 className={field} aria-label="Period">
           {PERIODS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
         </select>
-        <button type="button" onClick={clearResolved} disabled={clearing}
+        <button type="button" onClick={clearResolved} disabled={clearing || !canEdit}
+                title={canEdit ? undefined : "Your role can view the log but not change it"}
                 className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50">
           Clear resolved
         </button>
@@ -538,6 +544,9 @@ function ErrorLog({ reloadKey, onChanged }) {
 // -------------------------------------------------------------- self-test
 
 function SelfTest({ onChanged }) {
+  // The browser test only sends a report, which anyone may; the server test
+  // raises an error through an Edit-level endpoint.
+  const canEdit = useAccess().can("diagnostics", "edit");
   const [busy, setBusy] = useState(null);
   const [result, setResult] = useState(null);
 
@@ -598,7 +607,8 @@ function SelfTest({ onChanged }) {
                 className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-brand-black hover:bg-slate-50 disabled:opacity-50">
           {busy === "browser" ? "Sending…" : "Send a test report from this browser"}
         </button>
-        <button type="button" onClick={serverTest} disabled={!!busy}
+        <button type="button" onClick={serverTest} disabled={!!busy || !canEdit}
+                title={canEdit ? undefined : "Needs Edit on Diagnostics"}
                 className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-brand-black hover:bg-slate-50 disabled:opacity-50">
           {busy === "server" ? "Raising…" : "Raise a test error on the server"}
         </button>

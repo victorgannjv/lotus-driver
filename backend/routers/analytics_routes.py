@@ -23,7 +23,7 @@ from clocks import fmt, local_today
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import Response
 
-from auth import get_current_admin
+from auth import require_access
 from db import get_pool
 from photos import trip_photo_map
 from trips import (
@@ -537,7 +537,7 @@ async def overview(
     date_from: str | None = None,
     date_to: str | None = None,
     warehouse_id: int | None = None,
-    admin=Depends(get_current_admin),
+    admin=Depends(require_access("dashboard")),
 ):
     pool = get_pool(request)
     start, end, pstart, pend = _range_for(period, date_from, date_to)
@@ -800,7 +800,7 @@ async def evidence(
     q: str | None = None,
     page: int = 1,
     page_size: int = 25,
-    admin=Depends(get_current_admin),
+    admin=Depends(require_access("evidence")),
 ):
     """The detail extract, grouped by day. Paginated by day rather than by
     trip, so a day's trips can never be split across a page boundary -- a
@@ -872,7 +872,7 @@ async def evidence_export(
     owner: str | None = None,
     over_target_only: bool = False,
     q: str | None = None,
-    admin=Depends(get_current_admin),
+    admin=Depends(require_access("evidence")),
 ):
     """The same filtered trips GET /evidence pages through, as one CSV file --
     the export button is 'give me everything the screen currently matches',
@@ -904,7 +904,7 @@ async def evidence_export(
 
 
 @router.get("/trips/{manifest_id}/detail")
-async def trip_detail(manifest_id: int, request: Request, admin=Depends(get_current_admin)):
+async def trip_detail(manifest_id: int, request: Request, admin=Depends(require_access("evidence"))):
     """One trip, end to end: checkpoints, gaps, jobs and the orders under each
     job -- the whole evidence trail behind a single claim."""
     pool = get_pool(request)

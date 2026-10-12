@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { api } from "../../api";
+import { useAccess } from "../../auth/AdminAccess";
 import RequireAdmin from "../../auth/RequireAdmin";
 import AppHeader from "../../components/AppHeader";
 import SampleDataBanner from "../../components/SampleDataBanner";
 import UpdateBar from "../../components/UpdateBar";
-import { api } from "../../api";
 import { useConfigTabs } from "./configTabs";
 import Icon from "../../components/Icon";
 
@@ -14,40 +15,46 @@ import Icon from "../../components/Icon";
 // targets are lists someone maintains occasionally. Keeping them in the same
 // row implied the same frequency, and put schema-shaped settings one mis-click
 // from the board ops read every morning.
+//
+// What is drawn is what this person's role can open (see useAccess). A tab
+// that would only refuse them is not shown, and the Settings menu disappears
+// entirely for a role with no settings in it.
 
 const linkClass = ({ isActive }) =>
   `rounded-lg px-3 py-2 text-sm font-medium ${isActive ? "bg-brand-red text-white" : "text-slate-600 hover:bg-slate-100"}`;
 
+const WORK_TABS = [
+  { to: "/admin/dashboard", label: "Dashboard", module: "dashboard" },
+  { to: "/admin/evidence", label: "Evidence", module: "evidence" },
+  { to: "/admin/jobs", label: "Orders", module: "orders" },
+];
 
-export default function Gate() {
-  // Identity comes from the SSO proxy; RequireAdmin has already refused anyone
-  // not on the allowlist, so this is only an echo of who you are.
-  const [email, setEmail] = useState(null);
+// The shell proper. Split from Gate so it renders INSIDE RequireAdmin and can
+// read the access context that component provides.
+function Shell() {
+  const { can, email, role } = useAccess();
   const [menuOpen, setMenuOpen] = useState(false);
   const tabs = useConfigTabs();
   const menuRef = useRef(null);
   const location = useLocation();
-
-  useEffect(() => {
-    fetch("/api/me")
-      .then((r) => r.json())
-      .then((d) => setEmail(d.email))
-      .catch(() => setEmail(null));
-  }, []);
 
   useEffect(() => setMenuOpen(false), [location.pathname]);
 
   // Unresolved errors from the last day, on the Diagnostics tab. Refreshed on
   // every page change rather than polled: an admin moving around the app is
   // the moment a new problem is worth surfacing, and it costs nothing while
-  // they are idle. A failed check shows no badge -- never a false alarm.
+  // they are idle. A failed check shows no badge -- never a false alarm. Only
+  // asked of a role that can open Diagnostics; anyone else would just be
+  // refused.
   const [openErrors, setOpenErrors] = useState(0);
+  const seesDiagnostics = can("diagnostics");
   useEffect(() => {
+    if (!seesDiagnostics) return;
     api
       .get("/admin/diagnostics/summary")
       .then((d) => setOpenErrors(d.open_errors_24h || 0))
       .catch(() => setOpenErrors(0));
-  }, [location.pathname]);
+  }, [location.pathname, seesDiagnostics]);
 
   useEffect(() => {
     function onDocClick(e) {
@@ -60,13 +67,17 @@ export default function Gate() {
   const inConfig = location.pathname.startsWith("/admin/config");
 
   return (
-    <RequireAdmin>
-      <div className="min-h-screen bg-slate-50">
-        <AppHeader homeTo="/admin/dashboard" greeting={`Hi, ${email ? email.split("@")[0] : "admin"}`} place="Admin" />
-        <nav className="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-6 py-3">
-          <NavLink to="/admin/dashboard" className={linkClass}>Dashboard</NavLink>
-          <NavLink to="/admin/evidence" className={linkClass}>Evidence</NavLink>
-          <NavLink to="/admin/jobs" className={linkClass}>Orders</NavLink>
+    <div className="min-h-screen bg-slate-50">
+      <AppHeader
+        homeTo="/admin"
+        greeting={`Hi, ${email ? email.split("@")[0] : "admin"}`}
+        place={role || "Admin"}
+      />
+      <nav className="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-6 py-3">
+        {WORK_TABS.filter((t) => can(t.module)).map((t) => (
+          <NavLink key={t.to} to={t.to} className={linkClass}>{t.label}</NavLink>
+        ))}
+        {seesDiagnostics && (
           <NavLink to="/admin/diagnostics" className={linkClass}>
             {({ isActive }) => (
               <span className="flex items-center gap-1.5">
@@ -84,9 +95,11 @@ export default function Gate() {
               </span>
             )}
           </NavLink>
+        )}
 
-          <span className="flex-1" />
+        <span className="flex-1" />
 
+        {tabs.length > 0 && (
           <div className="relative" ref={menuRef}>
             <button
               type="button"
@@ -118,13 +131,21 @@ export default function Gate() {
               </div>
             )}
           </div>
-        </nav>
-        <div className="px-6 py-6">
-          <UpdateBar />
-          <SampleDataBanner />
-          <Outlet />
-        </div>
+        )}
+      </nav>
+      <div className="px-6 py-6">
+        <UpdateBar />
+        <SampleDataBanner />
+        <Outlet />
       </div>
+    </div>
+  );
+}
+
+export default function Gate() {
+  return (
+    <RequireAdmin>
+      <Shell />
     </RequireAdmin>
   );
 }

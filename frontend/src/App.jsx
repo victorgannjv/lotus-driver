@@ -3,6 +3,7 @@ import { Navigate, Route, BrowserRouter as Router, Routes } from "react-router-d
 import { DriverAuthProvider } from "./auth/DriverAuthContext";
 import ErrorBoundary from "./components/ErrorBoundary";
 import RequireDriver from "./auth/RequireDriver";
+import RequireModule, { AdminLanding } from "./components/RequireModule";
 import { LanguageProvider } from "./i18n/LanguageContext";
 import ForgotPassword from "./pages/driver/ForgotPassword";
 import Home from "./pages/driver/Home";
@@ -49,8 +50,12 @@ const AdminDashboard = lazyRoute(() => import("./pages/admin/Dashboard"));
 const AdminJobs = lazyRoute(() => import("./pages/admin/Jobs"));
 const AdminEvidence = lazyRoute(() => import("./pages/admin/Evidence"));
 const AdminDiagnostics = lazyRoute(() => import("./pages/admin/Diagnostics"));
+const AdminAccessControl = lazyRoute(() => import("./pages/admin/AccessControl"));
 const ConfigLayout = lazyRoute(() =>
   import("./pages/admin/Configuration").then((m) => ({ default: m.ConfigurationLayout }))
+);
+const ConfigIndex = lazyRoute(() =>
+  import("./pages/admin/Configuration").then((m) => ({ default: m.ConfigIndex }))
 );
 const ConfigOutlets = lazyRoute(() =>
   import("./pages/admin/Configuration").then((m) => ({ default: m.OutletsConfig }))
@@ -67,9 +72,6 @@ const ConfigWindows = lazyRoute(() =>
 const ConfigDrivers = lazyRoute(() =>
   import("./pages/admin/Configuration").then((m) => ({ default: m.DriversConfig }))
 );
-const ConfigAdmins = lazyRoute(() =>
-  import("./pages/admin/Configuration").then((m) => ({ default: m.AdminsConfig }))
-);
 const ConfigReasons = lazyRoute(() =>
   import("./pages/admin/Configuration").then((m) => ({ default: m.ReasonCodes }))
 );
@@ -82,6 +84,8 @@ const ConfigDriverApp = lazyRoute(() =>
 const AdminJobDetail = lazyRoute(() => import("./pages/admin/JobDetail"));
 const ScanRegister = lazyRoute(() => import("./pages/driver/ScanRegister"));
 const ScanComplete = lazyRoute(() => import("./pages/driver/ScanComplete"));
+
+const Guard = RequireModule;
 
 export default function App() {
   return (
@@ -149,30 +153,33 @@ export default function App() {
               </Suspense>
             }
           >
-            <Route index element={<Navigate to="/admin/dashboard" replace />} />
-            <Route path="dashboard" element={<AdminDashboard />} />
-            <Route path="evidence" element={<AdminEvidence />} />
-            <Route path="diagnostics" element={<AdminDiagnostics />} />
-            <Route path="jobs" element={<AdminJobs />} />
-            <Route path="jobs/:jobId" element={<AdminJobDetail />} />
+            <Route index element={<AdminLanding />} />
+            <Route path="dashboard" element={<Guard module="dashboard"><AdminDashboard /></Guard>} />
+            <Route path="evidence" element={<Guard module="evidence"><AdminEvidence /></Guard>} />
+            <Route path="diagnostics" element={<Guard module="diagnostics" fieldset={false}><AdminDiagnostics /></Guard>} />
+            <Route path="jobs" element={<Guard module="orders"><AdminJobs /></Guard>} />
+            <Route path="jobs/:jobId" element={<Guard module="orders"><AdminJobDetail /></Guard>} />
 
-            {/* Setup, grouped under one menu rather than sitting in the work row. */}
+            {/* Setup, grouped under one menu rather than sitting in the work row.
+                Each page carries the module that opens it; the tab strip and the
+                menu draw only the ones a role holds. */}
             <Route path="config" element={<ConfigLayout />}>
-              <Route index element={<Navigate to="/admin/config/drivers" replace />} />
-              <Route path="drivers" element={<ConfigDrivers />} />
-              <Route path="admins" element={<ConfigAdmins />} />
-              <Route path="outlets" element={<ConfigOutlets />} />
-              <Route path="windows" element={<ConfigWindows />} />
-              <Route path="reasons" element={<ConfigReasons />} />
-              <Route path="targets" element={<ConfigTargets />} />
-              <Route path="driver-app" element={<ConfigDriverApp />} />
-              <Route path="activity" element={<ConfigActivity />} />
-              <Route path="sample" element={<ConfigSample />} />
+              <Route index element={<ConfigIndex />} />
+              <Route path="drivers" element={<Guard module="drivers"><ConfigDrivers /></Guard>} />
+              <Route path="access" element={<Guard module="access"><AdminAccessControl /></Guard>} />
+              <Route path="outlets" element={<Guard module="outlets"><ConfigOutlets /></Guard>} />
+              <Route path="windows" element={<Guard module="windows"><ConfigWindows /></Guard>} />
+              <Route path="reasons" element={<Guard module="reasons"><ConfigReasons /></Guard>} />
+              <Route path="targets" element={<Guard module="targets"><ConfigTargets /></Guard>} />
+              <Route path="driver-app" element={<Guard module="driver_app"><ConfigDriverApp /></Guard>} />
+              <Route path="activity" element={<Guard module="activity"><ConfigActivity /></Guard>} />
+              <Route path="sample" element={<Guard module="sample"><ConfigSample /></Guard>} />
             </Route>
 
             {/* Old paths kept working -- an admin with a bookmark should not hit a blank page. */}
             <Route path="drivers" element={<Navigate to="/admin/config/drivers" replace />} />
-            <Route path="admins" element={<Navigate to="/admin/config/admins" replace />} />
+            <Route path="admins" element={<Navigate to="/admin/config/access" replace />} />
+            <Route path="config/admins" element={<Navigate to="/admin/config/access" replace />} />
             <Route path="warehouses" element={<Navigate to="/admin/config/outlets" replace />} />
           </Route>
         </Routes>

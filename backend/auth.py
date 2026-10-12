@@ -8,6 +8,7 @@ import bcrypt
 import jwt
 from fastapi import HTTPException, Request
 
+from access import VIEW, allows_any, denial, effective_permissions
 from db import get_pool
 
 JWT_ALGORITHM = "HS256"
@@ -77,6 +78,8 @@ async def get_current_driver(request: Request) -> dict:
 
 
 async def get_current_admin(request: Request) -> dict:
+    """Identifies the admin. Says WHO, not what they may do -- that is
+    require_access's job, and the answer rides along as user["permissions"]."""
     pool = get_pool(request)
     if pool is None:
         raise HTTPException(status_code=503, detail="database not configured")
@@ -92,7 +95,10 @@ async def get_current_admin(request: Request) -> dict:
         )
     async with pool.acquire() as conn, conn.cursor() as cur:
         await cur.execute(
-            "SELECT id, role, email, phone, name, status FROM users WHERE email = %s AND role = 'admin'",
+            "SELECT u.id, u.role, u.email, u.phone, u.name, u.status, "
+            "r.id, r.name, r.permissions, r.is_system "
+            "FROM users u LEFT JOIN access_role r ON r.id = u.access_role_id "
+            "WHERE u.email = %s AND u.role = 'admin'",
             (email,),
         )
         row = await cur.fetchone()
@@ -101,7 +107,40 @@ async def get_current_admin(request: Request) -> dict:
     user = _row_to_user(row)
     if user["status"] != "active":
         raise HTTPException(status_code=403, detail="this admin account is disabled")
+    role_id, role_name, role_permissions, is_system = row[6], row[7], row[8], row[9]
+    user["access_role_id"] = role_id
+    user["role_name"] = role_name
+    # No role means no access, not full access: the safe way to be wrong. The
+    # migration gives every existing admin the system role, and adding one now
+    # requires choosing a role, so this is only an admin someone has since
+    # unassigned.
+    user["permissions"] = effective_permissions(role_id, role_permissions, is_system)
     return user
+
+
+def require_access(module, level: str = VIEW):
+    """A route dependency: the caller must be an active admin whose role gives
+    them `level` on `module` -- or on ANY of them, when given several, which is
+    for endpoints that serve more than one screen (the driver list feeds a
+    filter on Evidence as well as the Drivers page)."""
+    modules = (module,) if isinstance(module, str) else tuple(module)
+
+    async def dependency(request: Request) -> dict:
+        admin = await get_current_admin(request)
+        if not allows_any(admin["permissions"], modules, level):
+            raise HTTPException(status_code=403, detail=denial(admin["role_name"], modules, level))
+        return admin
+
+    return dependency
+
+
+async def require_any_access(request: Request) -> dict:
+    """For reference data every screen needs (the outlet names in a filter):
+    any admin who can use at least one module."""
+    admin = await get_current_admin(request)
+    if not admin["permissions"]:
+        raise HTTPException(status_code=403, detail=denial(admin["role_name"], (), VIEW))
+    return admin
 
 
 async def get_current_user_any(request: Request) -> dict:

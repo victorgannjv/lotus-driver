@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { NavLink, Outlet } from "react-router-dom";
+import { Navigate, NavLink, Outlet } from "react-router-dom";
 import { api } from "../../api";
 import Icon from "../../components/Icon";
 import { useConfigTabs } from "./configTabs";
@@ -14,6 +14,12 @@ import { useConfigTabs } from "./configTabs";
 const subLink = ({ isActive }) =>
   `rounded-lg px-3 py-2 text-sm font-medium ${isActive ? "bg-brand-red text-white" : "text-slate-600 hover:bg-slate-100"}`;
 
+
+// /admin/config on its own: the first settings tab this role can open.
+export function ConfigIndex() {
+  const tabs = useConfigTabs();
+  return tabs.length ? <Navigate to={tabs[0].to} replace /> : null;
+}
 
 export function ConfigurationLayout() {
   const tabs = useConfigTabs();
@@ -1114,64 +1120,6 @@ export function DriversConfig() {
   );
 }
 
-export function AdminsConfig() {
-  // The endpoint answers with { admins: [...] } and already filters to admins --
-  // reading it as "users" left the list undefined and the panel on "Loading…".
-  const { rows: admins, error, busy, run } = useList("/admin/users", "admins");
-  const [adding, setAdding] = useState(null);
-
-  return (
-    <Panel
-      title="Admins"
-      blurb="Who can open this dashboard."
-      action={!adding && (
-        <button type="button" className={btnPrimary} onClick={() => setAdding({ name: "", email: "" })}>
-          Add an admin
-        </button>
-      )}
-      footer="Sign-in is through Google. Adding someone lets that Google account in; it does not create a password. The last active admin cannot be removed."
-    >
-      <Err>{error}</Err>
-      {adding && (
-        <div className="mb-5 flex flex-wrap items-end gap-4 rounded-xl bg-slate-50 p-4">
-          <label className="flex flex-col gap-1.5">
-            <span className="text-xs font-medium text-slate-600">Name</span>
-            <input className={input} value={adding.name} onChange={(e) => setAdding((a) => ({ ...a, name: e.target.value }))} />
-          </label>
-          <label className="flex min-w-[16rem] flex-1 flex-col gap-1.5">
-            <span className="text-xs font-medium text-slate-600">Work email</span>
-            <input className={input} type="email" placeholder="name@ninjavan.co" value={adding.email}
-                   onChange={(e) => setAdding((a) => ({ ...a, email: e.target.value }))} />
-          </label>
-          <button type="button" className={btnPrimary} disabled={busy || !adding.email.trim()}
-                  onClick={async () => { if (await run(() => api.post("/admin/users", adding))) setAdding(null); }}>Add</button>
-          <button type="button" className={btn} onClick={() => setAdding(null)}>Cancel</button>
-        </div>
-      )}
-      {!admins ? <p className="text-sm text-slate-500">Loading…</p> : admins.map((u) => (
-        <GridRow key={u.id} cols="md:grid-cols-[minmax(0,1fr)_9rem_auto]">
-          <span>
-            <span className="block text-sm font-medium text-brand-black">{u.name}</span>
-            <span className="block text-xs text-slate-400">{u.email}</span>
-          </span>
-          <span className="text-xs text-slate-400">
-            {u.status === "active" ? "" : "Access removed"}
-          </span>
-          <span className={actionsCell}>
-          {u.status === "active" && (
-            <button type="button" className={btnDanger} disabled={busy}
-                    onClick={() => confirmed(`Remove dashboard access for ${u.name}?`)
-                      && run(() => api.del(`/admin/config/admins/${u.id}`))}>
-              Remove access
-            </button>
-          )}
-          </span>
-        </GridRow>
-      ))}
-    </Panel>
-  );
-}
-
 /* --------------------------------------------------------------------- roster */
 
 // PARKED -- not routed or linked anywhere as of Sep 2026. The roster only makes
@@ -1376,7 +1324,7 @@ export function Roster() {
 
 const ENTITY_LABEL = {
   reason_code: "Delay reason", target: "Time limit", schedule: "Delivery window",
-  driver: "Driver", admin: "Admin", roster: "Shift roster", setting: "Driver app",
+  driver: "Driver", admin: "Staff access", role: "Access role", roster: "Shift roster", setting: "Driver app",
 };
 const ACTION_CHIP = {
   create: "bg-emerald-100 text-emerald-800",

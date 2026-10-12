@@ -10,9 +10,9 @@ from clocks import fmt, local_today
 from localities import describe
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 
-from auth import get_current_admin
+from auth import require_access, require_any_access
 from db import get_pool
-from schemas import AddAdminRequest, WarehouseRequest
+from schemas import WarehouseRequest
 
 from routers.config_routes import audit
 
@@ -114,7 +114,7 @@ def _serialize_admin_event(row: dict) -> dict:
 
 
 @router.get("/drivers")
-async def list_drivers(request: Request, admin=Depends(get_current_admin)):
+async def list_drivers(request: Request, admin=Depends(require_access(("drivers", "evidence", "orders")))):
     pool = get_pool(request)
     async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
         await cur.execute(
@@ -131,7 +131,7 @@ async def list_drivers(request: Request, admin=Depends(get_current_admin)):
 
 
 @router.get("/data-range")
-async def data_range(request: Request, admin=Depends(get_current_admin)):
+async def data_range(request: Request, admin=Depends(require_access(("dashboard", "evidence")))):
     """Which days and months this app actually holds trips for.
 
     The dashboard's month picker was generated from the calendar -- the last
@@ -174,7 +174,7 @@ async def data_range(request: Request, admin=Depends(get_current_admin)):
 
 
 @router.get("/warehouses")
-async def list_warehouses(request: Request, admin=Depends(get_current_admin)):
+async def list_warehouses(request: Request, admin=Depends(require_any_access)):
     pool = get_pool(request)
     async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
         await cur.execute("SELECT id, name, address, is_active, created_at FROM warehouses ORDER BY name")
@@ -183,7 +183,7 @@ async def list_warehouses(request: Request, admin=Depends(get_current_admin)):
 
 
 @router.post("/warehouses", status_code=201)
-async def create_warehouse(body: WarehouseRequest, request: Request, admin=Depends(get_current_admin)):
+async def create_warehouse(body: WarehouseRequest, request: Request, admin=Depends(require_access("outlets", "edit"))):
     pool = get_pool(request)
     name = body.name.strip()
     if not name:
@@ -201,7 +201,7 @@ async def create_warehouse(body: WarehouseRequest, request: Request, admin=Depen
 
 @router.put("/warehouses/{warehouse_id}")
 async def update_warehouse(
-    warehouse_id: int, body: WarehouseRequest, request: Request, admin=Depends(get_current_admin)
+    warehouse_id: int, body: WarehouseRequest, request: Request, admin=Depends(require_access("outlets", "edit"))
 ):
     pool = get_pool(request)
     name = body.name.strip()
@@ -225,7 +225,7 @@ async def update_warehouse(
 
 
 @router.delete("/warehouses/{warehouse_id}")
-async def remove_warehouse(warehouse_id: int, request: Request, admin=Depends(get_current_admin)):
+async def remove_warehouse(warehouse_id: int, request: Request, admin=Depends(require_access("outlets", "edit"))):
     """Soft-delete: marks the outlet inactive rather than removing the row, since
     drivers may already be assigned to it -- hard-deleting would either violate that
     reference or silently orphan it. Inactive outlets just drop out of the driver-
@@ -251,7 +251,7 @@ async def list_jobs(
     date_to: str | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
-    admin=Depends(get_current_admin),
+    admin=Depends(require_access("orders")),
 ):
     pool = get_pool(request)
     where, params = _build_job_filters(status, driver_id, manifest_id, warehouse_id, date_from, date_to)
@@ -285,7 +285,7 @@ async def export_jobs_csv(
     warehouse_id: int | None = Query(None),
     date_from: str | None = Query(None),
     date_to: str | None = Query(None),
-    admin=Depends(get_current_admin),
+    admin=Depends(require_access("orders")),
 ):
     """One row per scan event (not per job) -- that's the actual dispute-trace log:
     every registered/delivered/failed timestamp, GPS fix, failure reason and proof
@@ -368,7 +368,7 @@ async def get_dashboard(
     warehouse_id: int | None = Query(None),
     date_from: str | None = Query(None),
     date_to: str | None = Query(None),
-    admin=Depends(get_current_admin),
+    admin=Depends(require_access("dashboard")),
 ):
     """High-level performance summary: job counts by status, success/failure rate
     (delivered vs. failed among resolved jobs -- in-progress and cancelled jobs are
@@ -448,7 +448,7 @@ async def get_dashboard(
 
 
 @router.get("/jobs/{job_id}")
-async def get_job(job_id: int, request: Request, admin=Depends(get_current_admin)):
+async def get_job(job_id: int, request: Request, admin=Depends(require_access("orders"))):
     pool = get_pool(request)
     async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
         await cur.execute(
@@ -486,7 +486,7 @@ async def get_job(job_id: int, request: Request, admin=Depends(get_current_admin
 
 
 @router.get("/jobs/{job_id}/events")
-async def get_job_events(job_id: int, request: Request, admin=Depends(get_current_admin)):
+async def get_job_events(job_id: int, request: Request, admin=Depends(require_access("orders"))):
     pool = get_pool(request)
     async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
         await cur.execute("SELECT id FROM delivery_jobs WHERE id = %s", (job_id,))
@@ -501,35 +501,3 @@ async def get_job_events(job_id: int, request: Request, admin=Depends(get_curren
     return {"events": [_serialize_admin_event(r) for r in rows]}
 
 
-@router.get("/users")
-async def list_admins(request: Request, admin=Depends(get_current_admin)):
-    pool = get_pool(request)
-    async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
-        await cur.execute(
-            "SELECT id, name, email, status, created_at FROM users WHERE role = 'admin' ORDER BY created_at"
-        )
-        rows = await cur.fetchall()
-    return {
-        "admins": [
-            {"id": r["id"], "name": r["name"], "email": r["email"], "status": r["status"], "created_at": fmt(r["created_at"])}
-            for r in rows
-        ]
-    }
-
-
-@router.post("/users", status_code=201)
-async def add_admin(body: AddAdminRequest, request: Request, admin=Depends(get_current_admin)):
-    pool = get_pool(request)
-    async with pool.acquire() as conn, conn.cursor() as cur:
-        # Scoped to role='admin': an email that already has a driver account is a
-        # separate identity here and shouldn't block adding it to the admin
-        # allowlist -- users.email is only unique per role, not across the table.
-        await cur.execute("SELECT id FROM users WHERE email = %s AND role = 'admin'", (body.email,))
-        if await cur.fetchone() is not None:
-            raise HTTPException(status_code=409, detail="an admin with this email already exists")
-        await cur.execute(
-            "INSERT INTO users (role, email, name, status) VALUES ('admin', %s, %s, 'active')",
-            (body.email, body.name),
-        )
-        new_id = cur.lastrowid
-    return {"id": new_id, "email": body.email, "name": body.name}

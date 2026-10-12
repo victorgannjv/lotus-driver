@@ -26,11 +26,6 @@ class ResetPasswordRequest(BaseModel):
     new_password: str
 
 
-class AddAdminRequest(BaseModel):
-    email: str
-    name: str
-
-
 class ScanRequest(BaseModel):
     code: str
     manifest_id: int | None = None

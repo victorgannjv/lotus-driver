@@ -21,7 +21,8 @@ from clocks import fmt, fmt_time, parse_hhmm
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 
-from auth import generate_reset_token, get_current_admin
+from access import ensure
+from auth import generate_reset_token, require_access, require_any_access
 from db import get_pool
 from mailer import send_password_reset_email
 
@@ -54,7 +55,7 @@ async def list_activity(
     entity: str | None = None,
     limit: int = Query(25, ge=1, le=500),
     offset: int = Query(0, ge=0),
-    admin=Depends(get_current_admin),
+    admin=Depends(require_access("activity")),
 ):
     """One page of the log, newest first, plus the total so the caller can show
     'x-y of n' rather than an endless scroll. The log only ever grows, so a page
@@ -129,7 +130,7 @@ VALID_GAPS = {
 
 # ---------------------------------------------------------------- reason codes
 @router.get("/reason-codes")
-async def list_reason_codes(request: Request, admin=Depends(get_current_admin)):
+async def list_reason_codes(request: Request, admin=Depends(require_access("reasons"))):
     pool = get_pool(request)
     async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
         await cur.execute(
@@ -141,7 +142,7 @@ async def list_reason_codes(request: Request, admin=Depends(get_current_admin)):
 
 
 @router.post("/reason-codes", status_code=201)
-async def create_reason_code(body: ReasonCodeIn, request: Request, admin=Depends(get_current_admin)):
+async def create_reason_code(body: ReasonCodeIn, request: Request, admin=Depends(require_access("reasons", "edit"))):
     if body.fault_party not in VALID_PARTIES:
         raise HTTPException(status_code=422, detail="fault_party must be lotus, njv or external")
     pool = get_pool(request)
@@ -161,7 +162,7 @@ async def create_reason_code(body: ReasonCodeIn, request: Request, admin=Depends
 
 
 @router.put("/reason-codes/{code}")
-async def update_reason_code(code: str, body: ReasonCodeUpdate, request: Request, admin=Depends(get_current_admin)):
+async def update_reason_code(code: str, body: ReasonCodeUpdate, request: Request, admin=Depends(require_access("reasons", "edit"))):
     if body.fault_party is not None and body.fault_party not in VALID_PARTIES:
         raise HTTPException(status_code=422, detail="fault_party must be lotus, njv or external")
     fields, params = [], []
@@ -185,7 +186,7 @@ async def update_reason_code(code: str, body: ReasonCodeUpdate, request: Request
 
 
 @router.delete("/reason-codes/{code}")
-async def deactivate_reason_code(code: str, request: Request, admin=Depends(get_current_admin)):
+async def deactivate_reason_code(code: str, request: Request, admin=Depends(require_access("reasons", "edit"))):
     """Soft-delete only. Historical checkpoints still point at this code, and a
     dispute filed last month must keep reading the same way next month."""
     pool = get_pool(request)
@@ -197,7 +198,7 @@ async def deactivate_reason_code(code: str, request: Request, admin=Depends(get_
 
 # --------------------------------------------------------------------- targets
 @router.get("/targets")
-async def list_targets(request: Request, admin=Depends(get_current_admin)):
+async def list_targets(request: Request, admin=Depends(require_access("targets"))):
     pool = get_pool(request)
     async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
         await cur.execute(
@@ -210,7 +211,7 @@ async def list_targets(request: Request, admin=Depends(get_current_admin)):
 
 
 @router.post("/targets", status_code=201)
-async def upsert_target(body: TargetIn, request: Request, admin=Depends(get_current_admin)):
+async def upsert_target(body: TargetIn, request: Request, admin=Depends(require_access("targets", "edit"))):
     """A row with no outlet is the global default; naming an outlet overrides it
     for that outlet only. Changing either re-scores history on the next read,
     which is intended -- the target is still being negotiated."""
@@ -249,7 +250,7 @@ async def upsert_target(body: TargetIn, request: Request, admin=Depends(get_curr
 
 @router.put("/targets/{target_id}/active")
 async def set_target_active(target_id: int, body: ActiveIn, request: Request,
-                            admin=Depends(get_current_admin)):
+                            admin=Depends(require_access("targets", "edit"))):
     """Switch one allowance on or off without losing the number. An allowance
     that has not been agreed with Lotus should not be flagging trips, but the
     value is worth keeping for the day it is."""
@@ -269,7 +270,7 @@ async def set_target_active(target_id: int, body: ActiveIn, request: Request,
 
 
 @router.delete("/targets/{target_id}")
-async def delete_target(target_id: int, request: Request, admin=Depends(get_current_admin)):
+async def delete_target(target_id: int, request: Request, admin=Depends(require_access("targets", "edit"))):
     """Only an outlet override can be removed -- deleting a global default would
     leave a gap with no bar at all, which silently stops flagging breaches."""
     pool = get_pool(request)
@@ -286,8 +287,12 @@ async def delete_target(target_id: int, request: Request, admin=Depends(get_curr
 
 
 # -------------------------------------------------------------------- settings
+# The one setting the Time limits page owns; every other key is the Driver app's.
+TARGET_SETTING_KEYS = "gap_targets_enabled"
+
+
 @router.get("/settings")
-async def list_settings(request: Request, admin=Depends(get_current_admin)):
+async def list_settings(request: Request, admin=Depends(require_access(("driver_app", "targets")))):
     pool = get_pool(request)
     async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
         await cur.execute("SELECT setting_key, value, notes, updated_at FROM app_setting ORDER BY setting_key")
@@ -296,8 +301,12 @@ async def list_settings(request: Request, admin=Depends(get_current_admin)):
 
 
 @router.put("/settings/{key}")
-async def update_setting(key: str, body: SettingIn, request: Request, admin=Depends(get_current_admin)):
+async def update_setting(key: str, body: SettingIn, request: Request, admin=Depends(require_access(("driver_app", "targets"), "edit"))):
     pool = get_pool(request)
+    # One endpoint, two settings pages. The time-limits switch lives on Time
+    # limits and everything else on Driver app, and holding Edit on one must
+    # not be a way into the other.
+    ensure(admin, "targets" if key == TARGET_SETTING_KEYS else "driver_app", "edit")
     async with pool.acquire() as conn, conn.cursor() as cur:
         await cur.execute("SELECT 1 FROM app_setting WHERE setting_key = %s", (key,))
         if await cur.fetchone() is None:
@@ -315,7 +324,7 @@ async def list_roster(
     request: Request,
     date_from: str | None = None,
     date_to: str | None = None,
-    admin=Depends(get_current_admin),
+    admin=Depends(require_access("drivers")),
 ):
     pool = get_pool(request)
     where, params = [], []
@@ -339,7 +348,7 @@ async def list_roster(
 
 
 @router.post("/roster", status_code=201)
-async def add_roster(body: RosterIn, request: Request, admin=Depends(get_current_admin)):
+async def add_roster(body: RosterIn, request: Request, admin=Depends(require_access("drivers", "edit"))):
     """Who is PLANNED to work. On-duty is already derivable from trips; without
     this, "we ran two drivers short" is an assertion rather than a number."""
     pool = get_pool(request)
@@ -359,7 +368,7 @@ async def add_roster(body: RosterIn, request: Request, admin=Depends(get_current
 
 
 @router.delete("/roster/{roster_id}")
-async def delete_roster(roster_id: int, request: Request, admin=Depends(get_current_admin)):
+async def delete_roster(roster_id: int, request: Request, admin=Depends(require_access("drivers", "edit"))):
     pool = get_pool(request)
     async with pool.acquire() as conn, conn.cursor() as cur:
         await cur.execute("DELETE FROM shift_roster WHERE id = %s", (roster_id,))
@@ -421,7 +430,7 @@ async def _issue_invite(pool, request: Request, user_id: int, email: str) -> str
 
 
 @router.post("/drivers", status_code=201)
-async def create_driver(body: DriverIn, request: Request, admin=Depends(get_current_admin)):
+async def create_driver(body: DriverIn, request: Request, admin=Depends(require_access("drivers", "edit"))):
     """Create a driver account from the admin side.
 
     Drivers could only ever sign themselves up, which is fine until someone
@@ -462,7 +471,7 @@ async def create_driver(body: DriverIn, request: Request, admin=Depends(get_curr
 
 
 @router.post("/drivers/{driver_id}/invite")
-async def resend_invite(driver_id: int, request: Request, admin=Depends(get_current_admin)):
+async def resend_invite(driver_id: int, request: Request, admin=Depends(require_access("drivers", "edit"))):
     """A fresh set-password link -- the first expired, or went to an inbox the
     driver never opens. Also how a driver who has forgotten their password gets
     back in without anyone else learning what it was."""
@@ -482,7 +491,7 @@ async def resend_invite(driver_id: int, request: Request, admin=Depends(get_curr
 
 
 @router.put("/drivers/{driver_id}")
-async def update_driver(driver_id: int, body: DriverUpdate, request: Request, admin=Depends(get_current_admin)):
+async def update_driver(driver_id: int, body: DriverUpdate, request: Request, admin=Depends(require_access("drivers", "edit"))):
     """Reassigning a driver's outlet matters beyond tidiness: gap targets and
     contracted windows can be set per outlet, so the outlet on the driver is
     what decides which bar their trips are scored against."""
@@ -602,7 +611,7 @@ async def _purge_driver(pool, driver_id: int) -> None:
 
 
 @router.delete("/drivers/{driver_id}")
-async def delete_driver(driver_id: int, request: Request, admin=Depends(get_current_admin)):
+async def delete_driver(driver_id: int, request: Request, admin=Depends(require_access("drivers", "edit"))):
     """Delete a driver account and everything recorded under it.
 
     This is a real delete, on any driver, with no exception for one who has
@@ -645,21 +654,6 @@ async def delete_driver(driver_id: int, request: Request, admin=Depends(get_curr
             "trips": counts["trips"], "orders": counts["orders"]}
 
 
-@router.delete("/admins/{admin_id}")
-async def disable_admin(admin_id: int, request: Request, admin=Depends(get_current_admin)):
-    """Removing the last active admin would lock everyone out of the dashboard,
-    so the count is checked before the change rather than after."""
-    pool = get_pool(request)
-    async with pool.acquire() as conn, conn.cursor() as cur:
-        await cur.execute("SELECT COUNT(*) FROM users WHERE role = 'admin' AND status = 'active'")
-        (active,) = await cur.fetchone()
-        if active <= 1:
-            raise HTTPException(status_code=409, detail="that's the last active admin -- add another first")
-        await cur.execute("UPDATE users SET status = 'disabled' WHERE id = %s AND role = 'admin'", (admin_id,))
-    await audit(pool, admin, "admin", admin_id, "update", f"Removed dashboard access for admin {admin_id}")
-    return {"id": admin_id, "status": "disabled"}
-
-
 # ------------------------------------------------------ contracted windows
 class ScheduleIn(BaseModel):
     warehouse_id: int | None = None
@@ -672,7 +666,7 @@ class ScheduleIn(BaseModel):
 
 
 @router.get("/schedule")
-async def list_schedule(request: Request, admin=Depends(get_current_admin)):
+async def list_schedule(request: Request, admin=Depends(require_access("windows"))):
     pool = get_pool(request)
     async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
         await cur.execute(
@@ -692,7 +686,7 @@ async def list_schedule(request: Request, admin=Depends(get_current_admin)):
 
 
 @router.post("/schedule", status_code=201)
-async def upsert_schedule(body: ScheduleIn, request: Request, admin=Depends(get_current_admin)):
+async def upsert_schedule(body: ScheduleIn, request: Request, admin=Depends(require_access("windows", "edit"))):
     """One row per slot per outlet. Outlet rows win wholesale over the global
     set, so an outlet with its own contract is described in one place rather
     than inherited piecemeal."""
@@ -748,7 +742,7 @@ async def upsert_schedule(body: ScheduleIn, request: Request, admin=Depends(get_
 
 
 @router.delete("/schedule/{schedule_id}")
-async def delete_schedule(schedule_id: int, request: Request, admin=Depends(get_current_admin)):
+async def delete_schedule(schedule_id: int, request: Request, admin=Depends(require_access("windows", "edit"))):
     """Only an outlet override can be removed. Deleting a global slot would
     leave trips in that slot with no commitment to score against, which reads
     as "on time" and silently empties the claim."""
@@ -771,7 +765,7 @@ class RosterBulkIn(BaseModel):
 
 
 @router.post("/roster/bulk")
-async def bulk_roster(body: RosterBulkIn, request: Request, admin=Depends(get_current_admin)):
+async def bulk_roster(body: RosterBulkIn, request: Request, admin=Depends(require_access("drivers", "edit"))):
     """Whole-week edits in one call.
 
     A roster is built a week at a time, not a person-day at a time: eight
@@ -805,7 +799,7 @@ async def copy_week(
     request: Request,
     from_monday: str,
     to_monday: str,
-    admin=Depends(get_current_admin),
+    admin=Depends(require_access("drivers", "edit")),
 ):
     """Most weeks look like the last one, so copying beats re-entering."""
     from datetime import date as _date, timedelta as _td
@@ -844,12 +838,12 @@ async def copy_week(
 # ------------------------------------------------------------------ sample data
 
 @router.get("/demo")
-async def demo_status(request: Request, admin=Depends(get_current_admin)):
+async def demo_status(request: Request, admin=Depends(require_any_access)):
     return await demo.status(get_pool(request))
 
 
 @router.post("/demo/seed")
-async def demo_seed(request: Request, admin=Depends(get_current_admin)):
+async def demo_seed(request: Request, admin=Depends(require_access("sample", "edit"))):
     """Loads a deterministic sample month for showing the app to stakeholders.
 
     Writes through the real tables so the walkthrough exercises the real
@@ -870,7 +864,7 @@ async def demo_seed(request: Request, admin=Depends(get_current_admin)):
 
 
 @router.post("/demo/reset")
-async def demo_reset(request: Request, admin=Depends(get_current_admin)):
+async def demo_reset(request: Request, admin=Depends(require_access("sample", "edit"))):
     """Removes every sample row. Scoped by is_demo, so real trips cannot be
     reached by it."""
     pool = get_pool(request)

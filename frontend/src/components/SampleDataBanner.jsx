@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import { useAccess } from "../auth/AdminAccess";
 import Icon from "./Icon";
 
 // Shown on every admin page while sample data is loaded, not just on the
@@ -11,6 +12,7 @@ import Icon from "./Icon";
 // remember which it was. The banner is the difference between a showcase and a
 // figure nobody can defend later.
 export default function SampleDataBanner() {
+  const { can } = useAccess();
   const [state, setState] = useState(null);
 
   useEffect(() => {
@@ -30,7 +32,9 @@ export default function SampleDataBanner() {
         <b>Sample data is loaded.</b> Figures below include {state.trips} example trips and are not
         a record of real work.
       </span>
-      <a href="/admin/config/sample" className="font-semibold underline">Remove it</a>
+      {/* Only for a role that can open that page; everyone else still SEES the
+          warning, which is the part that matters. */}
+      {can("sample") && <a href="/admin/config/sample" className="font-semibold underline">Remove it</a>}
     </div>
   );
 }
