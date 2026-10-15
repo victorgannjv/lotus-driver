@@ -197,8 +197,19 @@ async def _scored(pool, rows: list[dict]) -> list[dict]:
             # the step has since been switched off, so both are considered and
             # the later one wins. History does not change when a setting does.
             "ended_at": fmt(trip_end(stamps, ended_cp)),
+            # Arrival to return, in minutes -- the time this run took. None for
+            # a trip that has not finished, because a figure for "so far" would
+            # be added to totals as if it were final.
+            "worked_minutes": _worked_minutes(stamps, ended_cp),
         })
     return out
+
+
+def _worked_minutes(stamps: dict, ended_cp: str) -> float | None:
+    start, end = stamps.get("arrived"), trip_end(stamps, ended_cp)
+    if start is None or end is None or end < start:
+        return None
+    return round((end - start).total_seconds() / 60, 2)
 
 
 def _checkpoint_at(trip: dict, checkpoint: str) -> str | None:
@@ -750,8 +761,22 @@ def _group_by_day(trips: list[dict]) -> list[dict]:
     rows = []
     for day in by_day.values():
         ts = day["trips"]
+        # Time actually spent on the job: the sum of its finished trips, which is
+        # NOT the same as first arrival to last return -- a break between two
+        # trips is time the driver was not working. The span is sent too (as its
+        # two ends) so the screen can say how much of the day that was.
+        #
+        # An unfinished trip is left out and counted, so the figure is never
+        # quietly short: "5h 20m, 1 trip still open" says what it covers.
+        done = [t["worked_minutes"] for t in ts if t.get("worked_minutes") is not None]
+        starts = [t["started_at"] for t in ts if t.get("started_at")]
+        ends = [t["ended_at"] for t in ts if t.get("ended_at")]
         rows.append({
             **day,
+            "worked_minutes": round(sum(done)) if done else None,
+            "open_trips": len(ts) - len(done),
+            "first_started_at": min(starts) if starts else None,
+            "last_ended_at": max(ends) if ends else None,
             "trip_count": len(ts),
             "jobs_total": sum(t["jobs"] for t in ts),
             "orders_total": sum(t["orders"] for t in ts),

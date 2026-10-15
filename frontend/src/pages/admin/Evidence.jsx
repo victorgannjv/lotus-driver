@@ -354,6 +354,29 @@ function JobRow({ job, openTripId, onToggleTrip, onFilterJob }) {
     return a.id - b.id;
   });
   const longWaitCount = trips.filter(isLongWait).length;
+
+  // Hours the driver put in on this job: the server sums the finished trips
+  // (see _group_by_day). That is deliberately not first arrival to last return
+  // -- the time between two trips is a break, shown as a gap below, and it is
+  // not worked. The tooltip says how the two compare so the number can be
+  // checked against the clock times beside it.
+  const span = minutesBetween(job.first_started_at, job.last_ended_at);
+  const breakMinutes = job.worked_minutes != null && span != null ? span - job.worked_minutes : null;
+  const workedTitle =
+    job.worked_minutes == null
+      ? "No finished trip yet, so there is no total to show."
+      : [
+          `The sum of this job's ${job.trip_count - job.open_trips} finished trip${job.trip_count - job.open_trips === 1 ? "" : "s"}.`,
+          span != null
+            ? `First arrived ${formatTime(job.first_started_at)}, last returned ${formatTime(job.last_ended_at)} (${formatDuration(span)} end to end).`
+            : null,
+          breakMinutes != null && breakMinutes >= 1
+            ? `${formatDuration(breakMinutes)} of that was between trips, so it is not counted.`
+            : null,
+          job.open_trips > 0
+            ? `${job.open_trips} trip${job.open_trips === 1 ? " has" : "s have"} not returned yet and ${job.open_trips === 1 ? "is" : "are"} not included.`
+            : null,
+        ].filter(Boolean).join(" ");
   // Every order riding on a long-wait trip counts as problematic -- the wait
   // is stamped before a single drop exists yet (arrived -> goods ready), so
   // it delayed the whole load, not just some of it. "Problematic" is left
@@ -423,6 +446,16 @@ function JobRow({ job, openTripId, onToggleTrip, onFilterJob }) {
         </span>
         <span className="text-xs text-slate-500">
           {job.trip_count} {job.trip_count === 1 ? "trip" : "trips"} · {job.jobs_total} waypoints · {job.orders_total} orders
+        </span>
+        <span className="flex items-center gap-1.5 text-sm font-semibold text-brand-black" title={workedTitle}>
+          <Icon name="clock" className="h-3.5 w-3.5 text-slate-400" />
+          {job.worked_minutes != null ? formatDuration(job.worked_minutes) : "—"}
+          <span className="text-xs font-normal text-slate-500">worked</span>
+          {job.open_trips > 0 && (
+            <span className="text-xs font-normal text-amber-700">
+              · {job.open_trips} {job.open_trips === 1 ? "trip" : "trips"} still open
+            </span>
+          )}
         </span>
         {job.over_target_count > 0 && (
           <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-medium text-brand-red">
