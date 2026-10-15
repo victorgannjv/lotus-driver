@@ -99,6 +99,43 @@ function Tile({ label, value, sub, delta, deltaBad, deltaNeutral, accent }) {
   );
 }
 
+// How many trips have not come back, at the top where it cannot be missed.
+//
+// A trip is open until its last step is recorded, and two very different
+// things look the same in a count: a driver out on today's run (normal), and a
+// trip from an earlier day whose return was never recorded (nothing is running;
+// it just sits there reading as unfinished and is left out of every worked-time
+// figure). So the strip changes with what is in it: calm when everything has
+// come back, amber when drivers are out, red when something is stuck.
+function OpenTrips({ today = 0, earlier = 0 }) {
+  const total = today + earlier;
+  const tone =
+    earlier > 0
+      ? { box: "bg-rose-50 ring-rose-200", num: "text-brand-red", icon: "alert", note: "text-rose-800" }
+      : today > 0
+        ? { box: "bg-amber-50 ring-amber-200", num: "text-amber-800", icon: "clock", note: "text-amber-900" }
+        : { box: "bg-emerald-50 ring-emerald-200", num: "text-emerald-700", icon: "check", note: "text-emerald-800" };
+  const parts = [];
+  if (today > 0) parts.push(`${today} started today and not back yet`);
+  if (earlier > 0) parts.push(`${earlier} from earlier days never returned`);
+
+  return (
+    <div
+      role="status"
+      className={`flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl px-5 py-3.5 ring-1 ${tone.box}`}
+    >
+      <Icon name={tone.icon} className={`h-5 w-5 shrink-0 ${tone.num}`} />
+      <span className={`text-3xl font-semibold tabular-nums ${tone.num}`}>{total}</span>
+      <span className="text-sm font-semibold text-brand-black">
+        {total === 1 ? "trip is still open" : "trips are still open"}
+      </span>
+      <span className={`text-xs ${tone.note}`}>
+        {total === 0 ? "Every trip in this period has returned." : `${parts.join(" · ")}.`}
+      </span>
+    </div>
+  );
+}
+
 function Legend({ items }) {
   return (
     <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 border-t border-slate-100 pt-2.5 text-xs text-slate-500">
@@ -318,6 +355,8 @@ export default function Dashboard() {
               ? "Being late is measured two ways: against the delivery window for the run, and against the time limit on each step."
               : "Being late is measured against the delivery window agreed for each run."}
           </SectionNote>
+          <OpenTrips today={t.open_trips_today ?? 0} earlier={t.open_trips_earlier ?? 0} />
+
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {/* Two sources, one row. The per-step limits are off, so
                 anything measured against them is not zero -- it is unmeasured,

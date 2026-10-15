@@ -372,6 +372,20 @@ def _avg_at_outlet(trips: list[dict]) -> int | None:
     return round(sum(vals) / len(vals)) if vals else None
 
 
+def _open_trips(trips: list[dict], today: str) -> dict:
+    """Trips that have not come back, split by whether that is expected.
+
+    One that STARTED TODAY and has not returned is normal -- the driver is out
+    on the run. One from an earlier day that never returned is not: nothing is
+    still running, the last step was simply never recorded, and it will read as
+    unfinished (and sit out of every worked-time figure) until someone deals
+    with it. They are different problems, so they are counted apart.
+    """
+    open_ = [t for t in trips if t.get("ended_at") is None]
+    today_n = sum(1 for t in open_ if t["work_date"] == today)
+    return {"open_trips": len(open_), "open_trips_today": today_n, "open_trips_earlier": len(open_) - today_n}
+
+
 def _avg_worked_per_day(trips: list[dict]) -> tuple[int | None, int, int]:
     """How long a driver works in a day, on average: (average minutes, driver-
     days counted, driver-days left out).
@@ -752,6 +766,7 @@ async def overview(
             # were complete, and those left out because a trip was still open.
             "worked_days": worked_days,
             "worked_days_open": worked_days_open,
+            **_open_trips(trips, local_today().isoformat()),
             "owned_minutes": owned,
             "owned_minutes_previous": prev_owned,
             "jobs": sum(t["jobs"] for t in trips),
