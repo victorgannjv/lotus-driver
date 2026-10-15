@@ -372,6 +372,31 @@ def _avg_at_outlet(trips: list[dict]) -> int | None:
     return round(sum(vals) / len(vals)) if vals else None
 
 
+def _avg_worked_per_day(trips: list[dict]) -> tuple[int | None, int, int]:
+    """How long a driver works in a day, on average: (average minutes, driver-
+    days counted, driver-days left out).
+
+    A driver-day is one driver's one date -- the 'job' -- and its working time
+    is the sum of its finished trips (see _group_by_day). Only days where
+    EVERY trip has finished are averaged. A day still in progress has only
+    part of its time so far, and averaging that in would make the figure sag
+    all morning and change every time a driver returns; a day with a trip
+    that never returned has no end to measure. Both are counted and reported
+    rather than silently dropped, so the number says what it covers.
+    """
+    days: dict = {}
+    for t in trips:
+        day = days.setdefault(t["driver_day_id"], {"minutes": 0.0, "open": False})
+        if t.get("worked_minutes") is None:
+            day["open"] = True
+        else:
+            day["minutes"] += t["worked_minutes"]
+    complete = [d["minutes"] for d in days.values() if not d["open"]]
+    left_out = sum(1 for d in days.values() if d["open"])
+    average = round(sum(complete) / len(complete)) if complete else None
+    return average, len(complete), left_out
+
+
 def _avg_waiting_minutes(trips: list[dict]) -> int | None:
     """Average of the 'waiting_for_lotus' gap -- arrived at the outlet to
     Lotus goods ready. Narrower than avg_at_outlet_minutes (which runs all
@@ -573,6 +598,8 @@ async def overview(
     }
     avg, prev_avg = _avg_at_outlet(trips), _avg_at_outlet(prev)
     avg_waiting, prev_avg_waiting = _avg_waiting_minutes(trips), _avg_waiting_minutes(prev)
+    avg_worked, worked_days, worked_days_open = _avg_worked_per_day(trips)
+    prev_avg_worked, _, _ = _avg_worked_per_day(prev)
     breached = sum(1 for t in trips if t["over_target"])
 
     trip_of_day, unnumbered = _by_trip_of_day(trips)
@@ -716,6 +743,15 @@ async def overview(
             "avg_waiting_delta_minutes": (
                 (avg_waiting - prev_avg_waiting) if (avg_waiting is not None and prev_avg_waiting is not None) else None
             ),
+            "avg_worked_minutes": avg_worked,
+            "avg_worked_previous": prev_avg_worked,
+            "avg_worked_delta_minutes": (
+                (avg_worked - prev_avg_worked) if (avg_worked is not None and prev_avg_worked is not None) else None
+            ),
+            # What the average is OF, so the tile can say it: driver-days that
+            # were complete, and those left out because a trip was still open.
+            "worked_days": worked_days,
+            "worked_days_open": worked_days_open,
             "owned_minutes": owned,
             "owned_minutes_previous": prev_owned,
             "jobs": sum(t["jobs"] for t in trips),

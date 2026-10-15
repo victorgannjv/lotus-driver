@@ -83,14 +83,17 @@ const PARTY = {
   external: { label: "External", bar: "bg-emerald-600", chip: "bg-emerald-100 text-emerald-800", dot: "bg-emerald-600" },
 };
 
-function Tile({ label, value, sub, delta, deltaBad, accent }) {
+// `deltaNeutral` is for a figure that is not better or worse going up: hours
+// worked is a fact about the day, not a result to be pleased or alarmed by, so
+// its change since last period is shown in plain grey rather than red or green.
+function Tile({ label, value, sub, delta, deltaBad, deltaNeutral, accent }) {
   return (
     <div className={`rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200 ${accent ? "border-l-4 border-brand-red" : ""}`}>
       <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{label}</p>
       <p className="mt-1.5 text-3xl font-semibold tabular-nums text-brand-black">{value}</p>
       {sub && <p className="mt-1 text-xs text-slate-500">{sub}</p>}
       {delta && (
-        <p className={`mt-1.5 text-xs ${deltaBad ? "text-brand-red" : "text-emerald-700"}`}>{delta}</p>
+        <p className={`mt-1.5 text-xs ${deltaNeutral ? "text-slate-500" : deltaBad ? "text-brand-red" : "text-emerald-700"}`}>{delta}</p>
       )}
     </div>
   );
@@ -315,7 +318,7 @@ export default function Dashboard() {
               ? "Being late is measured two ways: against the delivery window for the run, and against the time limit on each step."
               : "Being late is measured against the delivery window agreed for each run."}
           </SectionNote>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {/* Two sources, one row. The per-step limits are off, so
                 anything measured against them is not zero -- it is unmeasured,
                 and a confident "0m" beside "Delay caused by Lotus" reads as
@@ -371,6 +374,30 @@ export default function Dashboard() {
                   : null
               }
               deltaBad={t.avg_waiting_delta_minutes > 0}
+            />
+            {/* A driver's day is the sum of their finished trips (the job's
+                worked time on Evidence), and this is the mean of that across
+                every complete driver-day in the period. A day still in progress
+                is not averaged in -- it would drag the figure down all morning
+                -- and the subtitle says how many were left out. */}
+            <Tile
+              label="Avg working time per day"
+              value={formatDuration(t.avg_worked_minutes)}
+              sub={
+                t.worked_days > 0
+                  ? `Per driver, across ${t.worked_days} finished driver-day${t.worked_days === 1 ? "" : "s"}${
+                      t.worked_days_open > 0 ? `. ${t.worked_days_open} still in progress, not counted` : ""
+                    }`
+                  : t.worked_days_open > 0
+                    ? `${t.worked_days_open} driver-day${t.worked_days_open === 1 ? " is" : "s are"} still in progress`
+                    : "No driver-days in this period"
+              }
+              delta={
+                t.avg_worked_delta_minutes != null
+                  ? `${t.avg_worked_delta_minutes > 0 ? "▲" : t.avg_worked_delta_minutes < 0 ? "▼" : "="} ${formatDuration(Math.abs(t.avg_worked_delta_minutes))} vs previous period`
+                  : null
+              }
+              deltaNeutral
             />
             <Tile
               label="Delay caused by us"
