@@ -3,12 +3,14 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import AppHeader from "../../components/AppHeader";
 import LanguageSwitcher from "../../components/LanguageSwitcher";
 import { useDriverAuth } from "../../auth/DriverAuthContext";
+import { useAuthOptions } from "../../auth/useAuthOptions";
 import { useLanguage } from "../../i18n/LanguageContext";
 
 export default function ResetPassword() {
   const { resetPassword } = useDriverAuth();
   const { t } = useLanguage();
   const navigate = useNavigate();
+  const { forgotPasswordEnabled } = useAuthOptions();
   const [searchParams] = useSearchParams();
   const token = searchParams.get("token") || "";
   const [password, setPassword] = useState("");
@@ -44,9 +46,15 @@ export default function ResetPassword() {
 
         {!token ? (
           <p className="mt-6 text-sm text-red-600">
-            {t("resetPassword.missingTokenPrefix")}{" "}
-            <Link to="/driver/forgot-password" className="font-medium underline">{t("resetPassword.forgotPasswordLink")}</Link>{" "}
-            {t("resetPassword.pageSuffix")}
+            {forgotPasswordEnabled === false ? (
+              t("resetPassword.missingTokenOff")
+            ) : (
+              <>
+                {t("resetPassword.missingTokenPrefix")}{" "}
+                <Link to="/driver/forgot-password" className="font-medium underline">{t("resetPassword.forgotPasswordLink")}</Link>{" "}
+                {t("resetPassword.pageSuffix")}
+              </>
+            )}
           </p>
         ) : (
           <form onSubmit={handleSubmit}>

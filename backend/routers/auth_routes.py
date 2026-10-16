@@ -11,6 +11,7 @@ from auth import create_token, generate_reset_token, hash_password, hash_reset_t
 from db import get_pool
 from mailer import send_password_reset_email
 from schemas import ForgotPasswordRequest, LoginRequest, ResetPasswordRequest, SignupRequest
+from trips import load_settings, setting_bool
 
 router = APIRouter()
 
@@ -80,11 +81,34 @@ async def login(body: LoginRequest, request: Request):
     return {"token": token, "user": await _serialize_driver_user(pool, row[0])}
 
 
+async def forgot_password_enabled(pool) -> bool:
+    """The Settings > Driver app switch. On unless an admin has turned it off, so
+    a database that predates the setting keeps the behaviour it always had."""
+    return setting_bool(await load_settings(pool), "forgot_password_enabled", True)
+
+
+@router.get("/options")
+async def auth_options(request: Request):
+    """What the signed-out driver screens need to know before anyone has a token.
+    Public on purpose, and limited to flags that decide which links to show."""
+    pool = get_pool(request)
+    if pool is None:
+        raise HTTPException(status_code=503, detail="database not configured")
+    return {"forgot_password_enabled": await forgot_password_enabled(pool)}
+
+
 @router.post("/forgot-password")
 async def forgot_password(body: ForgotPasswordRequest, request: Request):
     pool = get_pool(request)
     if pool is None:
         raise HTTPException(status_code=503, detail="database not configured")
+    # Refused before the account lookup, so a switched-off feature neither
+    # mints a token nor sends mail, and says the same thing to everyone.
+    if not await forgot_password_enabled(pool):
+        raise HTTPException(
+            status_code=403,
+            detail="Password reset is switched off. Ask your supervisor to set a new password for you.",
+        )
 
     generic_response = {"message": "if that email exists, we've sent a password reset link"}
 

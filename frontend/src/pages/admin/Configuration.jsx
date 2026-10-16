@@ -607,6 +607,11 @@ const SETTING_UI = {
   photo_timestamp_source: { label: "Where the photo's time comes from", help: "A phone with the wrong clock would weaken every photo.", type: "choice",
     options: [["server", "Our server's clock (recommended)"], ["handset", "The driver's phone"]] },
   photo_capture_gps: { label: "Record location with each photo", help: "Useful backup, but the time matters more.", type: "bool" },
+  forgot_password_enabled: {
+    label: "“Forgot password?” on the driver sign-in",
+    help: "Off removes the link and stops the app sending reset emails. A driver who forgets their password then has to ask you to set a new one, from the Drivers page. Invite links you send to new drivers still work.",
+    type: "bool",
+  },
   reason_prompt_on_breach: { label: "Ask why when a step runs late", help: "Off means late steps are recorded but never explained.", type: "bool" },
   default_language: { label: "Language the app opens in", help: "Drivers can still switch it themselves.", type: "choice",
     options: [["en", "English"], ["ms", "Bahasa Malaysia"]] },
@@ -634,6 +639,11 @@ const SETTING_GROUPS = [
     title: "Photo evidence",
     blurb: "What a photo has to carry for it to hold up when Lotus disputes a time.",
     keys: ["photo_required_checkpoints", "photo_burn_timestamp", "photo_timestamp_source", "photo_capture_gps"],
+  },
+  {
+    title: "Signing in",
+    blurb: "What a driver can do on their own when they cannot get in.",
+    keys: ["forgot_password_enabled"],
   },
   {
     title: "Prompts and language",

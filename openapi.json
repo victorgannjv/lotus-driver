@@ -60,6 +60,23 @@
         }
       }
     },
+    "/api/auth/options": {
+      "get": {
+        "summary": "Public flags the signed-out driver screens need, e.g. whether the Forgot password link is shown.",
+        "operationId": "authOptions",
+        "tags": ["auth"],
+        "responses": {
+          "200": {
+            "description": "Current flags.",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object", "properties": { "forgot_password_enabled": { "type": "boolean" } } }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/auth/forgot-password": {
       "post": {
         "summary": "Request a password-reset link by email; always returns a generic response so the endpoint can't be used to enumerate accounts.",
@@ -77,7 +94,8 @@
                 "schema": { "type": "object", "properties": { "message": { "type": "string" } } }
               }
             }
-          }
+          },
+          "403": { "description": "Password reset by email is switched off in Settings." }
         }
       }
     },

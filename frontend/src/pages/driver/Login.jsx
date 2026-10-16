@@ -3,12 +3,14 @@ import { Link, useNavigate } from "react-router-dom";
 import AppHeader from "../../components/AppHeader";
 import LanguageSwitcher from "../../components/LanguageSwitcher";
 import { useDriverAuth } from "../../auth/DriverAuthContext";
+import { useAuthOptions } from "../../auth/useAuthOptions";
 import { useLanguage } from "../../i18n/LanguageContext";
 
 export default function Login() {
   const { login } = useDriverAuth();
   const { t } = useLanguage();
   const navigate = useNavigate();
+  const { forgotPasswordEnabled } = useAuthOptions();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState(null);
@@ -67,9 +69,11 @@ export default function Login() {
           {busy ? t("login.signingIn") : t("login.signIn")}
         </button>
 
-        <p className="mt-3 text-center text-sm">
-          <Link to="/driver/forgot-password" className="font-medium text-brand-red underline">{t("login.forgotPassword")}</Link>
-        </p>
+        {forgotPasswordEnabled && (
+          <p className="mt-3 text-center text-sm">
+            <Link to="/driver/forgot-password" className="font-medium text-brand-red underline">{t("login.forgotPassword")}</Link>
+          </p>
+        )}
         <p className="mt-4 text-center text-sm text-slate-500">
           {t("login.noAccount")} <Link to="/driver/signup" className="font-medium text-brand-red underline">{t("login.signUp")}</Link>
         </p>

@@ -3,11 +3,13 @@ import { Link } from "react-router-dom";
 import AppHeader from "../../components/AppHeader";
 import LanguageSwitcher from "../../components/LanguageSwitcher";
 import { useDriverAuth } from "../../auth/DriverAuthContext";
+import { useAuthOptions } from "../../auth/useAuthOptions";
 import { useLanguage } from "../../i18n/LanguageContext";
 
 export default function ForgotPassword() {
   const { forgotPassword } = useDriverAuth();
   const { t } = useLanguage();
+  const { forgotPasswordEnabled } = useAuthOptions();
   const [email, setEmail] = useState("");
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -35,7 +37,9 @@ export default function ForgotPassword() {
         <h1 className="text-xl font-semibold text-brand-black">{t("forgotPassword.title")}</h1>
         <p className="mt-1 text-sm text-slate-500">{t("common.appName")}</p>
 
-        {sent ? (
+        {forgotPasswordEnabled === null ? null : forgotPasswordEnabled === false ? (
+          <p className="mt-6 text-sm text-slate-700">{t("forgotPassword.unavailable")}</p>
+        ) : sent ? (
           <p className="mt-6 text-sm text-slate-700">{t("forgotPassword.sentMessage", { email })}</p>
         ) : (
           <form onSubmit={handleSubmit}>

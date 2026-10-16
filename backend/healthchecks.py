@@ -28,7 +28,7 @@ from asyncmy.cursors import DictCursor
 from access import EDIT, allows, effective_permissions
 from clocks import fmt, local_today
 from diagnostics import STARTED_AT
-from trips import CHECKPOINT_ORDER, active_checkpoints, fetch_checkpoints, final_checkpoint, load_settings
+from trips import CHECKPOINT_ORDER, active_checkpoints, fetch_checkpoints, final_checkpoint, load_settings, setting_bool
 
 MIGRATIONS_DIR = Path(__file__).parent / "resources" / "db" / "migration"
 PHOTO_WARN_BYTES = 2 * 1024**3
@@ -120,7 +120,11 @@ def check_secrets():
     return _check("secrets", "System", "Required environment", "ok", "JWT_SECRET and DATABASE_URL are set")
 
 
-def check_email():
+def check_email(forgot_enabled: bool = True):
+    if not forgot_enabled:
+        # Nothing sends mail while the feature is off, so a missing relay is not a fault.
+        return _check("email", "System", "Password-reset email", "ok",
+                      "Forgot password is switched off in Settings, so no reset email is sent")
     if not os.getenv("SMTP_HOST"):
         return _check("email", "System", "Password-reset email", "warn",
                       "SMTP_HOST is empty, so \"forgot password\" emails cannot be sent. Drivers who forget "
@@ -299,13 +303,21 @@ async def _safe(key, group, label, coro):
 
 async def run_checks(pool) -> list[dict]:
     db = await check_database(pool)
-    results = [db, check_runtime(), check_secrets(), check_email()]
+    forgot_on = True
+    settings = None
+    if db["status"] != "fail":
+        try:
+            settings = await load_settings(pool)
+            forgot_on = setting_bool(settings, "forgot_password_enabled", True)
+        except Exception:  # noqa: BLE001 -- the email check then assumes the default
+            settings = None
+    results = [db, check_runtime(), check_secrets(), check_email(forgot_on)]
     if db["status"] == "fail":
         # Everything below needs the database; running it would only print the
         # same failure fifteen times.
         return results
 
-    ended_cp = final_checkpoint(active_checkpoints(await load_settings(pool)))
+    ended_cp = final_checkpoint(active_checkpoints(settings if settings is not None else await load_settings(pool)))
     results += [
         await _safe("migrations", "System", "Database migrations", check_migrations(pool)),
         await _safe("photos", "System", "Photo storage", check_photo_storage(pool)),
