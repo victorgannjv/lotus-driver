@@ -26,6 +26,7 @@ from routers import (
     config_routes,
     diagnostics_routes,
     driver_routes,
+    performance_routes,
 )
 
 app = FastAPI(title="Lotus Driver Tracking System", lifespan=lifespan)
@@ -123,6 +124,7 @@ app.include_router(driver_routes.router, prefix="/api", tags=["driver"])
 app.include_router(checkpoint_routes.router, prefix="/api", tags=["checkpoints"])
 app.include_router(admin_routes.router, prefix="/api/admin", tags=["admin"])
 app.include_router(analytics_routes.router, prefix="/api/admin", tags=["analytics"])
+app.include_router(performance_routes.router, prefix="/api/admin", tags=["performance"])
 app.include_router(access_routes.router, prefix="/api/admin/access", tags=["access"])
 app.include_router(config_routes.router, prefix="/api/admin/config", tags=["config"])
 app.include_router(diagnostics_routes.router, prefix="/api/admin/diagnostics", tags=["diagnostics"])

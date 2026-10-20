@@ -450,6 +450,58 @@
         }
       }
     },
+    "/api/admin/performance": {
+      "get": {
+        "summary": "One row per driver over a date span: trips, average hours worked per day, average speed per trip (km/h, from GPS fixes) and home outlet.",
+        "operationId": "driverPerformance",
+        "tags": ["performance"],
+        "parameters": [
+          { "name": "date_from", "in": "query", "schema": { "type": "string", "format": "date" } },
+          { "name": "date_to", "in": "query", "schema": { "type": "string", "format": "date" } },
+          { "name": "warehouse_id", "in": "query", "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Per-driver figures plus a fleet summary.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "date_from": { "type": "string" },
+                    "date_to": { "type": "string" },
+                    "drivers": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "driver_id": { "type": "integer" },
+                          "driver_name": { "type": "string" },
+                          "status": { "type": "string" },
+                          "warehouse_id": { "type": ["integer", "null"] },
+                          "outlet": { "type": ["string", "null"] },
+                          "trips": { "type": "integer" },
+                          "open_trips": { "type": "integer" },
+                          "avg_worked_minutes": { "type": ["integer", "null"] },
+                          "days_counted": { "type": "integer" },
+                          "days_left_out": { "type": "integer" },
+                          "avg_speed_kmh": { "type": ["number", "null"] },
+                          "avg_distance_km": { "type": ["number", "null"] },
+                          "speed_trips": { "type": "integer" }
+                        }
+                      }
+                    },
+                    "summary": { "type": "object" },
+                    "speed_note": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
+          "403": { "description": "The caller's role does not include Driver performance." }
+        }
+      }
+    },
     "/api/admin/drivers": {
       "get": {
         "summary": "List all drivers, most recently registered first.",

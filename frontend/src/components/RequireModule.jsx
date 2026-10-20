@@ -69,6 +69,7 @@ export default function RequireModule({ module, fieldset = true, also = null, ch
 const WORK = [
   ["dashboard", "/admin/dashboard"],
   ["evidence", "/admin/evidence"],
+  ["driver_performance", "/admin/performance"],
   ["orders", "/admin/jobs"],
   ["diagnostics", "/admin/diagnostics"],
 ];

@@ -49,6 +49,7 @@ const AdminGate = lazyRoute(() => import("./pages/admin/Gate"));
 const AdminDashboard = lazyRoute(() => import("./pages/admin/Dashboard"));
 const AdminJobs = lazyRoute(() => import("./pages/admin/Jobs"));
 const AdminEvidence = lazyRoute(() => import("./pages/admin/Evidence"));
+const AdminDriverPerformance = lazyRoute(() => import("./pages/admin/DriverPerformance"));
 const AdminDiagnostics = lazyRoute(() => import("./pages/admin/Diagnostics"));
 const AdminAccessControl = lazyRoute(() => import("./pages/admin/AccessControl"));
 const ConfigLayout = lazyRoute(() =>
@@ -156,6 +157,7 @@ export default function App() {
             <Route index element={<AdminLanding />} />
             <Route path="dashboard" element={<Guard module="dashboard"><AdminDashboard /></Guard>} />
             <Route path="evidence" element={<Guard module="evidence"><AdminEvidence /></Guard>} />
+            <Route path="performance" element={<Guard module="driver_performance"><AdminDriverPerformance /></Guard>} />
             <Route path="diagnostics" element={<Guard module="diagnostics" fieldset={false}><AdminDiagnostics /></Guard>} />
             <Route path="jobs" element={<Guard module="orders"><AdminJobs /></Guard>} />
             <Route path="jobs/:jobId" element={<Guard module="orders"><AdminJobDetail /></Guard>} />

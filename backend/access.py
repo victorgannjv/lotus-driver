@@ -35,6 +35,8 @@ CATALOG = [
        "The figures: time at the outlet, delays, manpower and trends."),
     _m("evidence", "Evidence", "Work", [VIEW],
        "Every trip with its checkpoints, photos and reasons. Includes exporting the log to CSV."),
+    _m("driver_performance", "Driver performance", "Work", [VIEW],
+       "Each driver's trips, average hours worked a day and average speed, with the outlet they are based at."),
     _m("orders", "Orders", "Work", [VIEW],
        "Parcels and their scan history, with proof photos."),
     _m("diagnostics", "Diagnostics", "Monitoring", [VIEW, EDIT],

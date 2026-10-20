@@ -26,6 +26,7 @@ const linkClass = ({ isActive }) =>
 const WORK_TABS = [
   { to: "/admin/dashboard", label: "Dashboard", module: "dashboard" },
   { to: "/admin/evidence", label: "Evidence", module: "evidence" },
+  { to: "/admin/performance", label: "Driver performance", module: "driver_performance" },
   { to: "/admin/jobs", label: "Orders", module: "orders" },
 ];
 
