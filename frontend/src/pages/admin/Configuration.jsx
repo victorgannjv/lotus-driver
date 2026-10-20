@@ -3,6 +3,7 @@ import { Navigate, NavLink, Outlet } from "react-router-dom";
 import { api } from "../../api";
 import Icon from "../../components/Icon";
 import { useAccess } from "../../auth/AdminAccess";
+import { driverCode } from "../../lib/ids";
 import { useConfigTabs } from "./configTabs";
 
 // Settings, written for an ops coordinator rather than a developer.
@@ -1122,6 +1123,7 @@ export function DriversConfig() {
               <span>
                 <span className="flex flex-wrap items-center gap-2">
                   <span className="text-sm font-medium text-brand-black">{d.name}</span>
+                  <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-slate-500" title="Driver ID">{driverCode(d.id)}</span>
                   {/* An account created from here looks identical to a working
                       one until the driver follows the link. Say which it is. */}
                   {!d.signed_up && (

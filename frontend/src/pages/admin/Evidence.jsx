@@ -5,6 +5,7 @@ import PhotoThumb from "../../components/PhotoThumb";
 import { dropLabel, dropStyle, statusLabel, statusStyle } from "../../lib/status";
 import Icon, { CHECKPOINT_ICON } from "../../components/Icon";
 import { formatDate, formatDuration, formatTime } from "../../lib/duration";
+import { driverCode } from "../../lib/ids";
 
 // The retrieval surface: prove one specific trip.
 //
@@ -441,7 +442,7 @@ function JobRow({ job, openTripId, onToggleTrip, onFilterJob }) {
           </span>
           <span className="flex flex-col leading-tight">
             <span className="text-sm font-semibold text-brand-black">{job.driver_name}</span>
-            <span className="text-[11px] text-slate-400">{formatDate(job.work_date)}</span>
+            <span className="text-[11px] text-slate-400">{driverCode(job.driver_id)} · {formatDate(job.work_date)}</span>
           </span>
         </span>
         <span className="text-xs text-slate-500">
@@ -697,7 +698,7 @@ export default function Evidence() {
             type="search"
             value={filters.q}
             onChange={set("q")}
-            placeholder="Job ID, Trip ID or driver…"
+            placeholder="Job ID, Trip ID, Driver ID or name…"
             className="min-w-0 flex-1 basis-48 rounded-lg border border-slate-300 px-3 py-2 text-sm"
           />
           <select value={filters.warehouseId} onChange={set("warehouseId")} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">

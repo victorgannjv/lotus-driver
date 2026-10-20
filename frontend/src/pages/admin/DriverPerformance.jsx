@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../../api";
 import { formatDuration, formatShortDate } from "../../lib/duration";
+import { driverCode } from "../../lib/ids";
 
 // One row per driver: how much they drove, how long they work in a day, how
 // fast they go, and where they are based.
@@ -32,6 +33,7 @@ const MODES = [
 ];
 
 const COLUMNS = [
+  { key: "driver_id", label: "Driver ID", text: true },
   { key: "driver_name", label: "Driver", text: true },
   { key: "trips", label: "Trips" },
   { key: "avg_worked_minutes", label: "Avg hours per day" },
@@ -90,7 +92,11 @@ export default function DriverPerformance() {
   const rows = useMemo(() => {
     if (!data) return [];
     const needle = q.trim().toLowerCase();
-    const list = data.drivers.filter((d) => !needle || d.driver_name.toLowerCase().includes(needle));
+    // A name fragment, or a driver's id as printed ("D-12" or just "12").
+    const list = data.drivers.filter(
+      (d) => !needle || d.driver_name.toLowerCase().includes(needle)
+        || driverCode(d.driver_id).toLowerCase() === needle || String(d.driver_id) === needle,
+    );
     const { key, dir } = sort;
     const sign = dir === "asc" ? 1 : -1;
     // A driver with no figure sorts last either way round, so "slowest first"
@@ -152,7 +158,7 @@ export default function DriverPerformance() {
             type="search"
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Find a driver…"
+            placeholder="Find a driver or Driver ID…"
             className={`${inputClass} min-w-0 flex-1 basis-40`}
           />
         </div>
@@ -198,6 +204,7 @@ export default function DriverPerformance() {
           <tbody className="divide-y divide-slate-100">
             {rows.map((d) => (
               <tr key={d.driver_id} className="hover:bg-slate-50">
+                <td className="px-4 py-3 text-xs font-semibold tabular-nums text-slate-500">{driverCode(d.driver_id)}</td>
                 <td className="px-4 py-3 font-medium text-brand-black">
                   {d.driver_name}
                   {d.status !== "active" && (

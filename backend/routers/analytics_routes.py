@@ -858,9 +858,14 @@ async def _filtered_evidence_trips(
         trips = [t for t in trips if t["over_target"]]
     if q:
         needle = q.strip().lower()
-        trips = [t for t in trips
-                 if needle in str(t["id"]) or needle in str(t["driver_day_id"])
-                 or needle in (t["driver_name"] or "").lower()]
+        # "D-12" is a driver's id as printed on screen: match that driver
+        # exactly (a plain "12" would also match every trip and job numbered 12).
+        if needle.startswith("d-") and needle[2:].isdigit():
+            trips = [t for t in trips if t["driver_id"] == int(needle[2:])]
+        else:
+            trips = [t for t in trips
+                     if needle in str(t["id"]) or needle in str(t["driver_day_id"])
+                     or needle in (t["driver_name"] or "").lower()]
     return trips
 
 
@@ -910,7 +915,7 @@ async def evidence(
 LONG_WAIT_MINUTES = 30
 
 EVIDENCE_CSV_HEADER = [
-    "job_id", "trip_id", "driver", "warehouse", "work_date", "trip_of_day",
+    "job_id", "trip_id", "driver_id", "driver", "warehouse", "work_date", "trip_of_day",
     "arrived_at", "goods_ready_at", "loaded_at", "departed_at", "deliveries_done_at", "returned_at",
     "waiting_for_lotus_minutes", "long_wait_over_30min",
     "time_at_outlet_minutes", "time_at_outlet_over_target",
@@ -925,7 +930,7 @@ def _evidence_csv_row(t: dict) -> list:
     wait_minutes = wait_gap["minutes"] if wait_gap else None
     tao = t["time_at_outlet"]
     return [
-        t["driver_day_id"], t["id"], t["driver_name"] or "", t["warehouse_name"] or "",
+        t["driver_day_id"], t["id"], f"D-{t['driver_id']}", t["driver_name"] or "", t["warehouse_name"] or "",
         t["work_date"], t.get("schedule_slot_no") or "",
         cps.get("arrived", ""), cps.get("goods_ready", ""), cps.get("loaded", ""),
         cps.get("departed", ""), cps.get("deliveries_done", ""), cps.get("returned", ""),
