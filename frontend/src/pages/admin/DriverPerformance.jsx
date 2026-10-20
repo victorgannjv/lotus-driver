@@ -4,12 +4,11 @@ import { formatDuration, formatShortDate } from "../../lib/duration";
 import { driverCode } from "../../lib/ids";
 
 // One row per driver: how much they drove, how long they work in a day, how
-// fast they go, and where they are based.
+// long a trip takes, and where they are based.
 //
 // The figures that depend on something being recorded say how much they rest
 // on, in small type under the number. "6h 12m" on one day's work and "6h 12m"
-// on twenty are not the same claim, and a speed measured on two trips out of
-// nine should not read like one measured on all nine.
+// on twenty are not the same claim.
 
 const isoDate = (d) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -37,7 +36,7 @@ const COLUMNS = [
   { key: "driver_name", label: "Driver", text: true },
   { key: "trips", label: "Trips" },
   { key: "avg_worked_minutes", label: "Avg hours per day" },
-  { key: "avg_speed_kmh", label: "Avg speed per trip" },
+  { key: "avg_trip_minutes", label: "Avg time per trip" },
   { key: "outlet", label: "Outlet", text: true },
 ];
 
@@ -122,7 +121,7 @@ export default function DriverPerformance() {
         <h2 className="text-base font-semibold text-brand-black">Driver performance</h2>
         <p className="mt-0.5 text-xs text-slate-500">
           How each driver is doing over the period: trips done, the hours they work in a day, and how
-          fast they drive between the outlet and their drops.
+          long a trip takes them.
         </p>
 
         <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -179,7 +178,7 @@ export default function DriverPerformance() {
           <Tile label="Drivers" value={s.drivers} sub={`${s.drivers_with_trips} drove in this period`} />
           <Tile label="Trips" value={s.trips} />
           <Tile label="Avg hours per day" value={formatDuration(s.avg_worked_minutes)} sub="across all drivers" />
-          <Tile label="Avg speed per trip" value={s.avg_speed_kmh == null ? "—" : `${s.avg_speed_kmh} km/h`} sub="across all drivers" />
+          <Tile label="Avg time per trip" value={formatDuration(s.avg_trip_minutes)} sub="across all drivers" />
         </div>
       )}
 
@@ -230,11 +229,11 @@ export default function DriverPerformance() {
                   )}
                 </td>
                 <td className="px-4 py-3 text-right tabular-nums">
-                  {d.avg_speed_kmh == null ? <Blank /> : `${d.avg_speed_kmh} km/h`}
+                  {d.avg_trip_minutes == null ? <Blank /> : formatDuration(d.avg_trip_minutes)}
                   {d.trips > 0 && (
                     <span className="block text-[11px] text-slate-400"
-                          title="Trips with a GPS fix at the outlet and on return, which a speed needs.">
-                      {d.speed_trips} of {d.trips} trip{d.trips === 1 ? "" : "s"} measured
+                          title="A trip that has not finished has no end to measure, so it is not averaged in.">
+                      {d.trips_timed} of {d.trips} trip{d.trips === 1 ? "" : "s"} finished
                     </span>
                   )}
                 </td>
@@ -259,12 +258,10 @@ export default function DriverPerformance() {
 
       {data && (
         <p className="mt-3 max-w-3xl text-xs text-slate-500">
-          <b className="font-semibold text-slate-600">How speed is worked out.</b>{" "}
-          Distance between GPS fixes (the outlet, each drop in the order it was closed, then back to the outlet),
-          divided by the time from Departed to Returned, so time stopped at a drop counts. Straight lines cut
-          corners, so it reads lower than the real road speed. Use it to compare drivers on similar runs, not as a
-          speedometer. A trip with no GPS fix at the outlet or on return is left out, and each row says how
-          many trips it rests on.
+          <b className="font-semibold text-slate-600">How time per trip is worked out.</b>{" "}
+          From arriving at the outlet to the end of the trip (Returned), averaged over the driver's finished trips.
+          A trip still open has no end yet and is left out. Hours per day is the total of a driver's finished trips
+          in a day, averaged over days where every trip has finished.
         </p>
       )}
     </div>

@@ -452,7 +452,7 @@
     },
     "/api/admin/performance": {
       "get": {
-        "summary": "One row per driver over a date span: trips, average hours worked per day, average speed per trip (km/h, from GPS fixes) and home outlet.",
+        "summary": "One row per driver over a date span: trips, average hours worked per day, average time per trip and home outlet.",
         "operationId": "driverPerformance",
         "tags": ["performance"],
         "parameters": [
@@ -485,14 +485,12 @@
                           "avg_worked_minutes": { "type": ["integer", "null"] },
                           "days_counted": { "type": "integer" },
                           "days_left_out": { "type": "integer" },
-                          "avg_speed_kmh": { "type": ["number", "null"] },
-                          "avg_distance_km": { "type": ["number", "null"] },
-                          "speed_trips": { "type": "integer" }
+                          "avg_trip_minutes": { "type": ["integer", "null"] },
+                          "trips_timed": { "type": "integer" }
                         }
                       }
                     },
-                    "summary": { "type": "object" },
-                    "speed_note": { "type": "string" }
+                    "summary": { "type": "object" }
                   }
                 }
               }
