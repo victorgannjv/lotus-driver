@@ -13,7 +13,10 @@ from fastapi import APIRouter, Depends, Request
 from auth import require_access
 from clocks import local_today
 from db import get_pool
-from routers.analytics_routes import _avg_worked_per_day, _load_trips, _scored
+from routers.analytics_routes import (
+    _avg_worked_per_day, _group_by_day, _load_trips, _overtime_threshold, _scored,
+)
+from trips import load_settings
 
 router = APIRouter()
 
@@ -30,9 +33,31 @@ def _avg_trip_minutes(trips: list[dict]) -> tuple[int | None, int]:
     return (round(sum(done) / len(done)) if done else None), len(done)
 
 
-def _driver_row(driver: dict, trips: list[dict]) -> dict:
+def _overtime_jobs(trips: list[dict], threshold: int | None) -> list[dict]:
+    """The driver's jobs (J-ids) flagged as overtime, newest first.
+
+    Judged by the same rule as the Evidence page, because it is the same code:
+    a job is one driver's one day, its worked time is the finished trips added
+    up, and it is overtime when that is over the Job management limit. With no
+    limit set nothing is overtime.
+    """
+    return [
+        {
+            "job_id": d["driver_day_id"],
+            "work_date": d["work_date"],
+            "worked_minutes": d["worked_minutes"],
+            "overtime_minutes": d["overtime_minutes"],
+            "open_trips": d["open_trips"],
+        }
+        for d in _group_by_day(trips, threshold)  # newest first
+        if d["is_overtime"]
+    ]
+
+
+def _driver_row(driver: dict, trips: list[dict], threshold: int | None = None) -> dict:
     avg_day, days_counted, days_left_out = _avg_worked_per_day(trips)
     avg_trip, trips_timed = _avg_trip_minutes(trips)
+    ot_jobs = _overtime_jobs(trips, threshold)
     return {
         "driver_id": driver["id"],
         "driver_name": driver["name"],
@@ -46,6 +71,10 @@ def _driver_row(driver: dict, trips: list[dict]) -> dict:
         "days_left_out": days_left_out,
         "avg_trip_minutes": avg_trip,
         "trips_timed": trips_timed,
+        # None, not 0, while no limit is set: "0 overtime days" would claim
+        # everyone was inside a limit that does not exist.
+        "ot_days": len(ot_jobs) if threshold else None,
+        "ot_jobs": ot_jobs,
     }
 
 
@@ -62,6 +91,7 @@ async def performance(
     start = date.fromisoformat(date_from) if date_from else end - timedelta(days=29)
 
     trips = await _scored(pool, await _load_trips(pool, start, end, warehouse_id))
+    threshold = _overtime_threshold(await load_settings(pool))
 
     by_driver: dict[int, list[dict]] = {}
     for t in trips:
@@ -84,7 +114,7 @@ async def performance(
         )
         drivers = [d for d in await cur.fetchall() if d["status"] == "active" or d["id"] in by_driver]
 
-    rows = [_driver_row(d, by_driver.get(d["id"], [])) for d in drivers]
+    rows = [_driver_row(d, by_driver.get(d["id"], []), threshold) for d in drivers]
 
     avg_minutes, _, _ = _avg_worked_per_day(trips)
     avg_trip, _ = _avg_trip_minutes(trips)
@@ -98,5 +128,7 @@ async def performance(
             "trips": len(trips),
             "avg_worked_minutes": avg_minutes,
             "avg_trip_minutes": avg_trip,
+            "ot_days": sum(r["ot_days"] or 0 for r in rows) if threshold else None,
         },
+        "overtime_threshold_minutes": threshold,
     }

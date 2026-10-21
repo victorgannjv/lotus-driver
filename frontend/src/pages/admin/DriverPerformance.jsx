@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { api } from "../../api";
-import { formatDuration, formatShortDate } from "../../lib/duration";
+import { useAccess } from "../../auth/AdminAccess";
+import { formatDate, formatDuration, formatShortDate } from "../../lib/duration";
 import { driverCode } from "../../lib/ids";
 
 // One row per driver: how much they drove, how long they work in a day, how
@@ -45,6 +47,7 @@ const COLUMNS = [
   { key: "trips", label: "Trips" },
   { key: "avg_worked_minutes", label: "Avg hours per day" },
   { key: "avg_trip_minutes", label: "Avg time per trip" },
+  { key: "ot_days", label: "Number of OT days" },
   { key: "outlet", label: "Outlet", text: true },
 ];
 
@@ -72,6 +75,17 @@ export default function DriverPerformance() {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
+  // Which drivers' overtime lists are open. Kept by driver id, so a list stays
+  // open through a re-sort or a search and closes only when asked to.
+  const [openOt, setOpenOt] = useState(() => new Set());
+  const { can } = useAccess();
+  const toggleOt = (id) =>
+    setOpenOt((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   useEffect(() => {
     api.get("/admin/warehouses").then((d) => setWarehouses(d.warehouses)).catch(() => {});
@@ -210,7 +224,8 @@ export default function DriverPerformance() {
           </thead>
           <tbody className="divide-y divide-slate-100">
             {rows.map((d) => (
-              <tr key={d.driver_id} className="hover:bg-slate-50">
+              <Fragment key={d.driver_id}>
+              <tr className="hover:bg-slate-50">
                 <td className="px-4 py-3 text-xs font-semibold tabular-nums text-slate-500">{driverCode(d.driver_id)}</td>
                 <td className="px-4 py-3 font-medium text-brand-black">
                   {d.driver_name}
@@ -245,8 +260,60 @@ export default function DriverPerformance() {
                     </span>
                   )}
                 </td>
+                <td className="px-4 py-3 text-right tabular-nums">
+                  {d.ot_days == null ? (
+                    <span className="text-slate-300" title="No overtime limit is set. An admin sets it under Settings, Job management.">—</span>
+                  ) : d.ot_days === 0 ? (
+                    <span className="text-slate-500">0</span>
+                  ) : (
+                    // The number is the control. It opens the list of jobs it
+                    // counts, so the figure can be checked rather than trusted.
+                    <button
+                      type="button"
+                      onClick={() => toggleOt(d.driver_id)}
+                      aria-expanded={openOt.has(d.driver_id)}
+                      aria-controls={`ot-${d.driver_id}`}
+                      title={openOt.has(d.driver_id) ? "Hide the jobs" : "Show the jobs flagged as overtime"}
+                      className="inline-flex items-center gap-1.5 rounded-full bg-orange-100 px-2.5 py-0.5 font-semibold text-orange-800 hover:bg-orange-200"
+                    >
+                      {d.ot_days}
+                      <span aria-hidden className={`text-[9px] transition-transform ${openOt.has(d.driver_id) ? "rotate-180" : ""}`}>▼</span>
+                    </button>
+                  )}
+                </td>
                 <td className="px-4 py-3 text-slate-700">{d.outlet || <span className="text-slate-400">No outlet</span>}</td>
               </tr>
+              {d.ot_days > 0 && openOt.has(d.driver_id) && (
+                <tr id={`ot-${d.driver_id}`} className="bg-orange-50/60">
+                  <td colSpan={COLUMNS.length} className="px-4 py-3">
+                    <p className="mb-2 text-xs font-semibold text-orange-900">
+                      {d.driver_name}: {d.ot_days} {d.ot_days === 1 ? "job" : "jobs"} over {formatDuration(data.overtime_threshold_minutes)}
+                    </p>
+                    <ul className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
+                      {d.ot_jobs.map((j) => (
+                        <li key={j.job_id} className="flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-lg bg-white px-3 py-2 text-xs ring-1 ring-orange-200">
+                          <span className="font-semibold text-brand-black">J-{j.job_id}</span>
+                          <span className="text-slate-500">{formatDate(j.work_date)}</span>
+                          <span className="tabular-nums text-slate-700">{formatDuration(j.worked_minutes)} worked</span>
+                          <span className="font-semibold tabular-nums text-orange-800">+{formatDuration(j.overtime_minutes)}</span>
+                          {j.open_trips > 0 && (
+                            <span className="text-amber-700" title="A trip is still open, so this can still grow.">· trip open</span>
+                          )}
+                          {can("evidence") && (
+                            <Link
+                              to={`/admin/evidence?driver_id=${d.driver_id}&date_from=${j.work_date}&date_to=${j.work_date}`}
+                              className="ml-auto font-medium text-brand-red hover:underline"
+                            >
+                              View evidence
+                            </Link>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </td>
+                </tr>
+              )}
+              </Fragment>
             ))}
             {data && rows.length === 0 && (
               <tr>
@@ -270,6 +337,14 @@ export default function DriverPerformance() {
           From arriving at the outlet to the end of the trip (Returned), averaged over the driver's finished trips.
           A trip still open has no end yet and is left out. Hours per day is the total of a driver's finished trips
           in a day, averaged over days where every trip has finished.
+        </p>
+      )}
+      {data && (
+        <p className="mt-2 max-w-3xl text-xs text-slate-500">
+          <b className="font-semibold text-slate-600">Number of OT days.</b>{" "}
+          {data.overtime_threshold_minutes
+            ? `Jobs (a driver's day) in this period that worked more than ${formatDuration(data.overtime_threshold_minutes)}, the limit set under Settings, Job management. Click a number to see which jobs.`
+            : "No overtime limit is set, so no job is counted. An admin sets it under Settings, Job management."}
         </p>
       )}
     </div>
