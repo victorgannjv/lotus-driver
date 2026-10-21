@@ -17,6 +17,12 @@ function rangeFor(mode, custom) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   if (mode === "custom") return { from: custom.from, to: custom.to };
+  if (mode === "today") return { from: isoDate(today), to: isoDate(today) };
+  if (mode === "yesterday") {
+    const y = new Date(today);
+    y.setDate(y.getDate() - 1);
+    return { from: isoDate(y), to: isoDate(y) };
+  }
   if (mode === "month") return { from: isoDate(new Date(today.getFullYear(), today.getMonth(), 1)), to: isoDate(today) };
   const days = mode === "l7d" ? 7 : 30;
   const start = new Date(today);
@@ -25,6 +31,8 @@ function rangeFor(mode, custom) {
 }
 
 const MODES = [
+  ["today", "Today"],
+  ["yesterday", "Yesterday"],
   ["l7d", "Last 7 days"],
   ["l30d", "Last 30 days"],
   ["month", "This month"],
@@ -163,7 +171,7 @@ export default function DriverPerformance() {
         </div>
         {ready && (
           <p className="mt-2 text-xs text-slate-400">
-            {formatShortDate(from)} to {formatShortDate(to)}
+            {from === to ? formatShortDate(from) : `${formatShortDate(from)} to ${formatShortDate(to)}`}
           </p>
         )}
         {mode === "custom" && !ready && (
