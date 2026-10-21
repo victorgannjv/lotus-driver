@@ -20,7 +20,7 @@ from datetime import date, timedelta
 from asyncmy.cursors import DictCursor
 
 from clocks import fmt, local_today
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
 
 from auth import require_access
@@ -837,6 +837,20 @@ def _group_by_day(trips: list[dict]) -> list[dict]:
     return rows
 
 
+def _evidence_range(date_from: str | None, date_to: str | None) -> tuple[date, date]:
+    """The span the Evidence page and its export cover. With neither date given
+    it is the last 30 days; with only one, the other end is today (To) or 29
+    days before it (From). Bad dates are the caller's mistake, not a 500."""
+    try:
+        end = date.fromisoformat(date_to) if date_to else local_today()
+        start = date.fromisoformat(date_from) if date_from else end - timedelta(days=29)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="dates must look like 2026-10-21")
+    if start > end:
+        raise HTTPException(status_code=422, detail="the From date is after the To date")
+    return start, end
+
+
 async def _filtered_evidence_trips(
     pool, date_from: str | None, date_to: str | None, warehouse_id: int | None,
     driver_id: int | None, owner: str | None, over_target_only: bool, q: str | None,
@@ -845,8 +859,7 @@ async def _filtered_evidence_trips(
     one filtering pass shared by the screen (which pages it) and the CSV
     export (which doesn't), so the two can never disagree about what counts
     as 'matching the current filters'."""
-    end = date.fromisoformat(date_to) if date_to else local_today()
-    start = date.fromisoformat(date_from) if date_from else end - timedelta(days=29)
+    start, end = _evidence_range(date_from, date_to)
 
     trips = await _scored(pool, await _load_trips(pool, start, end, warehouse_id))
 
@@ -898,8 +911,11 @@ async def evidence(
     page_size = max(1, min(page_size, 200))
     window = days[(page - 1) * page_size: page * page_size]
 
+    start, end = _evidence_range(date_from, date_to)
     return {
         "days": window,
+        "date_from": start.isoformat(),
+        "date_to": end.isoformat(),
         "page": page,
         "page_size": page_size,
         "total": total,
@@ -970,8 +986,7 @@ async def evidence_export(
     for t in trips:
         writer.writerow(_evidence_csv_row(t))
 
-    end = date.fromisoformat(date_to) if date_to else local_today()
-    start = date.fromisoformat(date_from) if date_from else end - timedelta(days=29)
+    start, end = _evidence_range(date_from, date_to)
     filename = f"evidence_{start.isoformat()}_to_{end.isoformat()}.csv"
 
     # utf-8-sig: Excel otherwise guesses the system codepage on a BOM-less

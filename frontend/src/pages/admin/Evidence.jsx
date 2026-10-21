@@ -504,7 +504,42 @@ const FIELDS = {
   driverId: "driver_id",
   owner: "owner",
   overOnly: "over_target_only",
+  dateFrom: "date_from",
+  dateTo: "date_to",
 };
+
+const isoDate = (d) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+// The quick ranges next to the two date boxes. Each is just a pair of dates
+// written into the same two URL fields, so a preset and a hand-typed range are
+// the same thing to everything downstream. "All time" needs the app's own first
+// and last day, which is why it waits for the span to load.
+function presetRange(key, span) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const back = (n) => {
+    const d = new Date(today);
+    d.setDate(d.getDate() - (n - 1));
+    return isoDate(d);
+  };
+  switch (key) {
+    case "today": return { from: isoDate(today), to: isoDate(today) };
+    case "l7d": return { from: back(7), to: isoDate(today) };
+    case "l30d": return { from: back(30), to: isoDate(today) };
+    case "month": return { from: isoDate(new Date(today.getFullYear(), today.getMonth(), 1)), to: isoDate(today) };
+    case "all": return span?.first_date ? { from: span.first_date, to: span.last_date || isoDate(today) } : null;
+    default: return null;
+  }
+}
+
+const PRESETS = [
+  ["today", "Today"],
+  ["l7d", "Last 7 days"],
+  ["l30d", "Last 30 days"],
+  ["month", "This month"],
+  ["all", "All time"],
+];
 
 export default function Evidence() {
   const [params, setParams] = useSearchParams();
@@ -512,6 +547,7 @@ export default function Evidence() {
   const [error, setError] = useState(null);
   const [warehouses, setWarehouses] = useState([]);
   const [drivers, setDrivers] = useState([]);
+  const [span, setSpan] = useState(null);
 
   const filters = {
     q: params.get(FIELDS.q) || "",
@@ -519,6 +555,8 @@ export default function Evidence() {
     driverId: params.get(FIELDS.driverId) || "",
     owner: params.get(FIELDS.owner) || "",
     overOnly: params.get(FIELDS.overOnly) === "true",
+    dateFrom: params.get(FIELDS.dateFrom) || "",
+    dateTo: params.get(FIELDS.dateTo) || "",
   };
   const page = Math.max(1, Number(params.get("page")) || 1);
   const openId = Number(params.get("trip")) || null;
@@ -526,6 +564,7 @@ export default function Evidence() {
   useEffect(() => {
     api.get("/admin/warehouses").then((d) => setWarehouses(d.warehouses)).catch(() => {});
     api.get("/admin/drivers").then((d) => setDrivers(d.drivers)).catch(() => {});
+    api.get("/admin/data-range").then(setSpan).catch(() => {});
   }, []);
 
   const patch = useCallback(
@@ -555,6 +594,8 @@ export default function Evidence() {
     if (filters.driverId) out.set("driver_id", filters.driverId);
     if (filters.owner) out.set("owner", filters.owner);
     if (filters.overOnly) out.set("over_target_only", "true");
+    if (filters.dateFrom) out.set("date_from", filters.dateFrom);
+    if (filters.dateTo) out.set("date_to", filters.dateTo);
     return out.toString();
   })();
 
@@ -577,19 +618,24 @@ export default function Evidence() {
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState(null);
 
-  // Every trip the current filters match, not just the page on screen -- and
-  // with no date picker on this page at all, "every trip" has to mean the
-  // app's whole history, not the 30-day window /admin/evidence quietly
-  // defaults to when no dates are given. So this looks up the real span
-  // first rather than trusting that default.
+  // Every trip the current filters match, not just the page on screen. When
+  // dates are chosen the export covers exactly those. When none are, "every
+  // trip" means the app's whole history, not the 30-day window /admin/evidence
+  // defaults to when no dates are given, so the real span is looked up first
+  // rather than trusting that default.
   async function exportCsv() {
     setExporting(true);
     setExportError(null);
     try {
-      const span = await api.get("/admin/data-range");
       const out = new URLSearchParams();
-      if (span.first_date) out.set("date_from", span.first_date);
-      if (span.last_date) out.set("date_to", span.last_date);
+      if (filters.dateFrom || filters.dateTo) {
+        if (filters.dateFrom) out.set("date_from", filters.dateFrom);
+        if (filters.dateTo) out.set("date_to", filters.dateTo);
+      } else {
+        const all = span || (await api.get("/admin/data-range"));
+        if (all.first_date) out.set("date_from", all.first_date);
+        if (all.last_date) out.set("date_to", all.last_date);
+      }
       if (filters.q) out.set("q", filters.q);
       if (filters.warehouseId) out.set("warehouse_id", filters.warehouseId);
       if (filters.driverId) out.set("driver_id", filters.driverId);
@@ -693,7 +739,51 @@ export default function Evidence() {
           </ul>
         </details>
 
+        {/* The date range. Empty boxes mean the server's default, the last 30
+            days -- the line under the filters always says which days are
+            actually on screen, so the default is never a silent one. */}
         <div className="mt-3 flex flex-wrap items-center gap-2">
+          <div className="flex overflow-hidden rounded-lg border border-slate-300" role="group" aria-label="Quick date ranges">
+            {PRESETS.map(([key, label]) => {
+              const r = presetRange(key, span);
+              const active = r && r.from === (data?.date_from ?? "") && r.to === (data?.date_to ?? "")
+                && (filters.dateFrom || filters.dateTo);
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  disabled={!r}
+                  onClick={() => patch({ [FIELDS.dateFrom]: r.from, [FIELDS.dateTo]: r.to })}
+                  aria-pressed={Boolean(active)}
+                  className={`px-3 py-2 text-xs font-medium disabled:opacity-40 ${
+                    active ? "bg-brand-red text-white" : "bg-white text-slate-600 hover:bg-slate-50"
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+          <label className="flex items-center gap-1.5 text-xs text-slate-500">
+            From
+            <input type="date" value={filters.dateFrom} onChange={set("dateFrom")}
+                   min={span?.first_date || undefined} max={filters.dateTo || undefined}
+                   className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-brand-black" />
+          </label>
+          <label className="flex items-center gap-1.5 text-xs text-slate-500">
+            To
+            <input type="date" value={filters.dateTo} onChange={set("dateTo")}
+                   min={filters.dateFrom || span?.first_date || undefined}
+                   className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-brand-black" />
+          </label>
+          {(filters.dateFrom || filters.dateTo) && (
+            <button type="button" onClick={() => patch({ [FIELDS.dateFrom]: "", [FIELDS.dateTo]: "" })}
+                    className="text-xs font-semibold text-brand-red hover:underline">
+              Clear dates
+            </button>
+          )}
+        </div>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
           <input
             type="search"
             value={filters.q}
@@ -722,6 +812,8 @@ export default function Evidence() {
         </div>
         {data && (
           <p className="mt-3 text-xs text-slate-500">
+            {formatDate(data.date_from)} to {formatDate(data.date_to)}
+            {filters.dateFrom || filters.dateTo ? "" : " (last 30 days)"} ·{" "}
             Showing {data.days.length} of {data.total} jobs · {data.trip_total} trips
             {" "}· {data.over_target_total} over target
           </p>
