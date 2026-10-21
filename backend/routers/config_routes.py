@@ -287,12 +287,17 @@ async def delete_target(target_id: int, request: Request, admin=Depends(require_
 
 
 # -------------------------------------------------------------------- settings
-# The one setting the Time limits page owns; every other key is the Driver app's.
-TARGET_SETTING_KEYS = "gap_targets_enabled"
+# Which settings page owns which key. Anything not listed is the Driver app's.
+SETTING_MODULE = {
+    "gap_targets_enabled": "targets",
+    "overtime_threshold_minutes": "job_management",
+}
+SETTING_PAGES = ("driver_app", "targets", "job_management")
+OVERTIME_MAX_MINUTES = 24 * 60
 
 
 @router.get("/settings")
-async def list_settings(request: Request, admin=Depends(require_access(("driver_app", "targets")))):
+async def list_settings(request: Request, admin=Depends(require_access(SETTING_PAGES))):
     pool = get_pool(request)
     async with pool.acquire() as conn, conn.cursor(DictCursor) as cur:
         await cur.execute("SELECT setting_key, value, notes, updated_at FROM app_setting ORDER BY setting_key")
@@ -301,12 +306,18 @@ async def list_settings(request: Request, admin=Depends(require_access(("driver_
 
 
 @router.put("/settings/{key}")
-async def update_setting(key: str, body: SettingIn, request: Request, admin=Depends(require_access(("driver_app", "targets"), "edit"))):
+async def update_setting(key: str, body: SettingIn, request: Request, admin=Depends(require_access(SETTING_PAGES, "edit"))):
     pool = get_pool(request)
-    # One endpoint, two settings pages. The time-limits switch lives on Time
-    # limits and everything else on Driver app, and holding Edit on one must
-    # not be a way into the other.
-    ensure(admin, "targets" if key == TARGET_SETTING_KEYS else "driver_app", "edit")
+    # One endpoint, three settings pages. Each key belongs to the page that
+    # shows it, and holding Edit on one must not be a way into another.
+    ensure(admin, SETTING_MODULE.get(key, "driver_app"), "edit")
+    if key == "overtime_threshold_minutes":
+        try:
+            minutes = int(body.value.strip())
+        except ValueError:
+            minutes = -1
+        if not 0 <= minutes <= OVERTIME_MAX_MINUTES:
+            raise HTTPException(status_code=422, detail="overtime must be between 0 and 24 hours")
     async with pool.acquire() as conn, conn.cursor() as cur:
         await cur.execute("SELECT 1 FROM app_setting WHERE setting_key = %s", (key,))
         if await cur.fetchone() is None:

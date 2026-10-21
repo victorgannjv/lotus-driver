@@ -3,6 +3,7 @@ import { Navigate, NavLink, Outlet } from "react-router-dom";
 import { api } from "../../api";
 import Icon from "../../components/Icon";
 import { useAccess } from "../../auth/AdminAccess";
+import { formatDuration } from "../../lib/duration";
 import { driverCode } from "../../lib/ids";
 import { useConfigTabs } from "./configTabs";
 
@@ -834,6 +835,79 @@ export function DriverApp() {
           </Section>
         );
       })}
+    </Panel>
+  );
+}
+
+/* ------------------------------------------------------------- job management */
+
+const OVERTIME_KEY = "overtime_threshold_minutes";
+
+// How long a job may run before it is overtime.
+//
+// A job is one driver's one day, and its length is the figure Evidence already
+// shows as worked time (finished trips added up, breaks between them left
+// out). The limit is entered as hours and minutes, because that is how it is
+// agreed and said out loud, and stored as minutes. Zero in both boxes means no
+// limit: nothing is flagged until someone chooses a number, rather than a
+// default that would accuse real drivers on day one.
+export function JobManagement() {
+  const { rows, error, busy, run } = useList("/admin/config/settings", "settings");
+  const stored = Number(rows?.find((s) => s.setting_key === OVERTIME_KEY)?.value) || 0;
+  const [hm, setHm] = useState(null);
+
+  // Follows what is saved, so the boxes show the real value after a save or a
+  // reload rather than what was last typed.
+  useEffect(() => {
+    if (rows) setHm({ h: String(Math.floor(stored / 60)), m: String(stored % 60) });
+  }, [rows, stored]);
+
+  const h = Number(hm?.h);
+  const m = Number(hm?.m);
+  const valid = hm && Number.isInteger(h) && Number.isInteger(m) && h >= 0 && m >= 0 && m <= 59 && h * 60 + m <= 24 * 60;
+  const total = valid ? h * 60 + m : null;
+  const dirty = valid && total !== stored;
+  const exists = rows?.some((s) => s.setting_key === OVERTIME_KEY);
+
+  const save = (minutes) => run(() => api.put(`/admin/config/settings/${OVERTIME_KEY}`, { value: String(minutes) }));
+
+  return (
+    <Panel title="Job management" blurb="Rules for how long a job may run."
+           footer="A job is one driver's day. Its worked time is the finished trips added up, with breaks between trips left out.">
+      <Err>{error}</Err>
+      {!rows ? <p className="text-sm text-slate-500">Loading…</p> : !exists ? (
+        <p className="text-sm text-slate-500">This setting isn't available yet. It appears once the latest update has finished deploying.</p>
+      ) : (
+        <Section title="Overtime" blurb="Any job that works longer than this is flagged on the Evidence page.">
+          <Row>
+            <span className="min-w-[18rem] flex-1">
+              <span className="block text-sm font-medium text-brand-black">Overtime starts after</span>
+              <span className="mt-0.5 block text-xs text-slate-500">
+                Set 0 hours 0 minutes to switch it off. Nothing is flagged until a limit is set.
+              </span>
+            </span>
+            <span className="flex items-center gap-2">
+              <input type="number" min={0} max={24} inputMode="numeric" aria-label="Hours" className={`${input} w-20`}
+                     value={hm?.h ?? ""} disabled={busy}
+                     onChange={(e) => setHm((v) => ({ ...v, h: e.target.value }))} />
+              <span className="text-sm text-slate-500">hours</span>
+              <input type="number" min={0} max={59} inputMode="numeric" aria-label="Minutes" className={`${input} w-20`}
+                     value={hm?.m ?? ""} disabled={busy}
+                     onChange={(e) => setHm((v) => ({ ...v, m: e.target.value }))} />
+              <span className="text-sm text-slate-500">minutes</span>
+            </span>
+            <button type="button" className={btnPrimary} disabled={busy || !dirty} onClick={() => save(total)}>Save</button>
+          </Row>
+          {hm && !valid && (
+            <p className="pb-3 text-xs text-rose-700">Enter whole hours (0 to 24) and minutes (0 to 59), 24 hours at most.</p>
+          )}
+          <p className={`mt-1 rounded-lg px-3 py-2 text-sm ${stored ? "bg-amber-50 text-amber-900" : "bg-slate-50 text-slate-600"}`}>
+            {stored
+              ? <>Overtime starts after <b>{formatDuration(stored)}</b> worked in a job.</>
+              : "No overtime limit is set, so no job is flagged."}
+          </p>
+        </Section>
+      )}
     </Panel>
   );
 }

@@ -23,6 +23,7 @@ export const CONFIG_TABS = [
   { to: "/admin/config/targets", label: "Time limits", module: "targets" },
   { to: "/admin/config/reasons", label: "Delay reasons", module: "reasons" },
   { to: "/admin/config/driver-app", label: "Driver app", module: "driver_app" },
+  { to: "/admin/config/job-management", label: "Job management", module: "job_management" },
   { to: "/admin/config/activity", label: "Activity log", module: "activity" },
 ];
 

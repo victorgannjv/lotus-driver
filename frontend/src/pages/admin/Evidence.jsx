@@ -448,7 +448,7 @@ function JobRow({ job, openTripId, onToggleTrip, onFilterJob }) {
         <span className="text-xs text-slate-500">
           {job.trip_count} {job.trip_count === 1 ? "trip" : "trips"} · {job.jobs_total} waypoints · {job.orders_total} orders
         </span>
-        <span className="flex items-center gap-1.5 text-sm font-semibold text-brand-black" title={workedTitle}>
+        <span className={`flex items-center gap-1.5 text-sm font-semibold ${job.is_overtime ? "text-orange-700" : "text-brand-black"}`} title={workedTitle}>
           <Icon name="clock" className="h-3.5 w-3.5 text-slate-400" />
           {job.worked_minutes != null ? formatDuration(job.worked_minutes) : "—"}
           <span className="text-xs font-normal text-slate-500">worked</span>
@@ -458,6 +458,19 @@ function JobRow({ job, openTripId, onToggleTrip, onFilterJob }) {
             </span>
           )}
         </span>
+        {/* Overtime is the job's own flag, judged on the worked time shown
+            beside it against the limit in Settings > Job management. It is
+            orange so it cannot be mistaken for "over target" (red, about one
+            step running long) or a long wait (amber): this is about the day. */}
+        {job.is_overtime && (
+          <span
+            className="flex items-center gap-1 rounded-full bg-orange-100 px-2 py-0.5 text-[11px] font-semibold text-orange-800"
+            title={`Worked ${formatDuration(job.worked_minutes)}, which is ${formatDuration(job.overtime_minutes)} over the overtime limit set in Settings, Job management.${job.open_trips > 0 ? " A trip is still open, so this can still grow." : ""}`}
+          >
+            <Icon name="clock" className="h-3 w-3" />
+            Overtime +{formatDuration(job.overtime_minutes)}
+          </span>
+        )}
         {job.over_target_count > 0 && (
           <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-medium text-brand-red">
             {job.over_target_count} over target
@@ -504,6 +517,7 @@ const FIELDS = {
   driverId: "driver_id",
   owner: "owner",
   overOnly: "over_target_only",
+  overtimeOnly: "overtime_only",
   dateFrom: "date_from",
   dateTo: "date_to",
 };
@@ -555,6 +569,7 @@ export default function Evidence() {
     driverId: params.get(FIELDS.driverId) || "",
     owner: params.get(FIELDS.owner) || "",
     overOnly: params.get(FIELDS.overOnly) === "true",
+    overtimeOnly: params.get(FIELDS.overtimeOnly) === "true",
     dateFrom: params.get(FIELDS.dateFrom) || "",
     dateTo: params.get(FIELDS.dateTo) || "",
   };
@@ -594,6 +609,7 @@ export default function Evidence() {
     if (filters.driverId) out.set("driver_id", filters.driverId);
     if (filters.owner) out.set("owner", filters.owner);
     if (filters.overOnly) out.set("over_target_only", "true");
+    if (filters.overtimeOnly) out.set("overtime_only", "true");
     if (filters.dateFrom) out.set("date_from", filters.dateFrom);
     if (filters.dateTo) out.set("date_to", filters.dateTo);
     return out.toString();
@@ -641,6 +657,7 @@ export default function Evidence() {
       if (filters.driverId) out.set("driver_id", filters.driverId);
       if (filters.owner) out.set("owner", filters.owner);
       if (filters.overOnly) out.set("over_target_only", "true");
+    if (filters.overtimeOnly) out.set("overtime_only", "true");
 
       const res = await fetch(`/api/admin/evidence/export?${out.toString()}`);
       if (!res.ok) {
@@ -809,6 +826,14 @@ export default function Evidence() {
             <input type="checkbox" checked={filters.overOnly} onChange={set("overOnly")} />
             Over target only
           </label>
+          <label
+            className={`flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm ${data && !data.overtime_threshold_minutes ? "text-slate-400" : "text-slate-600"}`}
+            title={data && !data.overtime_threshold_minutes ? "No overtime limit is set. An admin sets it under Settings, Job management." : undefined}
+          >
+            <input type="checkbox" checked={filters.overtimeOnly} onChange={set("overtimeOnly")}
+                   disabled={Boolean(data && !data.overtime_threshold_minutes) && !filters.overtimeOnly} />
+            Overtime only
+          </label>
         </div>
         {data && (
           <p className="mt-3 text-xs text-slate-500">
@@ -816,6 +841,9 @@ export default function Evidence() {
             {filters.dateFrom || filters.dateTo ? "" : " (last 30 days)"} ·{" "}
             Showing {data.days.length} of {data.total} jobs · {data.trip_total} trips
             {" "}· {data.over_target_total} over target
+            {data.overtime_threshold_minutes
+              ? <> · <span className="font-medium text-orange-700">{data.overtime_total} {data.overtime_total === 1 ? "job" : "jobs"} in overtime</span> (over {formatDuration(data.overtime_threshold_minutes)})</>
+              : null}
           </p>
         )}
       </div>

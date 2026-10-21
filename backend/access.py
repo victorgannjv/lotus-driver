@@ -62,6 +62,8 @@ CATALOG = [
        "The reasons a driver can give for a delay, and who each one is charged to."),
     _m("driver_app", "Driver app", "Settings", [VIEW, EDIT],
        "What the driver app asks for: steps, photos, quick picks."),
+    _m("job_management", "Job management", "Settings", [VIEW, EDIT],
+       "How long a job may run before it counts as overtime, which the Evidence page then flags."),
     _m("activity", "Activity log", "Settings", [VIEW],
        "The record of every settings change and who made it."),
     _m("sample", "Sample data", "Settings", [VIEW, EDIT],

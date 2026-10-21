@@ -790,7 +790,17 @@ async def overview(
     }
 
 
-def _group_by_day(trips: list[dict]) -> list[dict]:
+def _overtime_threshold(settings: dict) -> int | None:
+    """The Settings > Job management limit, in minutes -- or None while it is
+    not set (0, empty, or anything unreadable), in which case nothing is flagged."""
+    try:
+        minutes = int(str(settings.get("overtime_threshold_minutes", "0")).strip() or 0)
+    except ValueError:
+        return None
+    return minutes if minutes > 0 else None
+
+
+def _group_by_day(trips: list[dict], overtime_minutes: int | None = None) -> list[dict]:
     """Trips folded under the driver_day each one belongs to, newest day
     first -- everything one driver ran on one date, which is the question a
     dispute or a roster check actually asks, not "how was trip 3000006" on
@@ -820,11 +830,18 @@ def _group_by_day(trips: list[dict]) -> list[dict]:
         # An unfinished trip is left out and counted, so the figure is never
         # quietly short: "5h 20m, 1 trip still open" says what it covers.
         done = [t["worked_minutes"] for t in ts if t.get("worked_minutes") is not None]
+        worked = round(sum(done)) if done else None
+        # Overtime is judged on the same figure the screen shows as worked
+        # time. A job with a trip still open is judged on what has finished so
+        # far: over the limit already is over, and it can only grow.
+        over_by = worked - overtime_minutes if overtime_minutes and worked is not None and worked > overtime_minutes else None
         starts = [t["started_at"] for t in ts if t.get("started_at")]
         ends = [t["ended_at"] for t in ts if t.get("ended_at")]
         rows.append({
             **day,
-            "worked_minutes": round(sum(done)) if done else None,
+            "worked_minutes": worked,
+            "is_overtime": over_by is not None,
+            "overtime_minutes": over_by,
             "open_trips": len(ts) - len(done),
             "first_started_at": min(starts) if starts else None,
             "last_ended_at": max(ends) if ends else None,
@@ -892,6 +909,7 @@ async def evidence(
     owner: str | None = None,
     over_target_only: bool = False,
     q: str | None = None,
+    overtime_only: bool = False,
     page: int = 1,
     page_size: int = 25,
     admin=Depends(require_access("evidence")),
@@ -904,7 +922,15 @@ async def evidence(
     trips = await _filtered_evidence_trips(
         pool, date_from, date_to, warehouse_id, driver_id, owner, over_target_only, q,
     )
-    days = _group_by_day(trips)
+    threshold = _overtime_threshold(await load_settings(pool))
+    days = _group_by_day(trips, threshold)
+    overtime_total = sum(1 for d in days if d["is_overtime"])
+    if overtime_only:
+        # Overtime belongs to the job, not to a trip, so this filters whole
+        # days and the trip counts below follow what is left.
+        days = [d for d in days if d["is_overtime"]]
+        keep = {d["driver_day_id"] for d in days}
+        trips = [t for t in trips if t["driver_day_id"] in keep]
 
     total = len(days)
     page = max(1, page)
@@ -922,6 +948,11 @@ async def evidence(
         "pages": max(1, (total + page_size - 1) // page_size),
         "trip_total": len(trips),
         "over_target_total": sum(1 for t in trips if t["over_target"]),
+        # 0 / None means no limit is set. The count is of jobs over it in the
+        # whole filtered span, not just the page, so it still says how many
+        # there are when the overtime-only box is off.
+        "overtime_threshold_minutes": threshold,
+        "overtime_total": overtime_total,
     }
 
 
@@ -937,10 +968,11 @@ EVIDENCE_CSV_HEADER = [
     "time_at_outlet_minutes", "time_at_outlet_over_target",
     "waypoints", "orders", "failed_orders",
     "owner", "reason",
+    "job_worked_minutes", "job_overtime_minutes",
 ]
 
 
-def _evidence_csv_row(t: dict) -> list:
+def _evidence_csv_row(t: dict, job: dict | None = None) -> list:
     cps = {c["checkpoint"]: c["occurred_at"] for c in t["checkpoints"]}
     wait_gap = next((g for g in t["gaps"] if g["gap_code"] == "waiting_for_lotus"), None)
     wait_minutes = wait_gap["minutes"] if wait_gap else None
@@ -956,6 +988,11 @@ def _evidence_csv_row(t: dict) -> list:
         "yes" if (tao and tao["over_target"]) else "no",
         t["jobs"], t["orders"], t["failed_orders"],
         t["owner"] or "", t["reason"] or "",
+        # The job's, repeated on each of its trips: overtime is judged on the
+        # whole day, so a trip row alone cannot say it. Blank, not 0, when no
+        # limit is set or nothing finished.
+        (job or {}).get("worked_minutes") if (job or {}).get("worked_minutes") is not None else "",
+        (job or {}).get("overtime_minutes") if (job or {}).get("overtime_minutes") is not None else "",
     ]
 
 
@@ -969,6 +1006,7 @@ async def evidence_export(
     owner: str | None = None,
     over_target_only: bool = False,
     q: str | None = None,
+    overtime_only: bool = False,
     admin=Depends(require_access("evidence")),
 ):
     """The same filtered trips GET /evidence pages through, as one CSV file --
@@ -978,13 +1016,17 @@ async def evidence_export(
     trips = await _filtered_evidence_trips(
         pool, date_from, date_to, warehouse_id, driver_id, owner, over_target_only, q,
     )
+    threshold = _overtime_threshold(await load_settings(pool))
+    jobs = {d["driver_day_id"]: d for d in _group_by_day(trips, threshold)}
+    if overtime_only:
+        trips = [t for t in trips if jobs[t["driver_day_id"]]["is_overtime"]]
     trips.sort(key=lambda t: (t["work_date"], t["driver_name"] or "", t["id"]))
 
     buf = io.StringIO()
     writer = csv.writer(buf)
     writer.writerow(EVIDENCE_CSV_HEADER)
     for t in trips:
-        writer.writerow(_evidence_csv_row(t))
+        writer.writerow(_evidence_csv_row(t, jobs.get(t["driver_day_id"])))
 
     start, end = _evidence_range(date_from, date_to)
     filename = f"evidence_{start.isoformat()}_to_{end.isoformat()}.csv"

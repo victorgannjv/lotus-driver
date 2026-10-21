@@ -82,6 +82,9 @@ const ConfigTargets = lazyRoute(() =>
 const ConfigDriverApp = lazyRoute(() =>
   import("./pages/admin/Configuration").then((m) => ({ default: m.DriverApp }))
 );
+const ConfigJobManagement = lazyRoute(() =>
+  import("./pages/admin/Configuration").then((m) => ({ default: m.JobManagement }))
+);
 const AdminJobDetail = lazyRoute(() => import("./pages/admin/JobDetail"));
 const ScanRegister = lazyRoute(() => import("./pages/driver/ScanRegister"));
 const ScanComplete = lazyRoute(() => import("./pages/driver/ScanComplete"));
@@ -182,6 +185,7 @@ export default function App() {
               <Route path="reasons" element={<Guard module="reasons"><ConfigReasons /></Guard>} />
               <Route path="targets" element={<Guard module="targets"><ConfigTargets /></Guard>} />
               <Route path="driver-app" element={<Guard module="driver_app"><ConfigDriverApp /></Guard>} />
+              <Route path="job-management" element={<Guard module="job_management"><ConfigJobManagement /></Guard>} />
               <Route path="activity" element={<Guard module="activity"><ConfigActivity /></Guard>} />
               <Route path="sample" element={<Guard module="sample"><ConfigSample /></Guard>} />
             </Route>
