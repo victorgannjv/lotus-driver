@@ -5,17 +5,18 @@ are based. Built from the same trips the Dashboard and Evidence screens read
 (analytics_routes._scored), so a driver's hours here are the same hours that
 page shows for their jobs.
 """
-from datetime import date, timedelta
+import csv
+import io
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from asyncmy.cursors import DictCursor
 from fastapi import APIRouter, Depends, Request
+from fastapi.responses import Response
 
 from auth import require_access
-from clocks import local_today
 from db import get_pool
 from routers.analytics_routes import (
-    _avg_worked_per_day, _group_by_day, _load_trips, _overtime_threshold, _scored,
+    _avg_worked_per_day, _evidence_range, _group_by_day, _load_trips, _overtime_threshold, _scored,
 )
 from trips import load_settings
 
@@ -110,17 +111,13 @@ def _driver_row(driver: dict, trips: list[dict], threshold: int | None = None, r
     }
 
 
-@router.get("/performance")
-async def performance(
-    request: Request,
-    date_from: str | None = None,
-    date_to: str | None = None,
-    warehouse_id: int | None = None,
-    admin=Depends(require_access("driver_performance")),
-):
-    pool = get_pool(request)
-    end = date.fromisoformat(date_to) if date_to else local_today()
-    start = date.fromisoformat(date_from) if date_from else end - timedelta(days=29)
+async def _performance(pool, date_from: str | None, date_to: str | None, warehouse_id: int | None) -> dict:
+    """Everything the page shows, for one span and outlet. The screen and the
+    CSV export both come from here, so a downloaded file can never disagree
+    with the table it was downloaded from."""
+    # The Evidence page's span rule: no dates is the last 30 days, and a bad or
+    # backwards range is a 422 rather than a server error.
+    start, end = _evidence_range(date_from, date_to)
 
     trips = await _scored(pool, await _load_trips(pool, start, end, warehouse_id))
     settings = await load_settings(pool)
@@ -170,3 +167,90 @@ async def performance(
         "cost_per_hour": float(rate) if rate else None,
         "overtime_threshold_minutes": threshold,
     }
+
+
+@router.get("/performance")
+async def performance(
+    request: Request,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    warehouse_id: int | None = None,
+    admin=Depends(require_access("driver_performance")),
+):
+    return await _performance(get_pool(request), date_from, date_to, warehouse_id)
+
+
+def _matches(row: dict, q: str | None) -> bool:
+    """The page's search box: part of a name, or the driver's id as printed
+    ("D-12") or bare ("12")."""
+    needle = (q or "").strip().lower()
+    if not needle:
+        return True
+    return (needle in row["driver_name"].lower()
+            or needle == f"d-{row['driver_id']}"
+            or needle == str(row["driver_id"]))
+
+
+FORMULA_STARTS = ("=", "+", "-", "@", chr(9), chr(13))
+
+
+def _csv_text(value) -> str:
+    """A text cell that a spreadsheet will not run as a formula. A name or
+    outlet starting with = + - or @ is read by Excel as an instruction, and
+    both come from people typing into forms."""
+    text = "" if value is None else str(value)
+    return "'" + text if text[:1] in FORMULA_STARTS else text
+
+
+def _hours(minutes) -> str:
+    return "" if minutes is None else f"{minutes / 60:.2f}"
+
+
+PERFORMANCE_CSV_HEADER = [
+    "driver_id", "driver", "outlet", "status",
+    "trips", "open_trips",
+    "total_hours_worked", "total_cost_rm",
+    "avg_hours_per_day", "days_counted", "days_not_finished",
+    "avg_time_per_trip_minutes", "trips_finished",
+    "ot_days", "ot_job_ids",
+]
+
+
+@router.get("/performance/export")
+async def performance_export(
+    request: Request,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    warehouse_id: int | None = None,
+    q: str | None = None,
+    admin=Depends(require_access("driver_performance")),
+):
+    """The table as one CSV: the same rows the page shows for the same period,
+    outlet and search. Hours are in decimal hours and cost in RM, as numbers a
+    spreadsheet can add up. Blank means there is no figure, not zero."""
+    result = await _performance(get_pool(request), date_from, date_to, warehouse_id)
+    rows = [r for r in result["drivers"] if _matches(r, q)]
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(PERFORMANCE_CSV_HEADER)
+    for r in rows:
+        writer.writerow([
+            f"D-{r['driver_id']}", _csv_text(r["driver_name"]), _csv_text(r["outlet"]), r["status"],
+            r["trips"], r["open_trips"],
+            _hours(r["total_worked_minutes"]),
+            "" if r["total_cost"] is None else f"{r['total_cost']:.2f}",
+            _hours(r["avg_worked_minutes"]), r["days_counted"], r["days_left_out"],
+            "" if r["avg_trip_minutes"] is None else r["avg_trip_minutes"], r["trips_timed"],
+            "" if r["ot_days"] is None else r["ot_days"],
+            "; ".join(f"J-{j['job_id']}" for j in r["ot_jobs"]),
+        ])
+
+    filename = f"driver_performance_{result['date_from']}_to_{result['date_to']}.csv"
+    # utf-8-sig, as the Evidence export: Excel otherwise guesses the system
+    # codepage and mangles any name outside ASCII.
+    return Response(
+        content=buf.getvalue().encode("utf-8-sig"),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

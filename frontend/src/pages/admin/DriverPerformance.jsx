@@ -81,6 +81,8 @@ export default function DriverPerformance() {
   // Which drivers' overtime lists are open. Kept by driver id, so a list stays
   // open through a re-sort or a search and closes only when asked to.
   const [openOt, setOpenOt] = useState(() => new Set());
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState(null);
   const { can } = useAccess();
   const toggleOt = (id) =>
     setOpenOt((prev) => {
@@ -135,6 +137,43 @@ export default function DriverPerformance() {
     });
   }, [data, q, sort]);
 
+  // The file is the table you are looking at: the same period, outlet and
+  // search, asked of the server so the figures come from the same code that
+  // drew them rather than being rebuilt here.
+  async function exportCsv() {
+    setExporting(true);
+    setExportError(null);
+    try {
+      const qs = new URLSearchParams({ date_from: from, date_to: to });
+      if (warehouseId) qs.set("warehouse_id", warehouseId);
+      if (q.trim()) qs.set("q", q.trim());
+      const res = await fetch(`/api/admin/performance/export?${qs}`);
+      if (!res.ok) {
+        let detail;
+        try {
+          detail = (await res.json())?.detail;
+        } catch {
+          detail = null;
+        }
+        throw new Error(detail || `export failed (HTTP ${res.status})`);
+      }
+      const blob = await res.blob();
+      const match = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") || "");
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = match ? match[1] : "driver_performance.csv";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setExportError(err.message || "could not export driver performance");
+    } finally {
+      setExporting(false);
+    }
+  }
+
   const toggleSort = (key, text) =>
     setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: text ? "asc" : "desc" }));
 
@@ -143,7 +182,19 @@ export default function DriverPerformance() {
   return (
     <div>
       <div className="mb-4 rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
-        <h2 className="text-base font-semibold text-brand-black">Driver performance</h2>
+        <div className="flex items-start justify-between gap-3">
+          <h2 className="text-base font-semibold text-brand-black">Driver performance</h2>
+          <button
+            type="button"
+            onClick={exportCsv}
+            disabled={exporting || !ready}
+            title={ready ? "Download the table below as a CSV file" : "Pick both dates first"}
+            className="shrink-0 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-brand-black hover:bg-slate-50 disabled:opacity-50"
+          >
+            {exporting ? "Exporting…" : "Export CSV"}
+          </button>
+        </div>
+        {exportError && <p className="mt-1 text-xs text-red-600">{exportError}</p>}
         <p className="mt-0.5 text-xs text-slate-500">
           How each driver is doing over the period: trips done, the hours they work in a day, and how
           long a trip takes them.
