@@ -6,6 +6,7 @@ are based. Built from the same trips the Dashboard and Evidence screens read
 page shows for their jobs.
 """
 from datetime import date, timedelta
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from asyncmy.cursors import DictCursor
 from fastapi import APIRouter, Depends, Request
@@ -33,6 +34,34 @@ def _avg_trip_minutes(trips: list[dict]) -> tuple[int | None, int]:
     return (round(sum(done) / len(done)) if done else None), len(done)
 
 
+def _cost_per_hour(settings: dict) -> Decimal | None:
+    """The Settings > Job management rate, in RM per hour -- or None while it is
+    not set (0, empty or unreadable), in which case no cost is shown."""
+    try:
+        rate = Decimal(str(settings.get("cost_per_hour", "0")).strip() or "0")
+    except InvalidOperation:
+        return None
+    return rate if rate.is_finite() and rate > 0 else None
+
+
+def _total_worked_minutes(trips: list[dict]) -> float | None:
+    """Every finished trip's time added together. A trip that has not finished
+    has no end to measure and is left out (the row says how many), so the total
+    never contains a "so far". None, not 0, when nothing has finished."""
+    done = [t["worked_minutes"] for t in trips if t.get("worked_minutes") is not None]
+    return round(sum(done), 2) if done else None
+
+
+def _cost(minutes: float | None, rate: Decimal | None) -> float | None:
+    """Hours x rate, to the sen. Worked on the exact minutes, so an hour and a
+    half at RM 20 is RM 30.00 and not a rounding of a rounding. A half sen
+    rounds UP (19.125 -> 19.13): Decimal's default is to round half to even,
+    which is right for statistics and not what anyone checking a bill expects."""
+    if minutes is None or rate is None:
+        return None
+    return float((Decimal(str(minutes)) / 60 * rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+
+
 def _overtime_jobs(trips: list[dict], threshold: int | None) -> list[dict]:
     """The driver's jobs (J-ids) flagged as overtime, newest first.
 
@@ -54,10 +83,11 @@ def _overtime_jobs(trips: list[dict], threshold: int | None) -> list[dict]:
     ]
 
 
-def _driver_row(driver: dict, trips: list[dict], threshold: int | None = None) -> dict:
+def _driver_row(driver: dict, trips: list[dict], threshold: int | None = None, rate: Decimal | None = None) -> dict:
     avg_day, days_counted, days_left_out = _avg_worked_per_day(trips)
     avg_trip, trips_timed = _avg_trip_minutes(trips)
     ot_jobs = _overtime_jobs(trips, threshold)
+    total_minutes = _total_worked_minutes(trips)
     return {
         "driver_id": driver["id"],
         "driver_name": driver["name"],
@@ -73,6 +103,8 @@ def _driver_row(driver: dict, trips: list[dict], threshold: int | None = None) -
         "trips_timed": trips_timed,
         # None, not 0, while no limit is set: "0 overtime days" would claim
         # everyone was inside a limit that does not exist.
+        "total_worked_minutes": total_minutes,
+        "total_cost": _cost(total_minutes, rate),
         "ot_days": len(ot_jobs) if threshold else None,
         "ot_jobs": ot_jobs,
     }
@@ -91,7 +123,9 @@ async def performance(
     start = date.fromisoformat(date_from) if date_from else end - timedelta(days=29)
 
     trips = await _scored(pool, await _load_trips(pool, start, end, warehouse_id))
-    threshold = _overtime_threshold(await load_settings(pool))
+    settings = await load_settings(pool)
+    threshold = _overtime_threshold(settings)
+    rate = _cost_per_hour(settings)
 
     by_driver: dict[int, list[dict]] = {}
     for t in trips:
@@ -114,7 +148,7 @@ async def performance(
         )
         drivers = [d for d in await cur.fetchall() if d["status"] == "active" or d["id"] in by_driver]
 
-    rows = [_driver_row(d, by_driver.get(d["id"], []), threshold) for d in drivers]
+    rows = [_driver_row(d, by_driver.get(d["id"], []), threshold, rate) for d in drivers]
 
     avg_minutes, _, _ = _avg_worked_per_day(trips)
     avg_trip, _ = _avg_trip_minutes(trips)
@@ -129,6 +163,10 @@ async def performance(
             "avg_worked_minutes": avg_minutes,
             "avg_trip_minutes": avg_trip,
             "ot_days": sum(r["ot_days"] or 0 for r in rows) if threshold else None,
+            "total_worked_minutes": _total_worked_minutes(trips),
+            # The sum of the rows as shown, so the column and its total agree to the sen.
+            "total_cost": float(sum((Decimal(str(r["total_cost"])) for r in rows if r["total_cost"] is not None), Decimal(0))) if rate else None,
         },
+        "cost_per_hour": float(rate) if rate else None,
         "overtime_threshold_minutes": threshold,
     }

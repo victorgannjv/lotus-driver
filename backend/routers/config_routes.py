@@ -13,6 +13,7 @@ on the same row so history re-scores consistently.
 import json
 import sys
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation
 
 from asyncmy.cursors import DictCursor
 
@@ -291,9 +292,11 @@ async def delete_target(target_id: int, request: Request, admin=Depends(require_
 SETTING_MODULE = {
     "gap_targets_enabled": "targets",
     "overtime_threshold_minutes": "job_management",
+    "cost_per_hour": "job_management",
 }
 SETTING_PAGES = ("driver_app", "targets", "job_management")
 OVERTIME_MAX_MINUTES = 24 * 60
+COST_PER_HOUR_MAX = Decimal("10000")
 
 
 @router.get("/settings")
@@ -318,15 +321,26 @@ async def update_setting(key: str, body: SettingIn, request: Request, admin=Depe
             minutes = -1
         if not 0 <= minutes <= OVERTIME_MAX_MINUTES:
             raise HTTPException(status_code=422, detail="overtime must be between 0 and 24 hours")
+    value = body.value.strip()
+    if key == "cost_per_hour":
+        # Money is kept to the sen and stored in one spelling, so "25", "25.5"
+        # and "25.50" are the same setting and the audit log reads the same.
+        try:
+            rate = Decimal(value)
+        except InvalidOperation:
+            rate = Decimal(-1)
+        if not rate.is_finite() or rate < 0 or rate > COST_PER_HOUR_MAX or rate != rate.quantize(Decimal("0.01")):
+            raise HTTPException(status_code=422, detail="cost per hour must be an amount in RM, from 0 to 10,000, to the sen")
+        value = f"{rate:.2f}"
     async with pool.acquire() as conn, conn.cursor() as cur:
         await cur.execute("SELECT 1 FROM app_setting WHERE setting_key = %s", (key,))
         if await cur.fetchone() is None:
             raise HTTPException(status_code=404, detail="unknown setting")
-        await cur.execute("UPDATE app_setting SET value = %s WHERE setting_key = %s", (body.value.strip(), key))
+        await cur.execute("UPDATE app_setting SET value = %s WHERE setting_key = %s", (value, key))
     await audit(pool, admin, "setting", key, "update",
-                f"Changed driver-app setting '{key}' to '{body.value.strip()}'",
-                after={"value": body.value.strip()})
-    return {"setting_key": key, "value": body.value.strip()}
+                f"Changed setting '{key}' to '{value}'",
+                after={"value": value})
+    return {"setting_key": key, "value": value}
 
 
 # ---------------------------------------------------------------------- roster

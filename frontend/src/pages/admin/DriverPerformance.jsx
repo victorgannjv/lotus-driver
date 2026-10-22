@@ -4,6 +4,7 @@ import { api } from "../../api";
 import { useAccess } from "../../auth/AdminAccess";
 import { formatDate, formatDuration, formatShortDate } from "../../lib/duration";
 import { driverCode } from "../../lib/ids";
+import { formatRM } from "../../lib/money";
 
 // One row per driver: how much they drove, how long they work in a day, how
 // long a trip takes, and where they are based.
@@ -45,6 +46,8 @@ const COLUMNS = [
   { key: "driver_id", label: "Driver ID", text: true },
   { key: "driver_name", label: "Driver", text: true },
   { key: "trips", label: "Trips" },
+  { key: "total_worked_minutes", label: "Total hours worked" },
+  { key: "total_cost", label: "Total cost" },
   { key: "avg_worked_minutes", label: "Avg hours per day" },
   { key: "avg_trip_minutes", label: "Avg time per trip" },
   { key: "ot_days", label: "Number of OT days" },
@@ -196,9 +199,12 @@ export default function DriverPerformance() {
       {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
 
       {s && (
-        <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
           <Tile label="Drivers" value={s.drivers} sub={`${s.drivers_with_trips} drove in this period`} />
           <Tile label="Trips" value={s.trips} />
+          <Tile label="Total hours worked" value={formatDuration(s.total_worked_minutes)} sub="all drivers, finished trips" />
+          <Tile label="Total cost" value={s.total_cost == null ? "—" : formatRM(s.total_cost)}
+                sub={data.cost_per_hour ? `at ${formatRM(data.cost_per_hour)} an hour` : "no cost per hour set"} />
           <Tile label="Avg hours per day" value={formatDuration(s.avg_worked_minutes)} sub="across all drivers" />
           <Tile label="Avg time per trip" value={formatDuration(s.avg_trip_minutes)} sub="across all drivers" />
         </div>
@@ -237,6 +243,27 @@ export default function DriverPerformance() {
                   {d.trips ? d.trips : <Blank />}
                   {d.open_trips > 0 && (
                     <span className="block text-[11px] text-amber-700">{d.open_trips} still open</span>
+                  )}
+                </td>
+                <td className="px-4 py-3 text-right tabular-nums">
+                  {d.total_worked_minutes == null ? <Blank /> : formatDuration(d.total_worked_minutes)}
+                  {d.total_worked_minutes != null && (
+                    <span className="block text-[11px] text-slate-400" title="The same time in decimal hours, which is what the cost is worked from.">
+                      {(d.total_worked_minutes / 60).toFixed(2)} h
+                    </span>
+                  )}
+                  {d.open_trips > 0 && (
+                    <span className="block text-[11px] text-amber-700"
+                          title="A trip that has not finished has no end to measure, so its time is not in the total.">
+                      {d.open_trips} open not counted
+                    </span>
+                  )}
+                </td>
+                <td className="px-4 py-3 text-right tabular-nums">
+                  {d.total_cost == null ? (
+                    <span className="text-slate-300" title={data.cost_per_hour ? "No finished trips yet." : "No cost per hour is set. An admin sets it under Settings, Job management."}>—</span>
+                  ) : (
+                    <span className="font-medium text-brand-black">{formatRM(d.total_cost)}</span>
                   )}
                 </td>
                 <td className="px-4 py-3 text-right tabular-nums">
@@ -337,6 +364,14 @@ export default function DriverPerformance() {
           From arriving at the outlet to the end of the trip (Returned), averaged over the driver's finished trips.
           A trip still open has no end yet and is left out. Hours per day is the total of a driver's finished trips
           in a day, averaged over days where every trip has finished.
+        </p>
+      )}
+      {data && (
+        <p className="mt-2 max-w-3xl text-xs text-slate-500">
+          <b className="font-semibold text-slate-600">Total hours and cost.</b>{" "}
+          Total hours worked is every finished trip in the period added together, from arriving at the outlet to
+          returning. A trip still open is left out. Total cost is those hours times the cost per hour
+          {data.cost_per_hour ? ` (${formatRM(data.cost_per_hour)})` : ", which is not set yet. An admin sets it under Settings, Job management"}.
         </p>
       )}
       {data && (

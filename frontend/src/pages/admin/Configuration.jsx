@@ -5,6 +5,7 @@ import Icon from "../../components/Icon";
 import { useAccess } from "../../auth/AdminAccess";
 import { formatDuration } from "../../lib/duration";
 import { driverCode } from "../../lib/ids";
+import { formatRM } from "../../lib/money";
 import { useConfigTabs } from "./configTabs";
 
 // Settings, written for an ops coordinator rather than a developer.
@@ -842,6 +843,7 @@ export function DriverApp() {
 /* ------------------------------------------------------------- job management */
 
 const OVERTIME_KEY = "overtime_threshold_minutes";
+const COST_KEY = "cost_per_hour";
 
 // How long a job may run before it is overtime.
 //
@@ -855,6 +857,20 @@ export function JobManagement() {
   const { rows, error, busy, run } = useList("/admin/config/settings", "settings");
   const stored = Number(rows?.find((s) => s.setting_key === OVERTIME_KEY)?.value) || 0;
   const [hm, setHm] = useState(null);
+
+  // What an hour of a driver's time costs. Held as the text being typed and
+  // compared to the saved value as a number, so "25" against a stored "25.00"
+  // is not a change.
+  const storedCost = Number(rows?.find((s) => s.setting_key === COST_KEY)?.value) || 0;
+  const [cost, setCost] = useState(null);
+  useEffect(() => {
+    if (rows) setCost(storedCost.toFixed(2));
+  }, [rows, storedCost]);
+  const costNum = Number(cost);
+  const costValid = cost !== null && cost.trim() !== "" && Number.isFinite(costNum) && costNum >= 0 && costNum <= 10000
+    && Math.abs(costNum * 100 - Math.round(costNum * 100)) < 1e-6;
+  const costDirty = costValid && Math.round(costNum * 100) !== Math.round(storedCost * 100);
+  const costExists = rows?.some((s) => s.setting_key === COST_KEY);
 
   // Follows what is saved, so the boxes show the real value after a save or a
   // reload rather than what was last typed.
@@ -870,15 +886,17 @@ export function JobManagement() {
   const exists = rows?.some((s) => s.setting_key === OVERTIME_KEY);
 
   const save = (minutes) => run(() => api.put(`/admin/config/settings/${OVERTIME_KEY}`, { value: String(minutes) }));
+  const save2 = (key, value) => run(() => api.put(`/admin/config/settings/${key}`, { value: String(value) }));
 
   return (
-    <Panel title="Job management" blurb="Rules for how long a job may run."
+    <Panel title="Job management" blurb="Overtime and cost rules for jobs."
            footer="A job is one driver's day. Its worked time is the finished trips added up, with breaks between trips left out.">
       <Err>{error}</Err>
-      {!rows ? <p className="text-sm text-slate-500">Loading…</p> : !exists ? (
+      {!rows ? <p className="text-sm text-slate-500">Loading…</p> : !exists && !costExists ? (
         <p className="text-sm text-slate-500">This setting isn't available yet. It appears once the latest update has finished deploying.</p>
       ) : (
-        <Section title="Overtime" blurb="Any job that works longer than this is flagged on the Evidence page.">
+        <>
+        {exists && <Section title="Overtime" blurb="Any job that works longer than this is flagged on the Evidence page.">
           <Row>
             <span className="min-w-[18rem] flex-1">
               <span className="block text-sm font-medium text-brand-black">Overtime starts after</span>
@@ -906,7 +924,37 @@ export function JobManagement() {
               ? <>Overtime starts after <b>{formatDuration(stored)}</b> worked in a job.</>
               : "No overtime limit is set, so no job is flagged."}
           </p>
-        </Section>
+        </Section>}
+        {costExists && (
+          <Section title="Cost" blurb="Used on Driver performance to turn worked hours into a cost.">
+            <Row>
+              <span className="min-w-[18rem] flex-1">
+                <span className="block text-sm font-medium text-brand-black">Cost per hour</span>
+                <span className="mt-0.5 block text-xs text-slate-500">
+                  In RM, to the sen. Set 0 to leave it unset. No cost is shown until a rate is set.
+                </span>
+              </span>
+              <span className="flex items-center gap-2">
+                <span className="text-sm text-slate-500">RM</span>
+                <input type="number" min={0} max={10000} step="0.01" inputMode="decimal" aria-label="Cost per hour in RM"
+                       className={`${input} w-28`} value={cost ?? ""} disabled={busy}
+                       onChange={(e) => setCost(e.target.value)} />
+                <span className="text-sm text-slate-500">per hour</span>
+              </span>
+              <button type="button" className={btnPrimary} disabled={busy || !costDirty}
+                      onClick={() => save2(COST_KEY, costNum.toFixed(2))}>Save</button>
+            </Row>
+            {cost !== null && !costValid && (
+              <p className="pb-3 text-xs text-rose-700">Enter an amount from 0 to 10,000, with at most two decimal places.</p>
+            )}
+            <p className={`mt-1 rounded-lg px-3 py-2 text-sm ${storedCost ? "bg-amber-50 text-amber-900" : "bg-slate-50 text-slate-600"}`}>
+              {storedCost
+                ? <>An hour of a driver's time costs <b>{formatRM(storedCost)}</b>.</>
+                : "No cost per hour is set, so Driver performance shows no cost."}
+            </p>
+          </Section>
+        )}
+        </>
       )}
     </Panel>
   );
