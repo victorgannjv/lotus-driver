@@ -63,48 +63,76 @@ def _cost(minutes: float | None, rate: Decimal | None) -> float | None:
     return float((Decimal(str(minutes)) / 60 * rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
 
-def _overtime_jobs(trips: list[dict], threshold: int | None) -> list[dict]:
-    """The driver's jobs (J-ids) flagged as overtime, newest first.
+# Overtime is counted in half-hour steps, rounded UP: any overtime up to 30
+# minutes counts as 0.5 h, over 30 up to 60 minutes as 1 h, and so on. 9h01 on a
+# 9h limit is 0.5 h; 9h30 is 0.5 h; 9h31 is 1 h; 10h01 is 1.5 h.
+OT_STEP_MINUTES = 30
+
+
+def _ot_counted_minutes(over_minutes: int | float | None) -> int:
+    """Minutes past the limit -> the overtime that is counted, in whole steps."""
+    if not over_minutes or over_minutes <= 0:
+        return 0
+    return -(-int(over_minutes) // OT_STEP_MINUTES) * OT_STEP_MINUTES
+
+
+def _overtime_split(trips: list[dict], threshold: int | None) -> tuple[list[dict], int | None]:
+    """The driver's overtime jobs (J-ids, newest first) and their regular time.
 
     Judged by the same rule as the Evidence page, because it is the same code:
     a job is one driver's one day, its worked time is the finished trips added
     up, and it is overtime when that is over the Job management limit. With no
-    limit set nothing is overtime.
+    limit set nothing is overtime and there is no split (None).
+
+    Each overtime job carries the minutes actually past the limit AND the
+    minutes counted for it (rounded up to the half hour). Regular minutes are
+    the time up to the limit in every job, so a day over the limit contributes
+    exactly the limit, and a day under it contributes what was worked.
     """
-    return [
+    if not threshold:
+        return [], None
+    jobs = _group_by_day(trips, threshold)  # newest first
+    ot_jobs = [
         {
             "job_id": d["driver_day_id"],
             "work_date": d["work_date"],
             "worked_minutes": d["worked_minutes"],
             "overtime_minutes": d["overtime_minutes"],
+            "ot_counted_minutes": _ot_counted_minutes(d["overtime_minutes"]),
             "open_trips": d["open_trips"],
         }
-        for d in _group_by_day(trips, threshold)  # newest first
-        if d["is_overtime"]
+        for d in jobs if d["is_overtime"]
     ]
+    finished = [d["worked_minutes"] for d in jobs if d["worked_minutes"] is not None]
+    regular = sum(min(w, threshold) for w in finished) if finished else None
+    return ot_jobs, regular
 
 
 def _driver_row(driver: dict, trips: list[dict], threshold: int | None = None, rate: Decimal | None = None) -> dict:
     avg_day, days_counted, days_left_out = _avg_worked_per_day(trips)
     avg_trip, trips_timed = _avg_trip_minutes(trips)
-    ot_jobs = _overtime_jobs(trips, threshold)
+    ot_jobs, regular_minutes = _overtime_split(trips, threshold)
     total_minutes = _total_worked_minutes(trips)
-    total_cost = _cost(total_minutes, rate)
 
-    # Overtime hours are the hours past the limit in each job (a driver's day),
-    # added up -- the same per-job figures that flag the job, so the hours here
-    # and the days counted beside them always agree. Without a limit nothing
-    # is "regular" or "overtime", so all three figures are blank, not zero.
-    ot_minutes = sum(j["overtime_minutes"] for j in ot_jobs) if threshold else None
+    # Overtime hours are the COUNTED overtime: each day past the limit rounded
+    # up to the half hour, added up. Without a limit nothing is "regular" or
+    # "overtime", so those figures are blank, not zero.
+    ot_minutes = sum(j["ot_counted_minutes"] for j in ot_jobs) if threshold else None
     ot_cost = _cost(ot_minutes, rate) if threshold else None
-    # Regular cost is what is LEFT of the total once overtime is taken out,
-    # rather than a third multiplication. Rounding each of the three
-    # separately can leave them a sen apart; this way regular + overtime
-    # equals the total to the sen, always.
-    regular_cost = (
-        float(Decimal(str(total_cost)) - Decimal(str(ot_cost)))
-        if total_cost is not None and ot_cost is not None else None
-    )
+    regular_cost = _cost(regular_minutes, rate) if threshold else None
+
+    # With a limit, the total is what is actually payable: the regular hours at
+    # their real length plus the overtime in half-hour steps. So Regular + OT
+    # equals Total by construction, and Total can run slightly above hours x
+    # rate -- the half-hour rounding is a cost. Without a limit there is no
+    # overtime, and it is simply hours x rate.
+    if threshold:
+        total_cost = (
+            float(Decimal(str(regular_cost)) + Decimal(str(ot_cost)))
+            if regular_cost is not None and ot_cost is not None else None
+        )
+    else:
+        total_cost = _cost(total_minutes, rate)
     return {
         "driver_id": driver["id"],
         "driver_name": driver["name"],

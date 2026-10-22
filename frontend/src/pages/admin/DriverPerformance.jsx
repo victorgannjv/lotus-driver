@@ -411,6 +411,9 @@ export default function DriverPerformance() {
                           <span className="text-slate-500">{formatDate(j.work_date)}</span>
                           <span className="tabular-nums text-slate-700">{formatDuration(j.worked_minutes)} worked</span>
                           <span className="font-semibold tabular-nums text-orange-800">+{formatDuration(j.overtime_minutes)}</span>
+                          <span className="tabular-nums text-slate-500" title="Overtime is counted in half-hour steps, rounded up.">
+                            counts as {formatDuration(j.ot_counted_minutes)}
+                          </span>
                           {j.open_trips > 0 && (
                             <span className="text-amber-700" title="A trip is still open, so this can still grow.">· trip open</span>
                           )}
@@ -461,7 +464,7 @@ export default function DriverPerformance() {
           returning. A trip still open is left out. Total cost is those hours times the cost per hour
           {data.cost_per_hour ? ` (${formatRM(data.cost_per_hour)})` : ", which is not set yet. An admin sets it under Settings, Job management"}.
           {data.overtime_threshold_minutes
-            ? ` Total OT hours is the time past ${formatDuration(data.overtime_threshold_minutes)} in each day, added up. Regular hours cost is the cost of the hours up to that limit and OT cost is the cost of the hours past it, at the same hourly rate, so Regular hours cost + OT cost = Total cost.`
+            ? ` Overtime is the time past ${formatDuration(data.overtime_threshold_minutes)} in a day, counted in half-hour steps rounded up (up to 30 minutes over counts as 0.5 h, 31 to 60 minutes as 1 h, and so on). Total OT hours is that counted overtime added up. Regular hours cost is the hours up to the limit, OT cost is the counted overtime hours, both at the hourly rate, and Total cost is the two added together, so it can be a little above total hours x rate.`
             : " Regular hours cost and OT cost need an overtime limit, which is not set yet. An admin sets it under Settings, Job management."}
         </p>
       )}
