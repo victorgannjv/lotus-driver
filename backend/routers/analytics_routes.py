@@ -792,7 +792,11 @@ async def overview(
 
 def _overtime_threshold(settings: dict) -> int | None:
     """The Settings > Job management limit, in minutes -- or None while it is
-    not set (0, empty, or anything unreadable), in which case nothing is flagged."""
+    not set (0, empty, or anything unreadable), in which case nothing is flagged.
+
+    Admin-only. Overtime is flagged on the Evidence and Driver performance
+    pages and nowhere a driver can see it: not in the driver app, not in any
+    endpoint it calls."""
     try:
         minutes = int(str(settings.get("overtime_threshold_minutes", "0")).strip() or 0)
     except ValueError:

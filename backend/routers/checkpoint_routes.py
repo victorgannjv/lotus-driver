@@ -192,7 +192,13 @@ async def _trip_state(pool, trip: dict) -> dict:
 @router.get("/driver/app-settings")
 async def driver_app_settings(request: Request, driver=Depends(get_current_driver)):
     """What the app should ask for, configured by an admin rather than hard-coded
-    -- job-count quick picks, which checkpoints demand a photo, and so on."""
+    -- job-count quick picks, which checkpoints demand a photo, and so on.
+
+    This is an explicit list, not a dump of app_setting, and it stays that way
+    on purpose. Settings that are management's business are NOT here and must
+    not be added: the overtime limit and the cost per hour (Settings > Job
+    management) exist to flag jobs and cost them for the admin site only. A
+    driver is never shown that a job ran overtime or what an hour costs."""
     pool = get_pool(request)
     s = await load_settings(pool)
     return {
