@@ -89,6 +89,22 @@ def _driver_row(driver: dict, trips: list[dict], threshold: int | None = None, r
     avg_trip, trips_timed = _avg_trip_minutes(trips)
     ot_jobs = _overtime_jobs(trips, threshold)
     total_minutes = _total_worked_minutes(trips)
+    total_cost = _cost(total_minutes, rate)
+
+    # Overtime hours are the hours past the limit in each job (a driver's day),
+    # added up -- the same per-job figures that flag the job, so the hours here
+    # and the days counted beside them always agree. Without a limit nothing
+    # is "regular" or "overtime", so all three figures are blank, not zero.
+    ot_minutes = sum(j["overtime_minutes"] for j in ot_jobs) if threshold else None
+    ot_cost = _cost(ot_minutes, rate) if threshold else None
+    # Regular cost is what is LEFT of the total once overtime is taken out,
+    # rather than a third multiplication. Rounding each of the three
+    # separately can leave them a sen apart; this way regular + overtime
+    # equals the total to the sen, always.
+    regular_cost = (
+        float(Decimal(str(total_cost)) - Decimal(str(ot_cost)))
+        if total_cost is not None and ot_cost is not None else None
+    )
     return {
         "driver_id": driver["id"],
         "driver_name": driver["name"],
@@ -105,7 +121,10 @@ def _driver_row(driver: dict, trips: list[dict], threshold: int | None = None, r
         # None, not 0, while no limit is set: "0 overtime days" would claim
         # everyone was inside a limit that does not exist.
         "total_worked_minutes": total_minutes,
-        "total_cost": _cost(total_minutes, rate),
+        "total_cost": total_cost,
+        "total_ot_minutes": ot_minutes,
+        "regular_cost": regular_cost,
+        "ot_cost": ot_cost,
         "ot_days": len(ot_jobs) if threshold else None,
         "ot_jobs": ot_jobs,
     }
@@ -209,7 +228,8 @@ def _hours(minutes) -> str:
 PERFORMANCE_CSV_HEADER = [
     "driver_id", "driver", "outlet", "status",
     "trips", "open_trips",
-    "total_hours_worked", "total_cost_rm",
+    "total_hours_worked", "total_ot_hours_worked",
+    "regular_hours_cost_rm", "ot_cost_rm", "total_cost_rm",
     "avg_hours_per_day", "days_counted", "days_not_finished",
     "avg_time_per_trip_minutes", "trips_finished",
     "ot_days", "ot_job_ids",
@@ -238,7 +258,9 @@ async def performance_export(
         writer.writerow([
             f"D-{r['driver_id']}", _csv_text(r["driver_name"]), _csv_text(r["outlet"]), r["status"],
             r["trips"], r["open_trips"],
-            _hours(r["total_worked_minutes"]),
+            _hours(r["total_worked_minutes"]), _hours(r["total_ot_minutes"]),
+            "" if r["regular_cost"] is None else f"{r['regular_cost']:.2f}",
+            "" if r["ot_cost"] is None else f"{r['ot_cost']:.2f}",
             "" if r["total_cost"] is None else f"{r['total_cost']:.2f}",
             _hours(r["avg_worked_minutes"]), r["days_counted"], r["days_left_out"],
             "" if r["avg_trip_minutes"] is None else r["avg_trip_minutes"], r["trips_timed"],

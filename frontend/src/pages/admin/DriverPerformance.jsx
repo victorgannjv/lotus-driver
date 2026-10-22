@@ -47,6 +47,9 @@ const COLUMNS = [
   { key: "driver_name", label: "Driver", text: true },
   { key: "trips", label: "Trips" },
   { key: "total_worked_minutes", label: "Total hours worked" },
+  { key: "total_ot_minutes", label: "Total OT hours worked" },
+  { key: "regular_cost", label: "Regular hours cost" },
+  { key: "ot_cost", label: "OT cost" },
   { key: "total_cost", label: "Total cost" },
   { key: "avg_worked_minutes", label: "Avg hours per day" },
   { key: "avg_trip_minutes", label: "Avg time per trip" },
@@ -64,6 +67,16 @@ function Tile({ label, value, sub }) {
       {sub && <p className="mt-0.5 text-xs text-slate-500">{sub}</p>}
     </div>
   );
+}
+
+const NO_LIMIT = "No overtime limit is set. An admin sets it under Settings, Job management.";
+
+// Why a cost cell is empty, so the dash is never a mystery: the three costs
+// need a rate; the regular/overtime split also needs the overtime limit.
+function costWhy(d, data) {
+  if (!data.cost_per_hour) return "No cost per hour is set. An admin sets it under Settings, Job management.";
+  if (!data.overtime_threshold_minutes) return NO_LIMIT;
+  return "No finished trips yet.";
 }
 
 const Blank = () => <span className="text-slate-300">—</span>;
@@ -311,6 +324,30 @@ export default function DriverPerformance() {
                   )}
                 </td>
                 <td className="px-4 py-3 text-right tabular-nums">
+                  {d.total_ot_minutes == null ? (
+                    <span className="text-slate-300" title={NO_LIMIT}>—</span>
+                  ) : d.total_ot_minutes === 0 ? (
+                    <span className="text-slate-400">0m</span>
+                  ) : (
+                    <span className="font-medium text-orange-800">
+                      {formatDuration(d.total_ot_minutes)}
+                      <span className="block text-[11px] font-normal text-slate-400">{(d.total_ot_minutes / 60).toFixed(2)} h</span>
+                    </span>
+                  )}
+                </td>
+                <td className="px-4 py-3 text-right tabular-nums">
+                  {d.regular_cost == null ? <span className="text-slate-300" title={costWhy(d, data)}>—</span> : formatRM(d.regular_cost)}
+                </td>
+                <td className="px-4 py-3 text-right tabular-nums">
+                  {d.ot_cost == null ? (
+                    <span className="text-slate-300" title={costWhy(d, data)}>—</span>
+                  ) : d.ot_cost === 0 ? (
+                    <span className="text-slate-400">{formatRM(0)}</span>
+                  ) : (
+                    <span className="font-medium text-orange-800">{formatRM(d.ot_cost)}</span>
+                  )}
+                </td>
+                <td className="px-4 py-3 text-right tabular-nums">
                   {d.total_cost == null ? (
                     <span className="text-slate-300" title={data.cost_per_hour ? "No finished trips yet." : "No cost per hour is set. An admin sets it under Settings, Job management."}>—</span>
                   ) : (
@@ -423,6 +460,9 @@ export default function DriverPerformance() {
           Total hours worked is every finished trip in the period added together, from arriving at the outlet to
           returning. A trip still open is left out. Total cost is those hours times the cost per hour
           {data.cost_per_hour ? ` (${formatRM(data.cost_per_hour)})` : ", which is not set yet. An admin sets it under Settings, Job management"}.
+          {data.overtime_threshold_minutes
+            ? ` Total OT hours is the time past ${formatDuration(data.overtime_threshold_minutes)} in each day, added up. Regular hours cost is the cost of the hours up to that limit and OT cost is the cost of the hours past it, at the same hourly rate, so Regular hours cost + OT cost = Total cost.`
+            : " Regular hours cost and OT cost need an overtime limit, which is not set yet. An admin sets it under Settings, Job management."}
         </p>
       )}
       {data && (
