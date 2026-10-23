@@ -48,9 +48,7 @@ const COLUMNS = [
   { key: "trips", label: "Trips" },
   { key: "total_worked_minutes", label: "Total hours worked" },
   { key: "total_ot_minutes", label: "Total OT hours worked" },
-  { key: "regular_cost", label: "Regular hours cost" },
   { key: "ot_cost", label: "OT cost" },
-  { key: "total_cost", label: "Total cost" },
   { key: "avg_worked_minutes", label: "Avg hours per day" },
   { key: "avg_trip_minutes", label: "Avg time per trip" },
   { key: "ot_days", label: "Number of OT days" },
@@ -267,8 +265,12 @@ export default function DriverPerformance() {
           <Tile label="Drivers" value={s.drivers} sub={`${s.drivers_with_trips} drove in this period`} />
           <Tile label="Trips" value={s.trips} />
           <Tile label="Total hours worked" value={formatDuration(s.total_worked_minutes)} sub="all drivers, finished trips" />
-          <Tile label="Total cost" value={s.total_cost == null ? "—" : formatRM(s.total_cost)}
-                sub={data.cost_per_hour ? `at ${formatRM(data.cost_per_hour)} an hour` : "no cost per hour set"} />
+          <Tile label="Total OT cost" value={s.total_ot_cost == null ? "—" : formatRM(s.total_ot_cost)}
+                sub={!data.overtime_threshold_minutes
+                  ? "no overtime limit set"
+                  : !data.cost_per_hour
+                    ? "no cost per hour set"
+                    : `${formatDuration(s.total_ot_minutes)} of OT at ${formatRM(data.cost_per_hour)} an hour`} />
           <Tile label="Avg hours per day" value={formatDuration(s.avg_worked_minutes)} sub="across all drivers" />
           <Tile label="Avg time per trip" value={formatDuration(s.avg_trip_minutes)} sub="across all drivers" />
         </div>
@@ -336,22 +338,12 @@ export default function DriverPerformance() {
                   )}
                 </td>
                 <td className="px-4 py-3 text-right tabular-nums">
-                  {d.regular_cost == null ? <span className="text-slate-300" title={costWhy(d, data)}>—</span> : formatRM(d.regular_cost)}
-                </td>
-                <td className="px-4 py-3 text-right tabular-nums">
                   {d.ot_cost == null ? (
                     <span className="text-slate-300" title={costWhy(d, data)}>—</span>
                   ) : d.ot_cost === 0 ? (
                     <span className="text-slate-400">{formatRM(0)}</span>
                   ) : (
                     <span className="font-medium text-orange-800">{formatRM(d.ot_cost)}</span>
-                  )}
-                </td>
-                <td className="px-4 py-3 text-right tabular-nums">
-                  {d.total_cost == null ? (
-                    <span className="text-slate-300" title={data.cost_per_hour ? "No finished trips yet." : "No cost per hour is set. An admin sets it under Settings, Job management."}>—</span>
-                  ) : (
-                    <span className="font-medium text-brand-black">{formatRM(d.total_cost)}</span>
                   )}
                 </td>
                 <td className="px-4 py-3 text-right tabular-nums">
@@ -459,13 +451,12 @@ export default function DriverPerformance() {
       )}
       {data && (
         <p className="mt-2 max-w-3xl text-xs text-slate-500">
-          <b className="font-semibold text-slate-600">Total hours and cost.</b>{" "}
+          <b className="font-semibold text-slate-600">Total hours and OT.</b>{" "}
           Total hours worked is every finished trip in the period added together, from arriving at the outlet to
-          returning. A trip still open is left out. Total cost is those hours times the cost per hour
-          {data.cost_per_hour ? ` (${formatRM(data.cost_per_hour)})` : ", which is not set yet. An admin sets it under Settings, Job management"}.
+          returning. A trip still open is left out.
           {data.overtime_threshold_minutes
-            ? ` Overtime is the time past ${formatDuration(data.overtime_threshold_minutes)} in a day, counted in half-hour steps rounded up (up to 30 minutes over counts as 0.5 h, 31 to 60 minutes as 1 h, and so on). Total OT hours is that counted overtime added up. Regular hours cost is the hours up to the limit, OT cost is the counted overtime hours, both at the hourly rate, and Total cost is the two added together, so it can be a little above total hours x rate.`
-            : " Regular hours cost and OT cost need an overtime limit, which is not set yet. An admin sets it under Settings, Job management."}
+            ? ` Overtime is the time past ${formatDuration(data.overtime_threshold_minutes)} in a day, counted in half-hour steps rounded up (up to 30 minutes over counts as 0.5 h, 31 to 60 minutes as 1 h, and so on). Total OT hours is that counted overtime added up, and OT cost is those hours times the cost per hour${data.cost_per_hour ? ` (${formatRM(data.cost_per_hour)})` : ", which is not set yet. An admin sets it under Settings, Job management"}.`
+            : " Total OT hours and OT cost need an overtime limit, which is not set yet. An admin sets it under Settings, Job management."}
         </p>
       )}
       {data && (

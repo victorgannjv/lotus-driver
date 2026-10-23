@@ -76,23 +76,20 @@ def _ot_counted_minutes(over_minutes: int | float | None) -> int:
     return -(-int(over_minutes) // OT_STEP_MINUTES) * OT_STEP_MINUTES
 
 
-def _overtime_split(trips: list[dict], threshold: int | None) -> tuple[list[dict], int | None]:
-    """The driver's overtime jobs (J-ids, newest first) and their regular time.
+def _overtime_jobs(trips: list[dict], threshold: int | None) -> list[dict]:
+    """The driver's overtime jobs (J-ids), newest first.
 
     Judged by the same rule as the Evidence page, because it is the same code:
     a job is one driver's one day, its worked time is the finished trips added
     up, and it is overtime when that is over the Job management limit. With no
-    limit set nothing is overtime and there is no split (None).
+    limit set nothing is overtime.
 
-    Each overtime job carries the minutes actually past the limit AND the
-    minutes counted for it (rounded up to the half hour). Regular minutes are
-    the time up to the limit in every job, so a day over the limit contributes
-    exactly the limit, and a day under it contributes what was worked.
+    Each job carries the minutes actually past the limit AND the minutes
+    counted for it (rounded up to the half hour).
     """
     if not threshold:
-        return [], None
-    jobs = _group_by_day(trips, threshold)  # newest first
-    ot_jobs = [
+        return []
+    return [
         {
             "job_id": d["driver_day_id"],
             "work_date": d["work_date"],
@@ -101,38 +98,22 @@ def _overtime_split(trips: list[dict], threshold: int | None) -> tuple[list[dict
             "ot_counted_minutes": _ot_counted_minutes(d["overtime_minutes"]),
             "open_trips": d["open_trips"],
         }
-        for d in jobs if d["is_overtime"]
+        for d in _group_by_day(trips, threshold)  # newest first
+        if d["is_overtime"]
     ]
-    finished = [d["worked_minutes"] for d in jobs if d["worked_minutes"] is not None]
-    regular = sum(min(w, threshold) for w in finished) if finished else None
-    return ot_jobs, regular
 
 
 def _driver_row(driver: dict, trips: list[dict], threshold: int | None = None, rate: Decimal | None = None) -> dict:
     avg_day, days_counted, days_left_out = _avg_worked_per_day(trips)
     avg_trip, trips_timed = _avg_trip_minutes(trips)
-    ot_jobs, regular_minutes = _overtime_split(trips, threshold)
+    ot_jobs = _overtime_jobs(trips, threshold)
     total_minutes = _total_worked_minutes(trips)
 
     # Overtime hours are the COUNTED overtime: each day past the limit rounded
-    # up to the half hour, added up. Without a limit nothing is "regular" or
-    # "overtime", so those figures are blank, not zero.
+    # up to the half hour, added up, and the cost is those hours at the hourly
+    # rate. Without a limit nothing is overtime, so both are blank, not zero.
     ot_minutes = sum(j["ot_counted_minutes"] for j in ot_jobs) if threshold else None
     ot_cost = _cost(ot_minutes, rate) if threshold else None
-    regular_cost = _cost(regular_minutes, rate) if threshold else None
-
-    # With a limit, the total is what is actually payable: the regular hours at
-    # their real length plus the overtime in half-hour steps. So Regular + OT
-    # equals Total by construction, and Total can run slightly above hours x
-    # rate -- the half-hour rounding is a cost. Without a limit there is no
-    # overtime, and it is simply hours x rate.
-    if threshold:
-        total_cost = (
-            float(Decimal(str(regular_cost)) + Decimal(str(ot_cost)))
-            if regular_cost is not None and ot_cost is not None else None
-        )
-    else:
-        total_cost = _cost(total_minutes, rate)
     return {
         "driver_id": driver["id"],
         "driver_name": driver["name"],
@@ -149,9 +130,7 @@ def _driver_row(driver: dict, trips: list[dict], threshold: int | None = None, r
         # None, not 0, while no limit is set: "0 overtime days" would claim
         # everyone was inside a limit that does not exist.
         "total_worked_minutes": total_minutes,
-        "total_cost": total_cost,
         "total_ot_minutes": ot_minutes,
-        "regular_cost": regular_cost,
         "ot_cost": ot_cost,
         "ot_days": len(ot_jobs) if threshold else None,
         "ot_jobs": ot_jobs,
@@ -208,8 +187,9 @@ async def _performance(pool, date_from: str | None, date_to: str | None, warehou
             "avg_trip_minutes": avg_trip,
             "ot_days": sum(r["ot_days"] or 0 for r in rows) if threshold else None,
             "total_worked_minutes": _total_worked_minutes(trips),
+            "total_ot_minutes": sum(r["total_ot_minutes"] or 0 for r in rows) if threshold else None,
             # The sum of the rows as shown, so the column and its total agree to the sen.
-            "total_cost": float(sum((Decimal(str(r["total_cost"])) for r in rows if r["total_cost"] is not None), Decimal(0))) if rate else None,
+            "total_ot_cost": float(sum((Decimal(str(r["ot_cost"])) for r in rows if r["ot_cost"] is not None), Decimal(0))) if threshold and rate else None,
         },
         "cost_per_hour": float(rate) if rate else None,
         "overtime_threshold_minutes": threshold,
@@ -257,7 +237,7 @@ PERFORMANCE_CSV_HEADER = [
     "driver_id", "driver", "outlet", "status",
     "trips", "open_trips",
     "total_hours_worked", "total_ot_hours_worked",
-    "regular_hours_cost_rm", "ot_cost_rm", "total_cost_rm",
+    "ot_cost_rm",
     "avg_hours_per_day", "days_counted", "days_not_finished",
     "avg_time_per_trip_minutes", "trips_finished",
     "ot_days", "ot_job_ids",
@@ -287,9 +267,7 @@ async def performance_export(
             f"D-{r['driver_id']}", _csv_text(r["driver_name"]), _csv_text(r["outlet"]), r["status"],
             r["trips"], r["open_trips"],
             _hours(r["total_worked_minutes"]), _hours(r["total_ot_minutes"]),
-            "" if r["regular_cost"] is None else f"{r['regular_cost']:.2f}",
             "" if r["ot_cost"] is None else f"{r['ot_cost']:.2f}",
-            "" if r["total_cost"] is None else f"{r['total_cost']:.2f}",
             _hours(r["avg_worked_minutes"]), r["days_counted"], r["days_left_out"],
             "" if r["avg_trip_minutes"] is None else r["avg_trip_minutes"], r["trips_timed"],
             "" if r["ot_days"] is None else r["ot_days"],
